@@ -95,12 +95,33 @@ class OZ_PageRegistry
 
 // Чи дозволена сторінка ЦЬОМУ гравцеві.
 //
-// Ядро саме пристроїв не має, тому тут пускає все. КПК підмінює це через
-// modded class перевіркою профілю свого пристрою -- так ядро лишається
-// нічого не знати про КПК, а перевірка все одно є.
+// Ядро саме пристроїв не має й вирішити це не може. Тому тут -- база, яку
+// заміщає той, хто пристрої приносить: КПК кладе сюди свого нащадка, і той
+// звіряє сторінку з профілем пристрою в руках.
+//
+// Чому нащадок, а не modded class зі static: перевизначати статичний метод
+// через modded class -- хисткий трюк, а тут через нього проходить КОЖЕН
+// запит клієнта. Механізм, що тримає межу безпеки, має бути нудним.
+//
+// Без провайдера пускає все: ядро без КПК не має чого забороняти.
 class OZ_PageAccess
 {
+    private static ref OZ_PageAccess s_Provider;
+
+    static void Bind(OZ_PageAccess provider)
+    {
+        s_Provider = provider;
+    }
+
     static bool Allowed(PlayerIdentity who, string pageId)
+    {
+        if (!s_Provider)
+            return true;
+        return s_Provider.Check(who, pageId);
+    }
+
+    // Перевизначає нащадок.
+    bool Check(PlayerIdentity who, string pageId)
     {
         return true;
     }

@@ -14,6 +14,18 @@ class OZ_PlayerData : OZ_ConfigBase
     string FirstSeen = "";
     string LastSeen  = "";
 
+    // Епоха сесій. Пристрій пам'ятає, з якою епохою на ньому відкрилась
+    // сесія, і вважається ОНЛАЙН, поки вона збігається з цією.
+    //
+    // «Скинути інші сесії» -- це просто += 1. Усі решта пристроїв мовчки
+    // переходять в офлайн: вони не ламаються й не втрачають даних, вони
+    // перестають оновлюватись, і їхній знімок замерзає на цій миті.
+    //
+    // Ніякого обліку чужих предметів, переживає рестарт, коштує одну
+    // операцію -- а альтернатива вимагала б знати, де зараз кожен пристрій,
+    // який гравець колись тримав у руках.
+    int SessionEpoch = 1;
+
     override int LatestVersion()
     {
         return 1;
@@ -21,11 +33,12 @@ class OZ_PlayerData : OZ_ConfigBase
 
     override void LoadDefaults()
     {
-        Version   = LatestVersion();
-        SteamId   = "";
-        DiscordId = "";
-        FirstSeen = "";
-        LastSeen  = "";
+        Version      = LatestVersion();
+        SteamId      = "";
+        DiscordId    = "";
+        FirstSeen    = "";
+        LastSeen     = "";
+        SessionEpoch = 1;
     }
 }
 
