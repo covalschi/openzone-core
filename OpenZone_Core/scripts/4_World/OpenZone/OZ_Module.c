@@ -24,7 +24,20 @@ class OZ_Module : CF_ModuleWorld
         if (!GetGame().IsServer())
             return;
 
-        OZ_Log.Info("core loaded: admins=0 debug=off");
+        OZ_Settings.ServerLoad();
+
+        OZ_Settings s = OZ_Settings.Get();
+
+        string dbg = "off";
+        if (s.DebugMode)
+            dbg = "on";
+
+        // Два оператори, а не один довгий ланцюжок «+»: компілятор Enforce має
+        // межу складності виразу й падає з «Formula too complex» -- у сусідньому
+        // моді це знайшли емпірично на восьмому доданку.
+        string summary = "core loaded: admins=" + s.AdminIds.Count();
+        summary += " debug=" + dbg;
+        OZ_Log.Info(summary);
     }
 
     override void OnMissionFinish(Class sender, CF_EventArgs args)

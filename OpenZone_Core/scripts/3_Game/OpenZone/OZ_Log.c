@@ -25,9 +25,13 @@ class OZ_Log
         Print(OZ_Const.LOG_PREFIX + msg);
     }
 
+    // Саме WARNING, а не WARN: вердикт MCP шукає в лозі \bWARNING\b
+    // (logparse.py:34). Скорочене слово під це не підпадає, і бюджет
+    // max_warnings у профілі перестав би стежити за нашими ж перевірками --
+    // регресія у Validate проходила б повз вердикт мовчки.
     static void Warn(string msg)
     {
-        Print(OZ_Const.LOG_PREFIX + "WARN: " + msg);
+        Print(OZ_Const.LOG_PREFIX + "WARNING: " + msg);
     }
 
     static void Error(string msg)
