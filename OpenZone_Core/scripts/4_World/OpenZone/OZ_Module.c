@@ -94,7 +94,7 @@ class OZ_Module : CF_ModuleWorld
         // 3. І входити в набір сторінок ПРИСТРОЮ цього гравця. Саме цей крок
         //    не дає смикнути сторінку, якої в його КПК немає, навіть якщо
         //    запит підроблено.
-        if (!OZ_PageAccess.Allowed(sender, pageId))
+        if (!OZ_PageAccess.Allowed(sender, pageId, op))
         {
             string w2 = "rejected page \"" + pageId;
             w2 += "\" from " + sender.GetPlainId();

@@ -113,15 +113,22 @@ class OZ_PageAccess
         s_Provider = provider;
     }
 
-    static bool Allowed(PlayerIdentity who, string pageId)
+    // ОПЕРАЦІЯ входить у питання, а не лише сторінка.
+    //
+    // Інакше виходить зачароване коло: замкнений пристрій не пускає на
+    // сторінку, а відімкнути його можна ЛИШЕ операцією на тій самій
+    // сторінці -- і код нема куди ввести. Саме це й було на живому клієнті:
+    // правильний пін відповідав «wrong code», бо до перевірки піна справа
+    // не доходила зовсім.
+    static bool Allowed(PlayerIdentity who, string pageId, string op)
     {
         if (!s_Provider)
             return true;
-        return s_Provider.Check(who, pageId);
+        return s_Provider.Check(who, pageId, op);
     }
 
     // Перевизначає нащадок.
-    bool Check(PlayerIdentity who, string pageId)
+    bool Check(PlayerIdentity who, string pageId, string op)
     {
         return true;
     }
