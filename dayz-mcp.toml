@@ -1,0 +1,26 @@
+# Переносна половина профілю для dayz-agentic-modding-mcp.
+# Машинні шляхи живуть у dayz-mcp.local.toml, який не комітиться.
+
+[project]
+name = "openzone-core"
+
+[build]
+# Ядро — один pbo, один предмет Workshop. Джерело в <root>/OpenZone_Core,
+# pbo стає OpenZone_Core.pbo, зібрана тека — @OpenZone_Core.
+#
+# Ядро володіє лише Settings.json. Profiles.json (профілі пристроїв) належить
+# КПК: конфіг-служба тут, а самі файли оголошує той мод, якому вони потрібні.
+mods = ["OpenZone_Core"]
+
+[expect]
+# Рядок, який ядро друкує, коли всі його конфіги прочитані.
+ready_line   = "core loaded"
+max_warnings = 0
+forbid       = ["Bad type", "Can't compile", "NULL pointer to instance"]
+error_regex  = ["SCRIPT\\s+\\(E\\).*OZ_"]
+noise        = []
+
+[expect.counters]
+# Заповнюється після першого бута, коли ready-рядок існує насправді.
+# Оголошене тут значення, яке не збігається з реальним, валить вердикт —
+# тому порожньо, доки нема що звіряти.
