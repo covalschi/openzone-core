@@ -4,8 +4,24 @@
 // служить рівно для того, щоб не малювати кнопку, якої гравець усе одно не
 // зможе натиснути; на сервері та сама перевірка робиться заново й по-справжньому.
 
+// Слухач відповідей. Ядро не знає, хто саме відкритий на екрані, і знати не
+// повинне: воно доставляє конверт і кличе того, хто підписався.
+class OZ_ResponseListener
+{
+    void OnResponse(string pageId, string op, bool ok, string json, string error)
+    {
+    }
+}
+
 class OZ_ClientState
 {
+    private static ref OZ_ResponseListener s_Listener;
+
+    static void BindListener(OZ_ResponseListener l)
+    {
+        s_Listener = l;
+    }
+
     private static ref OZ_SyncPayload  s_Payload;
     private static ref OZ_ClientState  s_Inst;
 
@@ -83,6 +99,7 @@ class OZ_ClientState
             line += " error=" + data.param5;
         OZ_Log.Dbg(line);
 
-        // Роздачу відкритій сторінці додає Task 9 разом із самим меню.
+        if (s_Listener)
+            s_Listener.OnResponse(data.param1, data.param2, data.param3, data.param4, data.param5);
     }
 }
