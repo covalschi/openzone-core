@@ -7,6 +7,15 @@
 [CF_RegisterModule(OZ_Module)]
 class OZ_Module : CF_ModuleWorld
 {
+    // Періодичний скид відкладених записів.
+    //
+    // Покладатись лише на дисконект і вимкнення -- крихко: обидва не
+    // спрацьовують при падінні сервера, а саме тоді дані й потрібні. Тридцять
+    // секунд -- стеля втрати, і вона нічого не коштує: скидається лише те,
+    // що позначене брудним.
+    private ref Timer m_FlushTimer;
+    private static const float FLUSH_INTERVAL = 30.0;
+
     override void OnInit()
     {
         super.OnInit();
@@ -39,6 +48,9 @@ class OZ_Module : CF_ModuleWorld
         // моді це знайшли емпірично на восьмому доданку.
         OZ_Perm.ServerInit();
         OZ_Rpc.RegisterServer(this);
+
+        m_FlushTimer = new Timer(CALL_CATEGORY_SYSTEM);
+        m_FlushTimer.Run(FLUSH_INTERVAL, this, "FlushTick", NULL, true);
 
         string summary = "core loaded: admins=" + s.AdminIds.Count();
         summary += " perms=" + OZ_Perm.Describe();
@@ -109,6 +121,10 @@ class OZ_Module : CF_ModuleWorld
 
         bool admin = OZ_Perm.IsAdmin(pArgs.Identity);
 
+        OZ_PlayerData d = OZ_PlayerStore.Load(pArgs.Identity.GetPlainId());
+        d.LastSeen = OZ_Time.NowUtc();
+        OZ_PlayerStore.MarkDirty(pArgs.Identity.GetPlainId());
+
         string line = "connect " + pArgs.Identity.GetName();
         line += " (" + pArgs.Identity.GetPlainId();
         line += ") admin=" + admin;
@@ -173,6 +189,11 @@ class OZ_Module : CF_ModuleWorld
         if (!dArgs)
             return;
 
+        OZ_PlayerData d = OZ_PlayerStore.Load(dArgs.UID);
+        d.LastSeen = OZ_Time.NowUtc();
+        OZ_PlayerStore.MarkDirty(dArgs.UID);
+        OZ_PlayerStore.Unload(dArgs.UID);
+
         OZ_Log.Dbg("disconnect " + dArgs.UID);
     }
 
@@ -183,6 +204,17 @@ class OZ_Module : CF_ModuleWorld
         if (!GetGame().IsServer())
             return;
 
+        if (m_FlushTimer)
+            m_FlushTimer.Stop();
+
+        // Останній шанс дописати відкладене: після цього процес зникає.
+        OZ_PlayerStore.FlushAll();
         OZ_Log.Dbg("core shutting down");
+    }
+
+    // Кличеться таймером на ім'я -- метод мусить бути видимим (не private).
+    void FlushTick()
+    {
+        OZ_PlayerStore.FlushAll();
     }
 }
