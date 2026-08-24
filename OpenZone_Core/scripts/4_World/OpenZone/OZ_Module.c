@@ -52,6 +52,8 @@ class OZ_Module : CF_ModuleWorld
         m_FlushTimer = new Timer(CALL_CATEGORY_SYSTEM);
         m_FlushTimer.Run(FLUSH_INTERVAL, this, "FlushTick", NULL, true);
 
+        OZ_BridgeClient.Start();
+
         string summary = "core loaded: admins=" + s.AdminIds.Count();
         summary += " perms=" + OZ_Perm.Describe();
         summary += " pages=" + OZ_PageRegistry.Count().ToString();
@@ -206,6 +208,8 @@ class OZ_Module : CF_ModuleWorld
 
         if (m_FlushTimer)
             m_FlushTimer.Stop();
+
+        OZ_BridgeClient.Stop();
 
         // Останній шанс дописати відкладене: після цього процес зникає.
         OZ_PlayerStore.FlushAll();
