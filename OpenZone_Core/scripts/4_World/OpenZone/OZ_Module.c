@@ -38,11 +38,62 @@ class OZ_Module : CF_ModuleWorld
         // межу складності виразу й падає з «Formula too complex» -- у сусідньому
         // моді це знайшли емпірично на восьмому доданку.
         OZ_Perm.ServerInit();
+        OZ_Rpc.RegisterServer(this);
 
         string summary = "core loaded: admins=" + s.AdminIds.Count();
         summary += " perms=" + OZ_Perm.Describe();
+        summary += " pages=" + OZ_PageRegistry.Count().ToString();
         summary += " debug=" + dbg;
         OZ_Log.Info(summary);
+    }
+
+    // Порядок перевірок нижче -- і є межа безпеки. Міняти його не можна.
+    void OZ_Req(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Server)
+            return;
+
+        Param3<string, string, string> data;
+        if (!ctx.Read(data))
+            return;
+
+        string pageId = data.param1;
+        string op     = data.param2;
+        string json   = data.param3;
+
+        // 1. Особа -- ЗАВЖДИ з sender. Ніколи з корисного навантаження:
+        //    туди клієнт напише що завгодно.
+        if (!sender)
+            return;
+
+        // 2. Сторінка мусить існувати.
+        if (!OZ_PageRegistry.Has(pageId))
+        {
+            string w1 = "rejected page \"" + pageId;
+            w1 += "\" from " + sender.GetPlainId();
+            w1 += ": no such page";
+            OZ_Log.Warn(w1);
+            OZ_Rpc.Respond(sender, pageId, op, false, "", "STR_OZ_ERR_NO_PAGE");
+            return;
+        }
+
+        // 3. І входити в набір сторінок ПРИСТРОЮ цього гравця. Саме цей крок
+        //    не дає смикнути сторінку, якої в його КПК немає, навіть якщо
+        //    запит підроблено.
+        if (!OZ_PageAccess.Allowed(sender, pageId))
+        {
+            string w2 = "rejected page \"" + pageId;
+            w2 += "\" from " + sender.GetPlainId();
+            w2 += ": not on this device";
+            OZ_Log.Warn(w2);
+            OZ_Rpc.Respond(sender, pageId, op, false, "", "STR_OZ_ERR_NO_ACCESS");
+            return;
+        }
+
+        bool ok;
+        string err;
+        string res = OZ_PageRegistry.Get(pageId).Handler.Handle(op, json, sender, ok, err);
+        OZ_Rpc.Respond(sender, pageId, op, ok, res, err);
     }
 
     override void OnInvokeConnect(Class sender, CF_EventArgs args)
@@ -62,6 +113,51 @@ class OZ_Module : CF_ModuleWorld
         line += " (" + pArgs.Identity.GetPlainId();
         line += ") admin=" + admin;
         OZ_Log.Dbg(line);
+    }
+
+    // Клієнт привітався -- значить він уже готовий приймати. Тільки тут і
+    // надсилаємо: штовхати на конекті не можна, перевірено на стенді.
+    void OZ_Hello(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Server)
+            return;
+
+        Param1<int> data;
+        if (!ctx.Read(data))
+            return;
+
+        if (!sender)
+            return;
+
+        if (data.param1 != OZ_Const.SCHEMA_SETTINGS)
+        {
+            string mism = "client schema " + data.param1.ToString();
+            mism += " != server " + OZ_Const.SCHEMA_SETTINGS.ToString();
+            mism += " for " + sender.GetPlainId();
+            OZ_Log.Warn(mism);
+        }
+
+        SendSync(sender, OZ_Perm.IsAdmin(sender));
+    }
+
+    private void SendSync(PlayerIdentity to, bool admin)
+    {
+        OZ_SyncPayload p = new OZ_SyncPayload();
+        p.Schema    = OZ_Const.SCHEMA_SETTINGS;
+        p.IsAdmin   = admin;
+        p.DebugMode = OZ_Settings.Get().DebugMode;
+        OZ_PageRegistry.FillPayload(p);
+
+        string json;
+        string err;
+        // prettyPrint=false: у провід не треба ані відступів, ані переносів.
+        if (!JsonFileLoader<OZ_SyncPayload>.MakeData(p, json, err, false))
+        {
+            OZ_Log.Error("cannot serialise sync payload: " + err);
+            return;
+        }
+
+        OZ_Rpc.SendSync(to, json);
     }
 
     override void OnInvokeDisconnect(Class sender, CF_EventArgs args)

@@ -41,6 +41,9 @@ class CfgMods
         storageVersion = 1;
 
         dependencies[] = {"Game", "World", "Mission"};
+        // OZ_SELFTEST вмикає тимчасові перевірки в клієнтському коді (див.
+        // OZ_MissionGameplay). У поставці його немає: рядок нижче лишається
+        // без нього, а дописується вручну на час перевірки.
         defines[] = {"OPENZONE_CORE"};
 
         class defs
