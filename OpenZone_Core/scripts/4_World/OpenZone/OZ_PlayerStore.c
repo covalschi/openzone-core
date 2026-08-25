@@ -75,6 +75,13 @@ class OZ_PlayerData : OZ_ConfigBase
     ref array<string> Friends;
     ref array<string> FriendReq;
 
+    // --- групові розмови ---
+    //
+    // Id груп, у яких гравець складається. Реєстр тут потрібен, бо id групи
+    // НЕ обчислюється з її учасників -- вони міняються. Особисту розмову
+    // шукати не треба: її id -- це два Steam64 по порядку.
+    ref array<string> Chats;
+
     override int LatestVersion()
     {
         return 1;
@@ -96,6 +103,7 @@ class OZ_PlayerData : OZ_ConfigBase
         Name      = "";
         Friends   = new array<string>();
         FriendReq = new array<string>();
+        Chats     = new array<string>();
     }
 
     override void Validate(out int warnings)
@@ -111,6 +119,8 @@ class OZ_PlayerData : OZ_ConfigBase
             Friends = new array<string>();
         if (!FriendReq)
             FriendReq = new array<string>();
+        if (!Chats)
+            Chats = new array<string>();
     }
 }
 
