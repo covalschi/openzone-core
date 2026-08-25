@@ -125,6 +125,10 @@ class OZ_Module : CF_ModuleWorld
 
         OZ_PlayerData d = OZ_PlayerStore.Load(pArgs.Identity.GetPlainId());
         d.LastSeen = OZ_Time.NowUtc();
+        // Ім'я оновлюємо щовходу: гравець міг його змінити, а показувати
+        // старе там, де інший гравець вирішує, кого приймати в друзі, гірше
+        // за будь-яку іншу неточність.
+        d.Name = pArgs.Identity.GetName();
         OZ_PlayerStore.MarkDirty(pArgs.Identity.GetPlainId());
 
         string line = "connect " + pArgs.Identity.GetName();

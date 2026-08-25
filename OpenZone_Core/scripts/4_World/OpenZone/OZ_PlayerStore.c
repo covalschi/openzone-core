@@ -14,6 +14,12 @@ class OZ_PlayerData : OZ_ConfigBase
     string FirstSeen = "";
     string LastSeen  = "";
 
+    // Ім'я з останнього входу. Кеш, а не джерело правди: воно потрібне, щоб
+    // показати запит у друзі від того, кого зараз немає на сервері. Без
+    // кешу довелось би або показувати Steam64 замість імені, або мовчати про
+    // офлайнових зовсім.
+    string Name = "";
+
     // Епоха сесій. Пристрій пам'ятає, з якою епохою на ньому відкрилась
     // сесія, і вважається ОНЛАЙН, поки вона збігається з цією.
     //
@@ -57,6 +63,18 @@ class OZ_PlayerData : OZ_ConfigBase
     // список і є те, заради чого КПК носять.
     bool PresenceHidden = false;
 
+    // --- друзі ---
+    //
+    // Дружба ВЗАЄМНА і потребує згоди обох. Тому списків два: прийняті друзі
+    // й вхідні запити. Односторонній «друг» був би способом стежити за тим,
+    // хто про це не знає.
+    //
+    // Просити в друзі можна лише ЗБЛИЗЬКА -- це перевіряє сервер. У Зоні
+    // знайомляться в очі, а не за списком онлайну; заразом це знімає питання
+    // «звідки клієнт узяв чужий Steam64»: нізвідки, він його не бачить.
+    ref array<string> Friends;
+    ref array<string> FriendReq;
+
     override int LatestVersion()
     {
         return 1;
@@ -74,6 +92,25 @@ class OZ_PlayerData : OZ_ConfigBase
         TransponderMode = "off";
         TransponderTo   = new array<string>();
         PresenceHidden  = false;
+
+        Name      = "";
+        Friends   = new array<string>();
+        FriendReq = new array<string>();
+    }
+
+    override void Validate(out int warnings)
+    {
+        warnings = 0;
+
+        // Масиви, яких немає у старому файлі, мусять з'явитись ТУТ, а не при
+        // першому зверненні: інакше кожен, хто їх читає, зобов'язаний
+        // перевіряти на null, і рано чи пізно хтось забуде.
+        if (!TransponderTo)
+            TransponderTo = new array<string>();
+        if (!Friends)
+            Friends = new array<string>();
+        if (!FriendReq)
+            FriendReq = new array<string>();
     }
 }
 
