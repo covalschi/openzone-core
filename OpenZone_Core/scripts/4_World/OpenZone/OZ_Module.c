@@ -107,6 +107,14 @@ class OZ_Module : CF_ModuleWorld
         bool ok;
         string err;
         string res = OZ_PageRegistry.Get(pageId).Handler.Handle(op, json, sender, ok, err);
+
+        // Сторінка могла піти по відповідь за межі сервера -- у міст, у
+        // Discord. Тоді вона відповість сама, коли та приїде, а тут треба
+        // саме промовчати: інакше клієнт побачив би «не вдалося» за секунду
+        // до справжньої відповіді.
+        if (!ok && err == OZ_Const.DEFER)
+            return;
+
         OZ_Rpc.Respond(sender, pageId, op, ok, res, err);
     }
 

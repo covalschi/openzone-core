@@ -9,8 +9,16 @@ class OZ_BridgeSettings
 {
     bool   Enabled        = false;
     string Url            = "";
+
+    // Хто питає. Один міст обслуговує кілька стендів, і саме за цим рядком
+    // він пам'ятає, докуди кожен із них дочитав.
+    string ServerId       = "dayz";
     string Secret         = "";
-    int    PollTimeoutSec = 25;
+    // Скільки гра просить чекати на відповідь довгого опиту. ПРОСИТЬ --
+    // рушій асинхронні запити однаково обриває на десятій секунді, хоч би
+    // що тут стояло (зміряно; див. OZ_BridgeClient.Start). Справжня стеля
+    // задається на мості: POLL_HOLD_SECONDS має бути менший за 10.
+    int    PollTimeoutSec = 30;
 }
 
 class OZ_Settings : OZ_ConfigBase
@@ -71,6 +79,13 @@ class OZ_Settings : OZ_ConfigBase
                 OZ_Log.Warn(bad);
                 warnings++;
             }
+        }
+
+        if (Bridge.Enabled && Bridge.ServerId == "")
+        {
+            OZ_Log.Warn("Bridge.ServerId is empty - falling back to \"dayz\"");
+            Bridge.ServerId = "dayz";
+            warnings++;
         }
 
         if (Bridge.Enabled && Bridge.Url == "")
