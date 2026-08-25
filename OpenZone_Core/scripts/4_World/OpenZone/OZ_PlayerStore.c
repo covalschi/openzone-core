@@ -82,6 +82,16 @@ class OZ_PlayerData : OZ_ConfigBase
     // шукати не треба: її id -- це два Steam64 по порядку.
     ref array<string> Chats;
 
+    // --- фракція ---
+    //
+    // Запасний шлях: коли на сервері немає мода фракцій, приналежність ставить
+    // адмін або квестовий мод -- сюди. Живий постачальник це поле перекриває,
+    // і воно лишається просто останнім відомим значенням.
+    //
+    // Порожня -- одинак. Це не помилка й не «не задано», а найчастіший стан у
+    // Зоні, і окремого слова для нього не треба.
+    string Faction = "";
+
     override int LatestVersion()
     {
         return 1;
@@ -104,6 +114,7 @@ class OZ_PlayerData : OZ_ConfigBase
         Friends   = new array<string>();
         FriendReq = new array<string>();
         Chats     = new array<string>();
+        Faction   = "";
     }
 
     override void Validate(out int warnings)
