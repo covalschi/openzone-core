@@ -89,7 +89,7 @@ class OZ_FactionsConfig : OZ_ConfigBase
 
     override int LatestVersion()
     {
-        return 2;
+        return 3;
     }
 
     override void LoadDefaults()
@@ -97,27 +97,41 @@ class OZ_FactionsConfig : OZ_ConfigBase
         Version  = LatestVersion();
         Factions = new array<ref OZ_Faction>();
 
-        // Лор STALKER. Назви лишаються як є -- це імена з першоджерела, а не
-        // текст інтерфейсу, і перекладати їх нема потреби.
+        // Id -- КЛЮЧ ЗВ'ЯЗКУ між ботом і грою, і єдиний рядок, який обидві
+        // сторони мусять знати посимвольно. Розбіжність тут не косметична:
+        // синхронізація ролей просто не знайде нічого, мовчки.
         //
-        // Ставлення роздані НЕ повністю: тут лише те, що в першоджерелі не
-        // обговорюється. Решту хай ставить сервер -- ми не знаємо його сюжету.
-        Add("loner",     "Loners",      "LNR", "200 200 200");
-        Add("duty",      "Duty",        "DTY", "196  64  40");
-        Add("freedom",   "Freedom",     "FDM", " 96 176  72");
-        Add("bandit",    "Bandits",     "BND", "150 120  70");
-        Add("mercenary", "Mercenaries", "MRC", " 80 130 190");
-        Add("military",  "Military",    "MIL", "110 130  90");
-        Add("monolith",  "Monolith",    "MNL", "170 150 220");
-        Add("ecologist", "Ecologists",  "ECO", "230 200  90");
+        // Назви -- УКРАЇНСЬКІ й ЖИВИМ ТЕКСТОМ, а не ключами stringtable.
+        // Причина виміряна: у наборі мов рушія немає колонки ukrainian
+        // (заголовок таблиці -- original, english, czech, german, russian,
+        // polish, hungarian, italian, spanish, french, chinese, japanese,
+        // portuguese, chinesesimp). Отже #STR_-ключ українською не
+        // намалюється НІКОЛИ, і текст мусить їхати даними.
+        //
+        // Порожня фракція -- це «одинак», відсутність приналежності. Тому
+        // окремого id `loner` НЕМАЄ: він означав би те саме, але поводився
+        // інакше -- Stand("", x) дає NEUTRAL, а Stand("loner","loner") дав би
+        // ALLY, тобто всі неприкаяні стали б союзниками одне одному. А от
+        // `neutral` -- справжня організація: у неї є лідер.
+        Add("ecolog",    "Вчені",      "ВЧН", "230 200  90");
+        Add("duty",      "Борг",       "БРГ", "196  64  40");
+        Add("freedom",   "Воля",       "ВОЛ", " 96 176  72");
+        Add("mercenary", "Найманці",   "НАЙ", " 80 130 190");
+        Add("neutral",   "Нейтрали",   "НЕЙ", "200 200 200");
+        Add("bandit",    "Бандити",    "БАН", "150 120  70");
+        Add("clearsky",  "Чисте небо", "ЧН",  "120 190 200");
+        Add("monolith",  "Моноліт",    "МНЛ", "170 150 220");
 
+        // Роздано НЕ повністю: тільки те, що в першоджерелі не обговорюється.
+        // Решту хай ставить сервер -- його сюжету ми не знаємо.
         Relate("duty",     "freedom",  "hostile");
-        Relate("bandit",   "loner",    "hostile");
-        Relate("monolith", "loner",    "hostile");
+        Relate("bandit",   "neutral",  "hostile");
+        Relate("monolith", "neutral",  "hostile");
         Relate("monolith", "duty",     "hostile");
         Relate("monolith", "freedom",  "hostile");
-        Relate("military", "bandit",   "hostile");
-        Relate("ecologist", "loner",   "friendly");
+        Relate("monolith", "clearsky", "hostile");
+        Relate("ecolog",   "neutral",  "friendly");
+        Relate("ecolog",   "clearsky", "friendly");
     }
 
     private void Add(string id, string name, string tag, string colour)
@@ -164,11 +178,53 @@ class OZ_FactionsConfig : OZ_ConfigBase
         if (!Factions)
             Factions = new array<ref OZ_Faction>();
 
+        // v2 -> v3: два id перейменовані під набір, узгоджений із ботом.
+        //
+        // Перейменування id -- НЕ косметика: на нього посилаються поле
+        // Faction у файлах гравців і рядки Relations. Тому міняємо і сам Id,
+        // і кожне посилання на нього. Записи адміна, яких у новому наборі
+        // немає (скажімо, `military`), лишаються НЕДОТОРКАНИМИ: його таблиця
+        // -- його справа, а видалити чуже під час міграції означало б
+        // втратити дані мовчки.
+        if (from < 3)
+        {
+            Rename("ecologist", "ecolog");
+            Rename("loner",     "neutral");
+        }
+
         // Порожні поля роздасть Validate() -- він біжить одразу після
         // міграції й робить рівно цю роботу для будь-якого запису з диска.
         Version = LatestVersion();
         OZ_Log.Dbg("factions migrated from v" + from.ToString());
         return true;
+    }
+
+    private void Rename(string oldId, string newId)
+    {
+        bool touched = false;
+
+        for (int i = 0; i < Factions.Count(); i++)
+        {
+            if (Factions[i].Id == oldId)
+            {
+                Factions[i].Id = newId;
+                touched = true;
+            }
+
+            if (!Factions[i].Relations)
+                continue;
+
+            for (int j = 0; j < Factions[i].Relations.Count(); j++)
+            {
+                if (Factions[i].Relations[j].With != oldId)
+                    continue;
+                Factions[i].Relations[j].With = newId;
+                touched = true;
+            }
+        }
+
+        if (touched)
+            OZ_Log.Info("factions: renamed \"" + oldId + "\" to \"" + newId + "\"");
     }
 
     override void Validate(out int warnings)
@@ -436,11 +492,20 @@ class OZ_Factions
         if (s_ByRole)
         {
             string byRole;
+
+            // НАЯВНІСТЬ запису -- це вже відповідь, і порожній рядок теж.
+            //
+            // Тут стояла перевірка `if (byRole != "")`, і вона тихо ламала
+            // весь сенс розрізнення, яке боронить ForgetRole. Гравця вигнали
+            // з Боргу в Discord, бот чесно сказав «ролі фракції не має», а гра
+            // читала "duty" з його файла далі -- НАЗАВЖДИ. І це значення
+            // годує AreHostile(), тобто рішення стріляти чи ні.
+            //
+            // Правило одне: запис Є -- Discord авторитетний, включно з
+            // порожнім рядком. Запису НЕМАЄ -- ми не знаємо, і лише тоді
+            // працює файл акаунта. Прибрати запис може тільки ForgetRole.
             if (s_ByRole.Find(uid, byRole))
-            {
-                if (byRole != "")
-                    return byRole;
-            }
+                return byRole;
         }
 
         OZ_PlayerData d = OZ_PlayerStore.Load(uid);
