@@ -15,6 +15,16 @@ class OZ_Rpc
     static const string RPC_REQ   = "OZ_Req";
     static const string RPC_RES   = "OZ_Res";
 
+    // Прив'язка має ВЛАСНУ пару, а не сторінку в реєстрі.
+    //
+    // Сторінки проходять крізь OZ_PageAccess, і КПК підміняє його перевіркою
+    // «чи є ця сторінка на цьому пристрої». Прив'язка через сторінку означала
+    // б, що прив'язатись може лише власник КПК із потрібною сторінкою в
+    // профілі -- а прив'язка потрібна рації, квестам і ІІ так само, і екран
+    // їм ні до чого.
+    static const string RPC_LINK_REQ = "OZ_LinkReq";
+    static const string RPC_LINK_RES = "OZ_LinkRes";
+
     // Зареєстрована функція МУСИТЬ мати рівно цю форму -- її задає диспетчер
     // CF (Param4 + CallFunctionParams), ніде не оголошуючи явно:
     //
@@ -26,6 +36,7 @@ class OZ_Rpc
     {
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_HELLO, inst, SingleplayerExecutionType.Server);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_REQ,   inst, SingleplayerExecutionType.Server);
+        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_REQ, inst, SingleplayerExecutionType.Server);
     }
 
     // Клієнт ТЯГНЕ синхронізацію сам, коли вже готовий її прийняти.
@@ -43,6 +54,7 @@ class OZ_Rpc
     {
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_SYNC, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_RES,  inst, SingleplayerExecutionType.Client);
+        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_RES, inst, SingleplayerExecutionType.Client);
     }
 
     // guaranteed за замовчуванням FALSE. Усе, що тут надсилається, має
@@ -64,5 +76,19 @@ class OZ_Rpc
         Param5<string, string, bool, string, string> p =
             new Param5<string, string, bool, string, string>(pageId, op, ok, json, error);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_RES, p, true, to);
+    }
+
+    // ------------------------------------------------------------ прив'язка
+
+    static void LinkRequest(string op)
+    {
+        GetRPCManager().SendRPC(OZ_Const.MOD, RPC_LINK_REQ, new Param1<string>(op), true);
+    }
+
+    static void LinkRespond(PlayerIdentity to, string op, bool ok, string json, string error)
+    {
+        Param4<string, bool, string, string> p =
+            new Param4<string, bool, string, string>(op, ok, json, error);
+        GetRPCManager().SendRPC(OZ_Const.MOD, RPC_LINK_RES, p, true, to);
     }
 }

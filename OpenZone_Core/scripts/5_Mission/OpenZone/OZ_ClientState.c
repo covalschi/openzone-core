@@ -77,10 +77,34 @@ class OZ_ClientState
         s_Payload = p;
         OZ_Log.SetDebug(p.DebugMode);
 
+        // Єдине місце, де вмикаються ворота прив'язки. Рішення серверне,
+        // клієнт лише виконує.
+        OZ_LinkGate.FromSync(p.Linked, p.LinkRequired);
+
         string line = "sync received: pages=" + p.Pages.Count().ToString();
         line += " admin=" + p.IsAdmin;
         line += " debug=" + p.DebugMode;
+        line += " linked=" + p.Linked;
+        line += " gate=" + p.LinkRequired;
         OZ_Log.Info(line);
+    }
+
+    // Відповідь на запит прив'язки. Веде її ВІКНО, а не цей клас: тут лише
+    // розбір конверта й передача тому, хто малює.
+    void OZ_LinkRes(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Client)
+            return;
+
+        Param4<string, bool, string, string> data;
+        if (!ctx.Read(data))
+            return;
+
+        OZ_LinkMenu m = OZ_LinkGate.Menu();
+        if (!m)
+            return;
+
+        m.OnLinkResponse(data.param1, data.param2, data.param3, data.param4);
     }
 
     void OZ_Res(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)

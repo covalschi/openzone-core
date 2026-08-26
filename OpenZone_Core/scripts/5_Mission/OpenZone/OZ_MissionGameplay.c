@@ -18,9 +18,31 @@ modded class MissionGameplay
         OZ_Rpc.RegisterClient(OZ_ClientState.Instance());
     }
 
+    override UIScriptedMenu CreateScriptedMenu(int id)
+    {
+        // super ПЕРШИЙ і вихід одразу, якщо він щось віддав: саме це тримає
+        // сумісність з іншими модами, що чіпали той самий клас.
+        UIScriptedMenu menu = super.CreateScriptedMenu(id);
+        if (menu)
+            return menu;
+
+#ifndef NO_GUI
+        if (id == OZ_LinkConst.MENU_LINK)
+        {
+            menu = new OZ_LinkMenu();
+            menu.SetID(id);
+        }
+#endif
+
+        return menu;
+    }
+
     override void OnUpdate(float timeslice)
     {
         super.OnUpdate(timeslice);
+
+        // Ворота прив'язки. Два порівняння, поки вони не потрібні.
+        OZ_LinkGate.Tick();
 
         // Вітаємось РІВНО ОДИН раз і лише коли гравець уже існує: поява
         // гравця означає, що ми у світі й канал працює. OnInit для цього

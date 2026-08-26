@@ -1,0 +1,136 @@
+// Ворота прив'язки. Просте вікно по центру: заголовок, пояснення, код,
+// одна кнопка.
+//
+// Навмисно БЕЗ кнопки закриття. Поки прив'язки немає, виходу з нього теж
+// немає -- рішення власника, і воно ж причина, з якої вікно мусить чесно
+// пояснювати, що робити, а не просто загороджувати екран.
+OZ_LinkRoot {
+ type PanelWidgetClass
+ visible 1
+ position 0 0
+ size 1 1
+ color 0 0 0 0.85
+ {
+  PanelWidgetClass Card {
+   visible 1
+   position 0.5 0.5
+   size 620 300
+   hexactsize 1
+   vexactsize 1
+   halign center
+   valign center
+   color 0.078 0.078 0.086 1
+   {
+    TextWidgetClass Title {
+     visible 1
+     ignorepointer 1
+     position 24 24
+     size 572 30
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     color 1 0.478 0.102 1
+     text ""
+     "exact text" 1
+     "exact text size" 22
+     "text halign" left
+     "text valign" center
+    }
+    TextWidgetClass Why {
+     visible 1
+     ignorepointer 1
+     position 24 64
+     size 572 46
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     color 0.686 0.686 0.71 1
+     text ""
+     multiline 1
+     "exact text" 1
+     "exact text size" 15
+     "text halign" left
+     "text valign" top
+    }
+    // Сюди лягає або підказка «натисни кнопку», або САМ КОД разом із
+    // командою. Кегль більший за пояснення: це те, що переписують.
+    TextWidgetClass Code {
+     visible 1
+     ignorepointer 1
+     position 24 126
+     size 572 40
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     color 1 1 1 1
+     text ""
+     "exact text" 1
+     "exact text size" 24
+     "text halign" left
+     "text valign" center
+    }
+    TextWidgetClass Hint {
+     visible 1
+     ignorepointer 1
+     position 24 176
+     size 572 40
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     color 0.55 0.55 0.58 1
+     text ""
+     multiline 1
+     "exact text" 1
+     "exact text size" 14
+     "text halign" left
+     "text valign" top
+    }
+    ButtonWidgetClass BtnGet {
+     visible 1
+     position 24 240
+     size 200 34
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text ""
+     {
+      PanelWidgetClass BtnGetBg {
+       visible 1
+       ignorepointer 1
+       color 0.145 0.145 0.161 1
+       position 0 0
+       size 200 34
+       hexactpos 1
+       vexactpos 1
+       hexactsize 1
+       vexactsize 1
+       priority 1
+      }
+      TextWidgetClass BtnGetText {
+       visible 1
+       ignorepointer 1
+       position 0 0
+       size 200 34
+       hexactpos 1
+       vexactpos 1
+       hexactsize 1
+       vexactsize 1
+       color 1 0.478 0.102 1
+       text ""
+       "exact text" 1
+       "exact text size" 15
+       "text halign" center
+       "text valign" center
+       priority 2
+      }
+     }
+    }
+   }
+  }
+ }
+}

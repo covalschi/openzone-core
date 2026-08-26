@@ -69,6 +69,41 @@ class OZ_Module : CF_ModuleWorld
         OZ_Log.Info(summary);
     }
 
+    // Прив'язка -- ВЛАСНА пара RPC, а не сторінка. Причина в OZ_Rpc: сторінки
+    // проходять крізь OZ_PageAccess, який КПК підміняє перевіркою «чи є ця
+    // сторінка на цьому пристрої», і прив'язатись зміг би лише власник КПК.
+    //
+    // Особа -- ЗАВЖДИ з sender, те саме правило, що й у OZ_Req. Клієнт не
+    // називає, за кого просить, і не може: у конверті немає такого поля.
+    void OZ_LinkReq(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Server)
+            return;
+
+        Param1<string> data;
+        if (!ctx.Read(data))
+            return;
+
+        if (!sender)
+            return;
+
+        string op = data.param1;
+
+        if (op == OZ_LinkConst.OP_BEGIN)
+        {
+            OZ_Link.Begin(sender);
+            return;
+        }
+
+        if (op == OZ_LinkConst.OP_STATE)
+        {
+            OZ_Link.SendState(sender);
+            return;
+        }
+
+        OZ_Rpc.LinkRespond(sender, op, false, "", "STR_OZ_ERR_UNKNOWN_OP");
+    }
+
     // Порядок перевірок нижче -- і є межа безпеки. Міняти його не можна.
     void OZ_Req(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
@@ -193,6 +228,12 @@ class OZ_Module : CF_ModuleWorld
         p.Schema    = OZ_Const.SCHEMA_SETTINGS;
         p.IsAdmin   = admin;
         p.DebugMode = OZ_Settings.Get().DebugMode;
+
+        // Прив'язка їде тим самим конвертом. Клієнт тягне його рівно один раз,
+        // щойно з'явився у світі -- тобто це найраніша мить, коли є кому
+        // показати ворота, і вона не коштує жодного нового пакета.
+        p.Linked       = OZ_Link.IsLinked(to.GetPlainId());
+        p.LinkRequired = OZ_Link.Gated(to.GetPlainId());
         OZ_PageRegistry.FillPayload(p);
 
         string json;
