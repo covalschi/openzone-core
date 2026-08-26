@@ -151,7 +151,10 @@ class OZ_Link
         if (IsLinked(uid))
             return false;
 
-        if (!OZ_BridgeClient.IsRunning())
+        // Alive(), а не IsRunning(): друге означає «опит увімкнено», і при
+        // мертвому боті лишається true назавжди -- через що цей вихід не
+        // спрацьовував ЖОДНОГО разу саме тоді, коли був потрібен.
+        if (!OZ_BridgeClient.Alive())
         {
             if (s.AllowPlayWhenBridgeDown)
                 return false;
@@ -174,7 +177,7 @@ class OZ_Link
             return;
         }
 
-        if (!OZ_BridgeClient.IsRunning())
+        if (!OZ_BridgeClient.Alive())
         {
             OZ_Rpc.LinkRespond(who, OZ_LinkConst.OP_BEGIN, false, "", "STR_OZ_ERR_NO_BRIDGE");
             return;
@@ -287,7 +290,7 @@ class OZ_Link
             return;
         if (s_Waiting.Count() == 0)
             return;
-        if (!OZ_BridgeClient.IsRunning())
+        if (!OZ_BridgeClient.Alive())
             return;
 
         int now = GetGame().GetTime();

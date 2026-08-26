@@ -155,6 +155,14 @@ class OZ_BridgeClient
 
     // Мінімальний проміжок між опитами. Не пауза, а запобіжник: див. Again().
     static const int MIN_GAP_MS = 250;
+
+    // Коли міст востаннє ВІДПОВІВ. Не «коли ми востаннє питали».
+    private static int s_LastOkAt = 0;
+
+    // Скільки мовчання вважати смертю. Утримання -- вісім секунд, таймаут
+    // клієнта -- сорок, тож хвилина означає «не відповів жодного разу за
+    // кілька спроб поспіль», а не «затримався».
+    private static const int DEAD_MS = 60000;
     private static int  s_Cursor  = 0;
 
     private static ref array<ref OZ_BridgeXfer> s_InFlight;
@@ -235,6 +243,11 @@ class OZ_BridgeClient
         s_Running   = true;
         s_Fresh     = true;
 
+        // Вважаємо міст живим, поки не доведено протилежне. Інакше в перші
+        // секунди після старту, коли відповіді ще не було, він читався б як
+        // мертвий -- а «ще не питали» і «не відповідає» це різні речі.
+        s_LastOkAt  = GetGame().GetTime();
+
         string line = "bridge: polling " + b.Url;
         line += " as \"" + b.ServerId;
         line += "\", waiting up to " + b.PollTimeoutSec.ToString() + "s";
@@ -298,7 +311,26 @@ class OZ_BridgeClient
     // зняли.
     static void Settled()
     {
-        s_Fresh = false;
+        s_Fresh    = false;
+        s_LastOkAt = GetGame().GetTime();
+    }
+
+    // Чи міст ЖИВИЙ, а не «чи ми ввімкнули опит».
+    //
+    // IsRunning() каже лише те, що Start() відпрацював: s_Running стає true
+    // один раз і падає тільки в Stop() на кінці місії. Мертвий процес моста
+    // його не чіпає -- OnFail просто планує наступну спробу. Тобто IsRunning()
+    // був синонімом Bridge.Enabled, і кожна перевірка «а чи є міст» насправді
+    // питала «а чи ввімкнений він у налаштуваннях».
+    //
+    // Це робило AllowPlayWhenBridgeDown недосяжним рівно тоді, коли він
+    // потрібен: бот падає -- і кожен непривязаний гравець опиняється у
+    // вікні, яке не закривається, на сервері, що працює нормально.
+    static bool Alive()
+    {
+        if (!s_Running)
+            return false;
+        return (GetGame().GetTime() - s_LastOkAt) < DEAD_MS;
     }
 
     static void Poll()

@@ -191,8 +191,8 @@ class OZ_FactionsConfig : OZ_ConfigBase
         // втратити дані мовчки.
         if (from < 3)
         {
-            Rename("ecologist", "ecolog");
-            Rename("loner",     "neutral");
+            Rename("ecologist", "ecolog",  "Ecologists", "Вчені");
+            Rename("loner",     "neutral", "Loners",     "Нейтрали");
         }
 
         // Порожні поля роздасть Validate() -- він біжить одразу після
@@ -202,7 +202,18 @@ class OZ_FactionsConfig : OZ_ConfigBase
         return true;
     }
 
-    private void Rename(string oldId, string newId)
+    // Перейменування тягне за собою ПІДПИС, інакше запис виходить із
+    // міграції суперечливим сам собі.
+    //
+    // Було: Id стає "neutral", DisplayName лишається "Loners" -- тобто фракція
+    // з новим іменем і старим поняттям на екрані. Це видно й зараз у файлі
+    // стенду. Реєстр із бота перекриває підпис на льоту, тож помітно стає саме
+    // тоді, коли моста немає, -- у найгіршу мить.
+    //
+    // Міняємо ЛИШЕ якщо адмін підпису не чіпав, тобто там досі стоїть старе
+    // умовчання. Свій підпис -- його справа, і затирати його міграцією
+    // означало б красти роботу.
+    private void Rename(string oldId, string newId, string wasLabel, string nowLabel)
     {
         bool touched = false;
 
@@ -211,6 +222,10 @@ class OZ_FactionsConfig : OZ_ConfigBase
             if (Factions[i].Id == oldId)
             {
                 Factions[i].Id = newId;
+
+                if (Factions[i].DisplayName == wasLabel)
+                    Factions[i].DisplayName = nowLabel;
+
                 touched = true;
             }
 

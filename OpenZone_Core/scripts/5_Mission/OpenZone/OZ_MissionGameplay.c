@@ -18,6 +18,14 @@ modded class MissionGameplay
         OZ_Rpc.RegisterClient(OZ_ClientState.Instance());
     }
 
+    // Знімаємо за собою те, що інакше переживе місію: стан воріт -- статики,
+    // і без цього вони їдуть за гравцем на наступний сервер.
+    override void OnMissionFinish()
+    {
+        OZ_LinkGate.Forget();
+        super.OnMissionFinish();
+    }
+
     override UIScriptedMenu CreateScriptedMenu(int id)
     {
         // super ПЕРШИЙ і вихід одразу, якщо він щось віддав: саме це тримає

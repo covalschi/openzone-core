@@ -94,7 +94,31 @@ class OZ_PlayerData : OZ_ConfigBase
 
     override int LatestVersion()
     {
-        return 1;
+        return 2;
+    }
+
+    override bool Migrate(int from)
+    {
+        // 1 -> 2: слаги фракцій перейменовано (v2 -> v3 таблиці фракцій).
+        //
+        // Коментар тієї міграції обіцяв, що перейменування тягне за собою
+        // «поле Faction у файлах гравців», і не робив цього: таблиця
+        // переїжджала, а файли лишались із мертвим id. Гравець із
+        // Faction: "loner" ставав безфракційним назавжди -- NameOf нічого не
+        // знаходив, AreHostile нічого не вирішував, і жодного рядка в лог.
+        //
+        // Тут, а не одним проходом по всій теці: файли вантажаться ліниво, і
+        // проходити по тих, хто не заходив рік, немає навіщо.
+        if (from < 2)
+        {
+            if (Faction == "loner")
+                Faction = "neutral";
+            else if (Faction == "ecologist")
+                Faction = "ecolog";
+        }
+
+        Version = LatestVersion();
+        return true;
     }
 
     override void LoadDefaults()
