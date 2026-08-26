@@ -60,6 +60,11 @@ class OZ_Module : CF_ModuleWorld
         m_FlushTimer = new Timer(CALL_CATEGORY_SYSTEM);
         m_FlushTimer.Run(FLUSH_INTERVAL, this, "FlushTick", NULL, true);
 
+        // Рід "roles" -- другий у проєкті після "chat", і механізм родів
+        // нарешті везе більше за один. Підписка ДО Start(): перша ж пачка
+        // може приїхати раніше, ніж наступний рядок виконається.
+        OZ_BridgeClient.Subscribe("roles", new OZ_RolesSink());
+
         OZ_BridgeClient.Start();
 
         string summary = "core loaded: admins=" + s.AdminIds.Count();
