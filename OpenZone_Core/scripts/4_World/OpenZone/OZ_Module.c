@@ -53,6 +53,7 @@ class OZ_Module : CF_ModuleWorld
         // -- порядок CF-модулів не гарантований, і на цьому стенді він уже
         // підводив.
         OZ_Factions.ServerLoad();
+        OZ_Spawns.ServerLoad();
 
         OZ_Rpc.RegisterServer(this);
 
@@ -65,6 +66,7 @@ class OZ_Module : CF_ModuleWorld
         summary += " perms=" + OZ_Perm.Describe();
         summary += " pages=" + OZ_PageRegistry.Count().ToString();
         summary += " factions=" + OZ_Factions.Count().ToString();
+        summary += " spawnzones=" + OZ_Spawns.Count().ToString();
         summary += " debug=" + dbg;
         OZ_Log.Info(summary);
     }

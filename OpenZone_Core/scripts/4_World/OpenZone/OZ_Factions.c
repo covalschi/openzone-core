@@ -121,6 +121,7 @@ class OZ_FactionsConfig : OZ_ConfigBase
         Add("bandit",    "Бандити",    "БАН", "150 120  70");
         Add("clearsky",  "Чисте небо", "ЧН",  "120 190 200");
         Add("monolith",  "Моноліт",    "МНЛ", "170 150 220");
+        Add("military",  "Військові",  "ВІЙ", "110 130  90");
 
         // Роздано НЕ повністю: тільки те, що в першоджерелі не обговорюється.
         // Решту хай ставить сервер -- його сюжету ми не знаємо.
@@ -130,6 +131,8 @@ class OZ_FactionsConfig : OZ_ConfigBase
         Relate("monolith", "duty",     "hostile");
         Relate("monolith", "freedom",  "hostile");
         Relate("monolith", "clearsky", "hostile");
+        Relate("military", "bandit",   "hostile");
+        Relate("military", "monolith", "hostile");
         Relate("ecolog",   "neutral",  "friendly");
         Relate("ecolog",   "clearsky", "friendly");
     }
