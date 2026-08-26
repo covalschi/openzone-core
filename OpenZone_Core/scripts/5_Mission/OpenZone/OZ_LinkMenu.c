@@ -41,10 +41,24 @@ class OZ_LinkMenu : UIScriptedMenu
 
         SetFocus(layoutRoot);
 
-        array<string> excludes = new array<string>();
-        excludes.Insert("menu");
-        GetGame().GetMission().AddActiveInputExcludes(excludes);
-        GetGame().GetMission().GetHud().Show(false);
+        // Місію й HUD БЕРЕМО ЧЕРЕЗ ЗМІННУ й перевіряємо обидва.
+        //
+        // Ланцюжок GetMission().GetHud().Show() без перевірок падає з
+        // ACCESS_VIOLATION, і падає не тут, а на смерті: рушій розбирає HUD
+        // раніше, ніж закриває наші меню. Один прогін стенду пішов на те, щоб
+        // це побачити, і другий -- щоб довести, що з вимкненими воротами та
+        // сама смерть проходить чисто.
+        Mission m = GetGame().GetMission();
+        if (m)
+        {
+            array<string> excludes = new array<string>();
+            excludes.Insert("menu");
+            m.AddActiveInputExcludes(excludes);
+
+            Hud hud = m.GetHud();
+            if (hud)
+                hud.Show(false);
+        }
 
         OZ_LinkGate.BindMenu(this);
 
@@ -63,8 +77,23 @@ class OZ_LinkMenu : UIScriptedMenu
 
         OZ_LinkGate.BindMenu(null);
 
-        GetGame().GetMission().GetHud().Show(true);
-        GetGame().GetMission().ResetGUI();
+        Mission m = GetGame().GetMission();
+        if (!m)
+            return;
+
+        // Знімаємо блокування ввода ТИМ САМИМ викликом, яким його знімає сам
+        // рушій у Continue() (missiongameplay.c:1307). ResetGUI цього не
+        // робить, тож без цього рядка гравець після воріт лишався б без
+        // керування -- вікна вже немає, а рухатись не можна.
+        array<string> excludes = new array<string>();
+        excludes.Insert("menu");
+        m.RemoveActiveInputExcludes(excludes, true);
+
+        Hud hud = m.GetHud();
+        if (hud)
+            hud.Show(true);
+
+        m.ResetGUI();
     }
 
     override bool OnClick(Widget w, int x, int y, int button)

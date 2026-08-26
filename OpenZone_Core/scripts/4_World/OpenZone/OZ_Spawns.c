@@ -1,6 +1,6 @@
 // Куди з'являється гравець.
 //
-// Дві незалежні речі під одним дахом, і плутати їх не можна:
+// Три незалежні речі під одним дахом, і плутати їх не можна:
 //
 //   1. ЗОНА РОЛІ -- постійна. «Борг з'являється біля Ростока». Живе в
 //      Spawns.json, ключ -- той самий слаг, що й у фракції.
@@ -8,10 +8,16 @@
 //      де він упав». Ставиться викликом, з'їдається НА НАЙБЛИЖЧОМУ спавні й
 //      зникає. Саме одноразовість робить її придатною: мод, який лікує, не
 //      мусить пам'ятати, коли прибрати за собою.
+//   3. СТЕЙДЖИНҐ -- куди тих, у кого ролі немає ЗОВСІМ. Це не «запасна зона»:
+//      запасна ловить того, чия фракція є, але зони їй не завели. Стейджинґ
+//      ловить того, кого нікуди не взяли, і головне -- новачка, який ще не
+//      прив'язався. Ворота прив'язки тримають його на місці, тож місце має
+//      бути таким, де стояти не соромно.
 //
-// Порядок: одноразова -> зона ролі -> те, що дав рушій. Нічого не налаштовано
-// -- нічого й не змінюється: ванільна поведінка лишається недоторканою, і це
-// умова того, щоб мод можна було просто поставити.
+// Порядок: одноразова -> зона ролі -> стейджинґ -> запасна -> те, що дав
+// рушій. Нічого не налаштовано -- нічого й не змінюється: ванільна поведінка
+// лишається недоторканою, і це умова того, щоб мод можна було просто
+// поставити.
 //
 // ДЕ ЦЕ ЧІПЛЯЄТЬСЯ, і чому саме там. MissionServer.CreateCharacter -- єдиний
 // шов, крізь який проходить створення НОВОГО персонажа: два виклики в усьому
@@ -20,6 +26,16 @@
 // готового PlayerBase і CreateCharacter не кличе. Тому гравець, який просто
 // повернувся, лишається там, де вийшов, і телепортувати його ми не можемо
 // навіть помилково.
+
+// Місце на карті: центр і розкид. Окремий тип, бо стейджинґ -- це МІСЦЕ, а
+// не зона ролі, і поле Role у ньому не мало б жодного значення. Успадкування
+// свідомо не беремо: два поля дешевше продублювати, ніж покладатись на те, як
+// серіалізатор Enforce поводиться з базовим класом.
+class OZ_SpawnPlace
+{
+    string Center;
+    float  Radius;
+}
 
 class OZ_SpawnZone
 {
@@ -37,9 +53,13 @@ class OZ_SpawnsConfig : OZ_ConfigBase
 {
     ref array<ref OZ_SpawnZone> Zones;
 
+    // Куди тих, у кого ролі немає. Порожній Center -- вимкнено, і тоді вони
+    // йдуть тим самим шляхом, що й раніше.
+    ref OZ_SpawnPlace Staging;
+
     override int LatestVersion()
     {
-        return 1;
+        return 2;
     }
 
     override void LoadDefaults()
@@ -49,11 +69,17 @@ class OZ_SpawnsConfig : OZ_ConfigBase
         // ПОРОЖНЬО навмисно. Координати належать карті, а карт багато, і
         // вигадана точка на Чернарусі означала б, що на Сахаліні всі
         // з'являються в морі. Порожній список -- це «нічого не чіпаємо».
-        Zones = new array<ref OZ_SpawnZone>();
+        Zones   = new array<ref OZ_SpawnZone>();
+        Staging = new OZ_SpawnPlace();
     }
 
     override bool Migrate(int from)
     {
+        // 1 -> 2: з'явився стейджинґ. Порожнім, тобто вимкненим: файл, який
+        // працював учора, мусить поводитись сьогодні так само.
+        if (!Staging)
+            Staging = new OZ_SpawnPlace();
+
         Version = LatestVersion();
         return true;
     }
@@ -64,6 +90,27 @@ class OZ_SpawnsConfig : OZ_ConfigBase
 
         if (!Zones)
             Zones = new array<ref OZ_SpawnZone>();
+
+        // Може не бути в файлі зовсім -- тоді серіалізатор лишає null, а не
+        // порожній об'єкт.
+        if (!Staging)
+            Staging = new OZ_SpawnPlace();
+
+        if (Staging.Radius < 0)
+            Staging.Radius = 0;
+
+        // Координату, яку рушій не розбере, ловимо ТУТ, а не на спавні:
+        // помилку в файлі адмін мусить побачити при завантаженні, а не
+        // дізнатись про неї з того, що новачки з'являються не там.
+        if (Staging.Center != "")
+        {
+            if (Staging.Center.ToVector() == vector.Zero)
+            {
+                OZ_Log.Warn("staging spawn: Center is not a readable position - staging is off");
+                Staging.Center = "";
+                warnings++;
+            }
+        }
 
         for (int i = 0; i < Zones.Count(); i++)
         {
@@ -184,29 +231,48 @@ class OZ_Spawns
                 vector p = once.ToVector();
                 if (p != vector.Zero)
                 {
-                    OZ_Log.Dbg("spawn: used the one-shot point for " + uid);
+                    Told(uid, p, "one-shot");
                     return p;
                 }
             }
         }
 
-        // 2. Зона ролі.
-        vector zoned = ZoneFor(uid);
+        // 2. Зона ролі або стейджинґ.
+        string why;
+        vector zoned = ZoneFor(uid, why);
         if (zoned != vector.Zero)
+        {
+            Told(uid, zoned, why);
             return zoned;
+        }
 
         // 3. Рушій.
+        Told(uid, fallback, "engine");
         return fallback;
+    }
+
+    // Один рядок на спавн, ЗАВЖДИ, і в ньому названа гілка.
+    //
+    // Без нього «гравець з'явився не там» -- це здогад: зона не збіглась,
+    // фракція виявилась не тою, координата не розібралась, чи наш шов узагалі
+    // не покликали. Чотири різні причини з однаковим виглядом, і рівно на
+    // цьому згаяно один прогін стенду.
+    private static void Told(string uid, vector where, string why)
+    {
+        string m = "spawn: " + uid;
+        m += " -> " + where.ToString(false);
+        m += " (" + why + ")";
+        OZ_Log.Dbg(m);
     }
 
     // Ролі за старшинством: фракція, потім стаж, потім мітки, потім зона «для
     // всіх». Фракція перша тому, що вона -- єдина вісь, яка щось означає на
     // карті: стаж і мітки кажуть, ХТО ти, а не де твої.
-    private static vector ZoneFor(string uid)
+    private static vector ZoneFor(string uid, out string why)
     {
+        why = "";
+
         if (!s_Cfg)
-            return vector.Zero;
-        if (!s_Cfg.Zones)
             return vector.Zero;
 
         string faction = OZ_Factions.OfUid(uid);
@@ -214,16 +280,67 @@ class OZ_Spawns
         {
             vector byFaction = PickIn(faction);
             if (byFaction != vector.Zero)
+            {
+                why = "zone " + faction;
                 return byFaction;
+            }
+        }
+        else
+        {
+            // Фракції немає -- ні з Discord, ні з файла акаунта. Це або
+            // новачок, який ще не прив'язався, або той, кого нікуди не взяли.
+            // Обом місце одне.
+            //
+            // Саме `else`, а не окремий крок: той, чия фракція Є, але зони їй
+            // не завели, у стейджинґ потрапити не повинен. Його ловить
+            // запасна зона нижче -- інакше повноправного борговця відносило б
+            // до новачків через недогляд адміна в іншому рядку файла.
+            vector staged = Staging();
+            if (staged != vector.Zero)
+            {
+                why = "staging";
+                return staged;
+            }
         }
 
         // Зона без ролі -- спільна. Стоїть останньою, щоб не перебивати
         // жодну іменовану.
-        return PickIn("");
+        vector common = PickIn("");
+        if (common != vector.Zero)
+            why = "fallback zone";
+        return common;
+    }
+
+    private static vector Staging()
+    {
+        if (!s_Cfg.Staging)
+            return vector.Zero;
+        if (s_Cfg.Staging.Center == "")
+            return vector.Zero;
+
+        vector c = s_Cfg.Staging.Center.ToVector();
+        if (c == vector.Zero)
+            return vector.Zero;
+
+        return Scatter(c, s_Cfg.Staging.Radius);
+    }
+
+    // Чи налаштований стейджинґ. Для звіту на буті: адмін мусить бачити з
+    // лога, що його координата доїхала, а не з'ясовувати це вбивством себе.
+    static bool HasStaging()
+    {
+        if (!s_Cfg)
+            return false;
+        if (!s_Cfg.Staging)
+            return false;
+        return s_Cfg.Staging.Center != "";
     }
 
     private static vector PickIn(string role)
     {
+        if (!s_Cfg.Zones)
+            return vector.Zero;
+
         for (int i = 0; i < s_Cfg.Zones.Count(); i++)
         {
             if (s_Cfg.Zones[i].Role != role)

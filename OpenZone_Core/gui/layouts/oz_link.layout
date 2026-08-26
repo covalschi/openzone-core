@@ -4,14 +4,15 @@
 // Навмисно БЕЗ кнопки закриття. Поки прив'язки немає, виходу з нього теж
 // немає -- рішення власника, і воно ж причина, з якої вікно мусить чесно
 // пояснювати, що робити, а не просто загороджувати екран.
-OZ_LinkRoot {
- type PanelWidgetClass
+PanelWidgetClass OZ_LinkRoot {
+ style rover_sim_colorable
  visible 1
  position 0 0
  size 1 1
  color 0 0 0 0.85
  {
   PanelWidgetClass Card {
+   style rover_sim_colorable
    visible 1
    position 0.5 0.5
    size 620 300
@@ -37,7 +38,7 @@ OZ_LinkRoot {
      "text halign" left
      "text valign" center
     }
-    TextWidgetClass Why {
+    MultilineTextWidgetClass Why {
      visible 1
      ignorepointer 1
      position 24 64
@@ -48,7 +49,7 @@ OZ_LinkRoot {
      vexactsize 1
      color 0.686 0.686 0.71 1
      text ""
-     multiline 1
+     wrap 1
      "exact text" 1
      "exact text size" 15
      "text halign" left
@@ -72,7 +73,7 @@ OZ_LinkRoot {
      "text halign" left
      "text valign" center
     }
-    TextWidgetClass Hint {
+    MultilineTextWidgetClass Hint {
      visible 1
      ignorepointer 1
      position 24 176
@@ -83,7 +84,7 @@ OZ_LinkRoot {
      vexactsize 1
      color 0.55 0.55 0.58 1
      text ""
-     multiline 1
+     wrap 1
      "exact text" 1
      "exact text size" 14
      "text halign" left
@@ -100,6 +101,7 @@ OZ_LinkRoot {
      text ""
      {
       PanelWidgetClass BtnGetBg {
+       style rover_sim_colorable
        visible 1
        ignorepointer 1
        color 0.145 0.145 0.161 1

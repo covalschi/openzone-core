@@ -46,14 +46,27 @@ class OZ_LinkGate
         if (s_Done)
             return;
 
-        // Поки гравця немає, показувати нема кому: вікно поверх екрана
-        // завантаження рушій однаково зніме.
-        if (!GetGame().GetPlayer())
-            return;
-
         UIManager ui = GetGame().GetUIManager();
         if (!ui)
             return;
+
+        // МЕРТВОГО ворота відпускають, і вже відкрите вікно знімають самі.
+        //
+        // Це не ввічливість, це вихід з падіння: клієнт помирав з
+        // ACCESS_VIOLATION рівно тоді, коли смерть заставала це вікно
+        // відкритим. Рушій на смерті розбирає місію разом з HUD, а меню в
+        // OnHide тягнеться до GetHud() -- і тягнеться вже в порожнечу.
+        // Перевірено на стенді: та сама смерть при вимкнених воротах клієнт
+        // переживає без жодного рядка в логу.
+        //
+        // Прив'язку це не послаблює: гравець мертвий, грати йому нічим, а
+        // щойно він відродиться -- вікно повернеться наступним же тіком.
+        if (!Playing())
+        {
+            if (ui.FindMenu(OZ_LinkConst.MENU_LINK))
+                ui.CloseMenu(OZ_LinkConst.MENU_LINK);
+            return;
+        }
 
         if (ui.FindMenu(OZ_LinkConst.MENU_LINK))
             return;
@@ -64,5 +77,30 @@ class OZ_LinkGate
             return;
 
         ui.EnterScriptedMenu(OZ_LinkConst.MENU_LINK, null);
+    }
+
+    // Чи є зараз кому й коли показувати вікно. Три різні «ні», і жодне з них
+    // не зводиться до інших: гравця ще немає, гравець є але мертвий, гравець
+    // живий але рушій саме його перестворює.
+    private static bool Playing()
+    {
+        PlayerBase p = PlayerBase.Cast(GetGame().GetPlayer());
+        if (!p)
+            return false;
+        if (!p.IsAlive())
+            return false;
+
+        // Той самий вартовий, яким рушій боронить власне меню паузи
+        // (missiongameplay.c:1276): персонаж уже існує, але ще не готовий.
+        if (!p.IsPlayerLoaded())
+            return false;
+
+        Mission m = GetGame().GetMission();
+        if (!m)
+            return false;
+        if (m.IsPlayerRespawning())
+            return false;
+
+        return true;
     }
 }

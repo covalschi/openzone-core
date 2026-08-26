@@ -73,6 +73,14 @@ class OZ_Module : CF_ModuleWorld
         summary += " pages=" + OZ_PageRegistry.Count().ToString();
         summary += " factions=" + OZ_Factions.Count().ToString();
         summary += " spawnzones=" + OZ_Spawns.Count().ToString();
+
+        // Стейджинґ окремим словом, а не в лічильнику зон: він або є, або
+        // його немає, і адмін мусить бачити відповідь, не рахуючи рядки.
+        if (OZ_Spawns.HasStaging())
+            summary += " staging=on";
+        else
+            summary += " staging=off";
+
         summary += " debug=" + dbg;
         OZ_Log.Info(summary);
     }

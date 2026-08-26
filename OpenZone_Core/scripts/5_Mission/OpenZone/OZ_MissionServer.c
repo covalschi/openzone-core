@@ -1,20 +1,36 @@
 // Серверна половина місії: єдине місце, де ядро втручається в появу гравця.
 //
-// CreateCharacter -- той самий шов, і тільки він. У всьому корпусі рушія його
-// кличуть двічі (missionserver.c:560 і :576), обидва рази з OnClientNewEvent,
-// тобто на створенні НОВОГО персонажа. Переприєднання сюди не заходить:
-// OnClientReconnectEvent отримує вже готового PlayerBase. Тому гравець, який
-// просто повернувся, лишається там, де вийшов -- і ми не можемо телепортувати
-// його навіть помилково.
+// ЧОМУ НЕ CreateCharacter, хоча саме він і створює персонажа.
+//
+// Файл місії -- mpmissions/<місія>/init.c -- оголошує `class CustomMission:
+// MissionServer` і перекриває CreateCharacter БЕЗ виклику super. Так робить
+// ванільна dayzOffline.chernarusplus (init.c:218), тобто майже кожен стенд і
+// значна частина живих серверів. Місія компілюється ОСТАННЬОЮ, після всіх
+// модів, тому `modded class MissionServer` з перекритим CreateCharacter не
+// доходить туди ніколи: не «іноді», не «залежить від порядку модів» -- ніколи.
+// Виміряно на цьому стенді: жодного рядка від нашого шва за три смерті.
+//
+// OnClientNewEvent -- на крок вище за течією, і саме він передає позицію далі
+// (missionserver.c:560 і :576, обидва рази `pos` без змін). Підмінивши її тут,
+// ми віддаємо місії ВЖЕ ПОТРІБНУ координату, і їй байдуже, кличе вона super чи
+// ні: вона однаково будує персонажа з того, що їй дали.
+//
+// Кличеться ЛИШЕ на створенні нового персонажа (missionserver.c:319).
+// Переприєднання йде через OnClientReconnectEvent з уже готовим PlayerBase і
+// сюди не заходить -- тому гравець, який просто повернувся, лишається там, де
+// вийшов, і телепортувати його ми не можемо навіть помилково.
+//
+// РІВНО ОДИН Resolve на появу. Двічі не можна: одноразова точка з'їдається
+// першим викликом, і другий поклав би гравця в зону ролі замість неї.
 //
 // Нічого не налаштовано -- нічого й не змінюється: Resolve повертає ту саму
 // позицію, яку дав рушій.
 
 modded class MissionServer
 {
-    override PlayerBase CreateCharacter(PlayerIdentity identity, vector pos, ParamsReadContext ctx, string characterName)
+    override PlayerBase OnClientNewEvent(PlayerIdentity identity, vector pos, ParamsReadContext ctx)
     {
         vector where = OZ_Spawns.Resolve(identity, pos);
-        return super.CreateCharacter(identity, where, ctx, characterName);
+        return super.OnClientNewEvent(identity, where, ctx);
     }
 }
