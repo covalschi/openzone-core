@@ -1,0 +1,587 @@
+// Фракції -- служба ЯДРА, а не КПК.
+//
+// Живуть тут, бо фракціями користується не лише екран. Квестовий мод питає,
+// чи свій перед ним; торговець -- чи продавати; ІІ -- чи стріляти; рація --
+// кого пускати в канал. Якби таблиця лишалась у КПК, кожен із них тягнув би
+// за собою мод ІНТЕРФЕЙСУ заради питання «хто в якій фракції». Тут її може
+// спитати будь-хто, хто вже залежить від ядра.
+//
+// Ядро фракції НЕ ПРИДУМУЄ і нікого до них не приписує. Воно тримає таблицю
+// (як звати, яким кольором малювати, хто кому ворог) і відповідає на питання
+// «чия фракція». Хто до кого належить -- вирішує або чужий мод через
+// постачальника, або ролі Discord, або адмін у файлі гравця.
+//
+// ПОРЯДОК СТАРШИНСТВА, і його треба знати, бо він визначає, хто кого
+// перебиває:
+//
+//     1. постачальник (чужий мод)   -- знає найкраще, сказав слово -- воно й
+//                                      буде
+//     2. роль Discord               -- якщо акаунт прив'язаний і роль
+//                                      відповідає фракції з таблиці
+//     3. файл акаунта               -- те, що поставив адмін або квест
+//
+// Порожня фракція означає «одинак». Це не помилка й не збій -- це найчастіший
+// стан у Зоні.
+
+// Ставлення однієї фракції до іншої.
+//
+// Односторонньо в JSON, СИМЕТРИЧНО за замовчуванням у відповіді: якщо «Борг»
+// оголосив ворожість «Волі», а «Воля» промовчала, вони все одно вороги.
+// Односторонню ворожість можна задати явно -- просто напиши обидва рядки.
+class OZ_FactionRelation
+{
+    string With;
+    string Stand;
+}
+
+// Один запис таблиці.
+//
+// БЕЗ ІНІЦІАЛІЗАТОРІВ ПОЛІВ, навмисно: чужий мод має право успадкуватись від
+// цього класу, а ініціалізатор поля в класі, від якого успадковуються, ламає
+// нащадкам доступ до їхніх власних private-методів (виміряно 2026-08-26, див.
+// скіл dayz-modding). Умовчання роздає Validate() -- він однаково мусить
+// пройтись по записах, прочитаних із диска, де половини полів може не бути.
+class OZ_Faction
+{
+    string Id;
+    string DisplayName;
+
+    // Коротка позначка для тісних місць: рядок контакту, підпис маячка.
+    // Порожня -- малюй повну назву.
+    string Short;
+
+    // Колір рядком "R G B", 0..255. Не число ARGB: у JSON його читає ЛЮДИНА,
+    // а 4278219546 не каже нікому нічого. ColorARGB() перетворює на те, що
+    // розуміє віджет.
+    string Color;
+
+    // Id ролі Discord, з якою синхронізується членство. Порожній -- фракція
+    // з Discord не пов'язана й живе лише в грі.
+    //
+    // Рядком, а не числом: id Discord -- це 64-бітний snowflake, і в int він
+    // не влазить. Той самий привід, з якого Steam64 всюди в цьому проєкті
+    // рядок.
+    string DiscordRoleId;
+
+    // Чи можна вступити внутрішньоігровою дією. Ядро цього не enforce'ить --
+    // воно лише возить прапорець для того, хто вступ і реалізує.
+    bool Joinable;
+
+    // Не показувати в переліках. Для службових фракцій: адміністрація,
+    // сюжетні угруповання, які ще не мали з'явитись.
+    bool Hidden;
+
+    // Довільні мітки для групування: "military", "hostile-to-all", що
+    // завгодно. Ядро в них не заглядає.
+    ref array<string> Tags;
+
+    ref array<ref OZ_FactionRelation> Relations;
+
+    // Чуже добро. Рядок JSON, який ядро ВОЗИТЬ І НЕ ЧИТАЄ -- той самий
+    // принцип, що з носіями даних і з конвертами моста. Чужий мод кладе сюди
+    // свої поля й не мусить чекати, поки ми розширимо схему.
+    string Extra;
+}
+
+class OZ_FactionsConfig : OZ_ConfigBase
+{
+    ref array<ref OZ_Faction> Factions;
+
+    override int LatestVersion()
+    {
+        return 2;
+    }
+
+    override void LoadDefaults()
+    {
+        Version  = LatestVersion();
+        Factions = new array<ref OZ_Faction>();
+
+        // Лор STALKER. Назви лишаються як є -- це імена з першоджерела, а не
+        // текст інтерфейсу, і перекладати їх нема потреби.
+        //
+        // Ставлення роздані НЕ повністю: тут лише те, що в першоджерелі не
+        // обговорюється. Решту хай ставить сервер -- ми не знаємо його сюжету.
+        Add("loner",     "Loners",      "LNR", "200 200 200");
+        Add("duty",      "Duty",        "DTY", "196  64  40");
+        Add("freedom",   "Freedom",     "FDM", " 96 176  72");
+        Add("bandit",    "Bandits",     "BND", "150 120  70");
+        Add("mercenary", "Mercenaries", "MRC", " 80 130 190");
+        Add("military",  "Military",    "MIL", "110 130  90");
+        Add("monolith",  "Monolith",    "MNL", "170 150 220");
+        Add("ecologist", "Ecologists",  "ECO", "230 200  90");
+
+        Relate("duty",     "freedom",  "hostile");
+        Relate("bandit",   "loner",    "hostile");
+        Relate("monolith", "loner",    "hostile");
+        Relate("monolith", "duty",     "hostile");
+        Relate("monolith", "freedom",  "hostile");
+        Relate("military", "bandit",   "hostile");
+        Relate("ecologist", "loner",   "friendly");
+    }
+
+    private void Add(string id, string name, string tag, string colour)
+    {
+        OZ_Faction f = new OZ_Faction();
+        f.Id            = id;
+        f.DisplayName   = name;
+        f.Short         = tag;
+        f.Color         = colour;
+        f.DiscordRoleId = "";
+        f.Joinable      = false;
+        f.Hidden        = false;
+        f.Tags          = new array<string>();
+        f.Relations     = new array<ref OZ_FactionRelation>();
+        f.Extra         = "";
+        Factions.Insert(f);
+    }
+
+    private void Relate(string from, string to, string stand)
+    {
+        for (int i = 0; i < Factions.Count(); i++)
+        {
+            if (Factions[i].Id != from)
+                continue;
+
+            OZ_FactionRelation r = new OZ_FactionRelation();
+            r.With  = to;
+            r.Stand = stand;
+            Factions[i].Relations.Insert(r);
+            return;
+        }
+    }
+
+    // Справжня міграція, а не штамп версії.
+    //
+    // v1 не знав про Short, DiscordRoleId, Tags, Relations і Extra. Файл
+    // адміна з версією 1 треба ДОПОВНИТИ умовчаннями, а не перезаписати
+    // нашими фракціями: там уже може стояти його власний список.
+    override bool Migrate(int from)
+    {
+        if (from > LatestVersion())
+            return false;
+
+        if (!Factions)
+            Factions = new array<ref OZ_Faction>();
+
+        // Порожні поля роздасть Validate() -- він біжить одразу після
+        // міграції й робить рівно цю роботу для будь-якого запису з диска.
+        Version = LatestVersion();
+        OZ_Log.Dbg("factions migrated from v" + from.ToString());
+        return true;
+    }
+
+    override void Validate(out int warnings)
+    {
+        warnings = 0;
+
+        if (!Factions)
+            Factions = new array<ref OZ_Faction>();
+
+        for (int i = 0; i < Factions.Count(); i++)
+        {
+            OZ_Faction f = Factions[i];
+
+            if (f.Id == "")
+            {
+                OZ_Log.Warn("faction #" + i.ToString() + " has no Id - it will never match anybody");
+                warnings++;
+            }
+
+            if (f.DisplayName == "")
+                f.DisplayName = f.Id;
+
+            if (f.Color == "")
+                f.Color = "200 200 200";
+
+            if (!f.Tags)
+                f.Tags = new array<string>();
+
+            if (!f.Relations)
+                f.Relations = new array<ref OZ_FactionRelation>();
+
+            for (int j = 0; j < f.Relations.Count(); j++)
+            {
+                if (f.Relations[j].Stand == "")
+                    f.Relations[j].Stand = OZ_FactionStand.NEUTRAL;
+
+                if (f.Relations[j].With != "")
+                    continue;
+
+                string w = "faction \"" + f.Id;
+                w += "\" declares a relation to nobody - it will never match";
+                OZ_Log.Warn(w);
+                warnings++;
+            }
+        }
+    }
+}
+
+// Слова, якими описується ставлення. Рядками, бо їх читає адмін у JSON, і
+// enum у файлі виглядав би числом.
+class OZ_FactionStand
+{
+    static const string ALLY     = "ally";
+    static const string FRIENDLY = "friendly";
+    static const string NEUTRAL  = "neutral";
+    static const string WARY     = "wary";
+    static const string HOSTILE  = "hostile";
+}
+
+// Договір для чужого мода. Успадковуєш, перекриваєш FactionOf, прив'язуєш
+// одним рядком зі свого OnMissionStart:
+//
+//     OZ_Factions.Bind(new MyFactionProvider());
+//
+// Повертати треба id із Factions.json. Незнайоме id ми покажемо ЯК Є -- краще
+// чуже слово на екрані, ніж мовчазна підміна на «одинак».
+class OZ_FactionProvider
+{
+    string FactionOf(PlayerBase player)
+    {
+        return "";
+    }
+}
+
+class OZ_Factions
+{
+    private static ref OZ_FactionsConfig s_Cfg;
+    private static ref OZ_FactionProvider s_Provider;
+
+    // Ролі Discord: uid -> id фракції. Наповнює міст через прив'язку акаунта;
+    // порожня мапа означає «синхронізації немає», а не «усі без фракції».
+    private static ref map<string, string> s_ByRole;
+
+    // Хто хоче знати про зміни, не опитуючи. Параметр -- Steam64 гравця,
+    // чия фракція змінилась.
+    static ref ScriptInvoker OnChanged = new ScriptInvoker();
+
+    static void Bind(OZ_FactionProvider provider)
+    {
+        s_Provider = provider;
+        OZ_Log.Dbg("faction provider bound");
+    }
+
+    static bool HasProvider()
+    {
+        return s_Provider != null;
+    }
+
+    // Ідемпотентна: хто перший покликав, той і завантажив.
+    //
+    // Порядок CF-модулів не гарантований, і на цьому стенді він УЖЕ підводив
+    // -- рація відпрацювала раніше за КПК. Тому кличуть і ядро, і КПК, і будь
+    // хто ще, кому таблиця потрібна раніше за нас.
+    static void ServerLoad()
+    {
+        if (s_Cfg)
+            return;
+        Reload();
+    }
+
+    // Перечитати з диска примусово. Окремо від ServerLoad саме заради
+    // майбутньої гарячої перезагрузки: тригером буде операція, а не таймер
+    // (порівняння mtime неможливе -- рушій віддає лише FileAttr).
+    static void Reload()
+    {
+        s_Cfg = new OZ_FactionsConfig();
+        OZ_ConfigLoader<OZ_FactionsConfig>.Load(OZ_Const.PROFILE_DIR + "\\Factions.json", "factions", s_Cfg);
+    }
+
+    static int Count()
+    {
+        if (!s_Cfg)
+            return 0;
+        if (!s_Cfg.Factions)
+            return 0;
+        return s_Cfg.Factions.Count();
+    }
+
+    // ------------------------------------------------------------- таблиця
+
+    static OZ_Faction Find(string id)
+    {
+        if (id == "")
+            return null;
+        if (!s_Cfg)
+            return null;
+        if (!s_Cfg.Factions)
+            return null;
+
+        for (int i = 0; i < s_Cfg.Factions.Count(); i++)
+        {
+            if (s_Cfg.Factions[i].Id == id)
+                return s_Cfg.Factions[i];
+        }
+        return null;
+    }
+
+    // Усі id. `includeHidden` -- для того, хто справді хоче всі: адмінського
+    // інструменту чи експорту. Перелік для гравця має ходити без нього.
+    static void Ids(out array<string> outIds, bool includeHidden = false)
+    {
+        if (!outIds)
+            outIds = new array<string>();
+        outIds.Clear();
+
+        if (!s_Cfg)
+            return;
+        if (!s_Cfg.Factions)
+            return;
+
+        for (int i = 0; i < s_Cfg.Factions.Count(); i++)
+        {
+            if (s_Cfg.Factions[i].Hidden)
+            {
+                if (!includeHidden)
+                    continue;
+            }
+            outIds.Insert(s_Cfg.Factions[i].Id);
+        }
+    }
+
+    // Людська назва. Незнайоме id повертаємо ЯК Є: чуже слово на екрані
+    // чесніше за мовчазну підміну на «одинак».
+    static string NameOf(string id)
+    {
+        if (id == "")
+            return "";
+
+        OZ_Faction f = Find(id);
+        if (f)
+            return f.DisplayName;
+        return id;
+    }
+
+    static string ShortOf(string id)
+    {
+        OZ_Faction f = Find(id);
+        if (!f)
+            return id;
+        if (f.Short != "")
+            return f.Short;
+        return f.DisplayName;
+    }
+
+    static string ColorOf(string id)
+    {
+        OZ_Faction f = Find(id);
+        if (f)
+            return f.Color;
+        return "200 200 200";
+    }
+
+    // "R G B" -> ARGB для віджета. Досі колір лежав у таблиці й не читався
+    // ніким: на провід ішла тільки назва.
+    static int ColorARGB(string id, int alpha = 255)
+    {
+        string raw = ColorOf(id);
+
+        array<string> parts = new array<string>();
+        raw.Split(" ", parts);
+
+        // Три окремі змінні, а не масив сталого розміру: подвійні пробіли в
+        // "196  64  40" дають порожні токени, тож рахувати треба ЗАПОВНЕНІ, а
+        // не позиції.
+        int r = -1;
+        int g = -1;
+        int b = -1;
+
+        for (int i = 0; i < parts.Count(); i++)
+        {
+            if (parts[i] == "")
+                continue;
+
+            if (r < 0)
+            {
+                r = parts[i].ToInt();
+                continue;
+            }
+            if (g < 0)
+            {
+                g = parts[i].ToInt();
+                continue;
+            }
+            if (b < 0)
+            {
+                b = parts[i].ToInt();
+                break;
+            }
+        }
+
+        if (b < 0)
+            return ARGB(alpha, 200, 200, 200);
+
+        return ARGB(alpha, r, g, b);
+    }
+
+    // ---------------------------------------------------------- членство
+
+    // Чия фракція. Старшинство описане в шапці файлу.
+    static string Of(PlayerBase player, string uid)
+    {
+        if (s_Provider)
+        {
+            if (player)
+            {
+                string fromMod = s_Provider.FactionOf(player);
+                if (fromMod != "")
+                    return fromMod;
+            }
+        }
+
+        if (uid == "")
+            return "";
+
+        if (s_ByRole)
+        {
+            string byRole;
+            if (s_ByRole.Find(uid, byRole))
+            {
+                if (byRole != "")
+                    return byRole;
+            }
+        }
+
+        OZ_PlayerData d = OZ_PlayerStore.Load(uid);
+        return d.Faction;
+    }
+
+    // Коли гравця під рукою немає -- офлайновий друг, запис у розмові.
+    static string OfUid(string uid)
+    {
+        return Of(null, uid);
+    }
+
+    // Поставити фракцію в файл акаунта. Тільки сервер.
+    //
+    // Постачальник і роль Discord цим НЕ перебиваються -- вони старші, і
+    // мовчазна незгода тут була б найгіршим виходом. Хто ставить фракцію
+    // руками при живому постачальнику, той міняє запасний шлях, і це його
+    // право.
+    static void SetOf(string uid, string factionId)
+    {
+        if (!GetGame().IsServer())
+            return;
+        if (uid == "")
+            return;
+
+        OZ_PlayerData d = OZ_PlayerStore.Load(uid);
+        if (d.Faction == factionId)
+            return;
+
+        d.Faction = factionId;
+        OZ_PlayerStore.MarkDirty(uid);
+        OnChanged.Invoke(uid);
+    }
+
+    // Міст приніс ролі. Порожній id фракції = «ролі, що відповідає фракції,
+    // у нього немає» -- тоді працює запасний шлях через файл акаунта.
+    static void SetFromRole(string uid, string factionId)
+    {
+        if (!GetGame().IsServer())
+            return;
+        if (uid == "")
+            return;
+
+        if (!s_ByRole)
+            s_ByRole = new map<string, string>();
+
+        string had;
+        s_ByRole.Find(uid, had);
+        if (had == factionId)
+            return;
+
+        s_ByRole.Set(uid, factionId);
+        OnChanged.Invoke(uid);
+    }
+
+    // Синхронізація ролей зникла (міст ліг, гравець відв'язав акаунт).
+    // Прибрати ЗАПИС, а не поставити порожній рядок: порожній рядок означав
+    // би «ролі немає», а нам треба «ми не знаємо».
+    static void ForgetRole(string uid)
+    {
+        if (!s_ByRole)
+            return;
+        if (!s_ByRole.Contains(uid))
+            return;
+
+        s_ByRole.Remove(uid);
+        OnChanged.Invoke(uid);
+    }
+
+    // --------------------------------------------------------- ставлення
+
+    // Як `a` ставиться до `b`.
+    //
+    // Симетрично за замовчуванням: якщо `a` мовчить, дивимось, що сказав `b`.
+    // Односторонню ворожість задають ЯВНО -- двома рядками в JSON.
+    static string Stand(string a, string b)
+    {
+        if (a == "")
+            return OZ_FactionStand.NEUTRAL;
+        if (b == "")
+            return OZ_FactionStand.NEUTRAL;
+        if (a == b)
+            return OZ_FactionStand.ALLY;
+
+        string direct = Declared(a, b);
+        if (direct != "")
+            return direct;
+
+        string mirrored = Declared(b, a);
+        if (mirrored != "")
+            return mirrored;
+
+        return OZ_FactionStand.NEUTRAL;
+    }
+
+    static bool AreHostile(string a, string b)
+    {
+        return Stand(a, b) == OZ_FactionStand.HOSTILE;
+    }
+
+    static bool AreFriendly(string a, string b)
+    {
+        string s = Stand(a, b);
+        if (s == OZ_FactionStand.ALLY)
+            return true;
+        return s == OZ_FactionStand.FRIENDLY;
+    }
+
+    private static string Declared(string from, string to)
+    {
+        OZ_Faction f = Find(from);
+        if (!f)
+            return "";
+        if (!f.Relations)
+            return "";
+
+        for (int i = 0; i < f.Relations.Count(); i++)
+        {
+            if (f.Relations[i].With == to)
+                return f.Relations[i].Stand;
+        }
+        return "";
+    }
+
+    // ------------------------------------------------------------- експорт
+
+    // Уся таблиця одним рядком JSON -- для чужого мода, який хоче її
+    // перекинути кудись цілком: адмінському інструменту, вебредактору, боту.
+    // Порожній рядок означає, що таблиця не завантажена або не серіалізується.
+    static string ExportJson()
+    {
+        if (!s_Cfg)
+            return "";
+
+        string outJson;
+        string err;
+        if (!JsonFileLoader<OZ_FactionsConfig>.MakeData(s_Cfg, outJson, err, false))
+        {
+            OZ_Log.Error("factions export failed: " + err);
+            return "";
+        }
+        return outJson;
+    }
+}

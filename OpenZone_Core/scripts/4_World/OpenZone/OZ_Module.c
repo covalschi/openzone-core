@@ -47,6 +47,13 @@ class OZ_Module : CF_ModuleWorld
         // межу складності виразу й падає з «Formula too complex» -- у сусідньому
         // моді це знайшли емпірично на восьмому доданку.
         OZ_Perm.ServerInit();
+
+        // Фракції -- служба ядра, бо їх питає не лише екран: квести,
+        // торгівля, ІІ, рація. Ідемпотентна, тож КПК і далі кличе її в себе
+        // -- порядок CF-модулів не гарантований, і на цьому стенді він уже
+        // підводив.
+        OZ_Factions.ServerLoad();
+
         OZ_Rpc.RegisterServer(this);
 
         m_FlushTimer = new Timer(CALL_CATEGORY_SYSTEM);
@@ -57,6 +64,7 @@ class OZ_Module : CF_ModuleWorld
         string summary = "core loaded: admins=" + s.AdminIds.Count();
         summary += " perms=" + OZ_Perm.Describe();
         summary += " pages=" + OZ_PageRegistry.Count().ToString();
+        summary += " factions=" + OZ_Factions.Count().ToString();
         summary += " debug=" + dbg;
         OZ_Log.Info(summary);
     }
