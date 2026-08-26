@@ -64,6 +64,7 @@ class OZ_Module : CF_ModuleWorld
         // нарешті везе більше за один. Підписка ДО Start(): перша ж пачка
         // може приїхати раніше, ніж наступний рядок виконається.
         OZ_BridgeClient.Subscribe("roles", new OZ_RolesSink());
+        OZ_BridgeClient.Subscribe("roster", new OZ_RosterSink());
 
         OZ_BridgeClient.Start();
 

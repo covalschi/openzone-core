@@ -204,6 +204,24 @@ class OZ_RolesSink : OZ_BridgeSink
     }
 }
 
+// Конверт роду "roster": як звуться фракції. Приходить лише коли реєстр
+// змінився, а не щоопиту.
+class OZ_RosterSink : OZ_BridgeSink
+{
+    override void Deliver(string json)
+    {
+        OZ_FactionRoster r;
+        string err;
+        if (!JsonFileLoader<OZ_FactionRoster>.LoadData(json, r, err) || !r)
+        {
+            OZ_Log.Warn("factions: unreadable roster from the bridge: " + err);
+            return;
+        }
+
+        OZ_Factions.ApplyRoster(r);
+    }
+}
+
 // Одне місце, щоб спитати все. Фасад, а не служба: він нічим не володіє й
 // нічого не вирішує -- лише збирає відповідь із трьох, які володіють.
 //

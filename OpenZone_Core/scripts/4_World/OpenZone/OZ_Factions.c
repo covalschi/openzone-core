@@ -276,6 +276,22 @@ class OZ_FactionsConfig : OZ_ConfigBase
     }
 }
 
+// Реєстр, як його присилає бот. НЕ те саме, що OZ_Faction: тут лише те, чим
+// бот володіє, і жодного id ролі Discord -- гра його не потребує взагалі,
+// бо бот перекладає ролі в слаги ще до того, як щось перетне провід.
+class OZ_FactionRosterEntry
+{
+    string Id;
+    string DisplayName;
+    string Color;
+}
+
+class OZ_FactionRoster
+{
+    int Stamp;
+    ref array<ref OZ_FactionRosterEntry> Factions;
+}
+
 // Слова, якими описується ставлення. Рядками, бо їх читає адмін у JSON, і
 // enum у файлі виглядав би числом.
 class OZ_FactionStand
@@ -631,6 +647,77 @@ class OZ_Factions
                 return f.Relations[i].Stand;
         }
         return "";
+    }
+
+    // ------------------------------------------------------------- реєстр
+
+    // Реєстр від бота: як фракція ЗВЕТЬСЯ і якого вона кольору.
+    //
+    // ДВА ДОМИ, і поділ між ними -- за тим, ХТО МОЖЕ це налаштувати, а не за
+    // тим, хто читає:
+    //
+    //   бот  -- слаг, назва, колір. Він створює ролі в Discord, отже дізнається
+    //           про них першим, і власник вимагав налаштовувати звідти.
+    //   гра  -- Relations, Joinable, Hidden. Правила симуляції цього сервера,
+    //           яким у Discord немає де жити.
+    //
+    // Потік В ОДИН БІК. Бот може ДОДАТИ фракцію й переписати назву та колір;
+    // видалити запис адміна або торкнутись його ставлень -- ніколи. Один
+    // напрямок і один ключ зв'язку -- це і є весь механізм проти розходження.
+    //
+    // НЕ пишеться на диск. Мітка -- косметика, і при мертвому мості вона на
+    // вісім секунд відкотиться до того, що в файлі адміна. Записувати чужу
+    // назву в його файл означало б, що вона лишиться там і після того, як
+    // бота приберуть.
+    static void ApplyRoster(OZ_FactionRoster r)
+    {
+        if (!GetGame().IsServer())
+            return;
+        if (!r || !r.Factions)
+            return;
+        if (!s_Cfg)
+            return;
+
+        int added = 0;
+        int renamed = 0;
+
+        for (int i = 0; i < r.Factions.Count(); i++)
+        {
+            OZ_FactionRosterEntry e = r.Factions[i];
+            if (e.Id == "")
+                continue;
+
+            OZ_Faction f = Find(e.Id);
+
+            if (!f)
+            {
+                f = new OZ_Faction();
+                f.Id            = e.Id;
+                f.DiscordRoleId = "";
+                f.Joinable      = false;
+                f.Hidden        = false;
+                f.Tags          = new array<string>();
+                f.Relations     = new array<ref OZ_FactionRelation>();
+                f.Extra         = "";
+                s_Cfg.Factions.Insert(f);
+                added++;
+            }
+
+            if (e.DisplayName != "")
+            {
+                if (f.DisplayName != e.DisplayName)
+                    renamed++;
+                f.DisplayName = e.DisplayName;
+            }
+
+            if (e.Color != "")
+                f.Color = e.Color;
+        }
+
+        string m = "factions: roster from the bridge, stamp " + r.Stamp.ToString();
+        m += " (" + added.ToString() + " added, ";
+        m += renamed.ToString() + " renamed)";
+        OZ_Log.Info(m);
     }
 
     // ------------------------------------------------------------- експорт
