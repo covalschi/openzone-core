@@ -107,6 +107,19 @@ class OZ_ClientState
         m.OnLinkResponse(data.param1, data.param2, data.param3, data.param4);
     }
 
+    // Відповідь на прохання змінити ролі. Далі її розбирає той, хто малює.
+    void OZ_RoleRes(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Client)
+            return;
+
+        Param3<string, bool, string> data;
+        if (!ctx.Read(data))
+            return;
+
+        OZ_RoleNotice.Take(data.param1, data.param2, data.param3);
+    }
+
     void OZ_Res(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
         if (type != CallType.Client)

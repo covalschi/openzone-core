@@ -120,6 +120,47 @@ class OZ_Module : CF_ModuleWorld
         OZ_Rpc.LinkRespond(sender, op, false, "", "STR_OZ_ERR_UNKNOWN_OP");
     }
 
+    // Зміна ролей із гри. Особа -- ЗАВЖДИ з sender: клієнт не називає, від
+    // чийого імені просить, і не може -- у конверті немає такого поля.
+    void OZ_RoleReq(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Server)
+            return;
+
+        Param3<string, string, string> data;
+        if (!ctx.Read(data))
+            return;
+
+        if (!sender)
+            return;
+
+        string op        = data.param1;
+        string targetUid = data.param2;
+        string arg       = data.param3;
+
+        // Запрошення -- НЕ операція над ролями, тому й не йде в OZ_RoleOps:
+        // до згоди воно взагалі нічого не міняє в Discord.
+        if (op == "invite")
+        {
+            OZ_FactionInvites.Offer(sender, targetUid);
+            return;
+        }
+
+        if (op == "accept")
+        {
+            OZ_FactionInvites.Accept(sender);
+            return;
+        }
+
+        if (op == "decline")
+        {
+            OZ_FactionInvites.Decline(sender);
+            return;
+        }
+
+        OZ_RoleOps.Request(sender, targetUid, op, arg);
+    }
+
     // Порядок перевірок нижче -- і є межа безпеки. Міняти його не можна.
     void OZ_Req(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
@@ -281,6 +322,9 @@ class OZ_Module : CF_ModuleWorld
         d.LastSeen = OZ_Time.NowUtc();
         OZ_PlayerStore.MarkDirty(dArgs.UID);
         OZ_PlayerStore.Unload(dArgs.UID);
+
+        // Запрошення до того, хто вийшов, показувати більше нікому.
+        OZ_FactionInvites.Forget(dArgs.UID);
 
         OZ_Log.Dbg("disconnect " + dArgs.UID);
     }

@@ -1,0 +1,54 @@
+// Що сервер відповів на прохання змінити ролі -- клієнтський бік.
+//
+// Живе в ЯДРІ, а не в КПК: просити може й лідер без КПК, і адмін без КПК, а
+// показати відповідь треба однаково. Хто саме її малює -- справа того, хто
+// підписався.
+
+class OZ_RoleNotice
+{
+    // Підписуються ті, хто малює: сторінка контактів, адмінський екран.
+    // ScriptInvoker, а не прямий виклик у КПК, бо ядро про КПК не знає й
+    // знати не повинно.
+    static ref ScriptInvoker OnAnswer = new ScriptInvoker();
+
+    private static string s_Op  = "";
+    private static bool   s_Ok  = false;
+    private static string s_Why = "";
+
+    static void Take(string op, bool ok, string why)
+    {
+        s_Op  = op;
+        s_Ok  = ok;
+        s_Why = why;
+
+        OnAnswer.Invoke(op, ok, why);
+    }
+
+    static string Op()  { return s_Op; }
+    static bool   Ok()  { return s_Ok; }
+    static string Why() { return s_Why; }
+
+    // Готовий до показу рядок.
+    //
+    // Причина приходить у ДВОХ виглядах, і це навмисно: наші власні відмови
+    // -- ключі таблиці рядків, а відмови Discord -- готовий текст від моста,
+    // бо тільки він знає, ЧОМУ саме Discord відмовив. «Бот не може керувати
+    // цією роллю -- підніми його роль вище» варте більше за будь-який наш
+    // код помилки, і перекладати його нам нічим.
+    //
+    // Розрізняємо за префіксом: свій ключ починається з STR_, чужий текст --
+    // ні. Рушій розгортає ключ лише з '#' попереду.
+    static string Text()
+    {
+        if (s_Ok)
+            return "#STR_OZ_ROLE_DONE";
+
+        if (s_Why == "")
+            return "#STR_OZ_ERR_INTERNAL";
+
+        if (s_Why.IndexOf("STR_") == 0)
+            return "#" + s_Why;
+
+        return s_Why;
+    }
+}

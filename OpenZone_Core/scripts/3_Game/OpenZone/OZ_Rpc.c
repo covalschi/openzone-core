@@ -25,6 +25,12 @@ class OZ_Rpc
     static const string RPC_LINK_REQ = "OZ_LinkReq";
     static const string RPC_LINK_RES = "OZ_LinkRes";
 
+    // Зміна ролей -- ВЛАСНА пара, з тієї ж причини, що й прив'язка: сторінки
+    // проходять крізь OZ_PageAccess, тобто просити зміг би лише власник КПК.
+    // Лідер без КПК і адмін без КПК мусять могти те саме.
+    static const string RPC_ROLE_REQ = "OZ_RoleReq";
+    static const string RPC_ROLE_RES = "OZ_RoleRes";
+
     // Зареєстрована функція МУСИТЬ мати рівно цю форму -- її задає диспетчер
     // CF (Param4 + CallFunctionParams), ніде не оголошуючи явно:
     //
@@ -37,6 +43,7 @@ class OZ_Rpc
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_HELLO, inst, SingleplayerExecutionType.Server);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_REQ,   inst, SingleplayerExecutionType.Server);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_REQ, inst, SingleplayerExecutionType.Server);
+        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ROLE_REQ, inst, SingleplayerExecutionType.Server);
     }
 
     // Клієнт ТЯГНЕ синхронізацію сам, коли вже готовий її прийняти.
@@ -55,6 +62,7 @@ class OZ_Rpc
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_SYNC, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_RES,  inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_RES, inst, SingleplayerExecutionType.Client);
+        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ROLE_RES, inst, SingleplayerExecutionType.Client);
     }
 
     // guaranteed за замовчуванням FALSE. Усе, що тут надсилається, має
@@ -90,5 +98,26 @@ class OZ_Rpc
         Param4<string, bool, string, string> p =
             new Param4<string, bool, string, string>(op, ok, json, error);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_LINK_RES, p, true, to);
+    }
+
+    // ---------------------------------------------------------------- ролі
+
+    // Кого міняємо -- НЕ називаємо особою, лише uid: сервер бере актора з
+    // sender і ніколи звідси.
+    static void RoleRequest(string op, string targetUid, string arg)
+    {
+        Param3<string, string, string> p =
+            new Param3<string, string, string>(op, targetUid, arg);
+        GetRPCManager().SendRPC(OZ_Const.MOD, RPC_ROLE_REQ, p, true);
+    }
+
+    // `why` -- або ключ таблиці рядків (STR_OZ_...), або ГОТОВИЙ ТЕКСТ від
+    // моста. Друге тому, що причину відмови Discord знає лише він, і «бот не
+    // може керувати цією роллю» набагато корисніше за наш код помилки. Той,
+    // хто малює, розрізняє їх за префіксом.
+    static void RoleRespond(PlayerIdentity to, string op, bool ok, string why)
+    {
+        Param3<string, bool, string> p = new Param3<string, bool, string>(op, ok, why);
+        GetRPCManager().SendRPC(OZ_Const.MOD, RPC_ROLE_RES, p, true, to);
     }
 }
