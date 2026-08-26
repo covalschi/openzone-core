@@ -109,6 +109,8 @@ class OZ_BridgePollReply : OZ_BridgeReply
 {
     override void OnBody(string json)
     {
+        // Міст відповів -- отже почув і про те, що ми свіжопіднялися.
+        OZ_BridgeClient.Settled();
         OZ_BridgeClient.Absorb(json);
         OZ_BridgeClient.Again(0);
     }
@@ -117,6 +119,9 @@ class OZ_BridgePollReply : OZ_BridgeReply
     {
         // Мостові не було чого сказати за цілий таймаут. Це і є звичайний хід
         // речей, а не збій: питаємо знову негайно.
+        //
+        // Тиша теж означає, що міст нас почув, зокрема й про свіжий запуск.
+        OZ_BridgeClient.Settled();
         OZ_BridgeClient.Again(0);
     }
 
@@ -141,6 +146,15 @@ class OZ_BridgeClient
     static const int BACKOFF_MS = 5000;
 
     private static bool s_Running = false;
+
+    // Перший опит після Start() каже мостові, що ми нічого не пам'ятаємо.
+    private static bool s_Fresh = true;
+
+    // Коли пішов останній опит -- для підлоги в Again().
+    private static int s_LastPollAt = 0;
+
+    // Мінімальний проміжок між опитами. Не пауза, а запобіжник: див. Again().
+    static const int MIN_GAP_MS = 250;
     private static int  s_Cursor  = 0;
 
     private static ref array<ref OZ_BridgeXfer> s_InFlight;
@@ -219,6 +233,7 @@ class OZ_BridgeClient
         s_PollReply = new OZ_BridgePollReply();
         s_Pump      = new OZ_BridgePump();
         s_Running   = true;
+        s_Fresh     = true;
 
         string line = "bridge: polling " + b.Url;
         line += " as \"" + b.ServerId;
@@ -250,7 +265,40 @@ class OZ_BridgeClient
         if (!s_Running || !s_Pump)
             return;
 
+        // ПІДЛОГА НА ТЕМП, і вона тут не про ввічливість.
+        //
+        // Темп опиту задає МІСТ тим, що тримає відповідь. Поки він тримає,
+        // Again(0) означає «раз на вісім секунд» і все гаразд. Але щойно міст
+        // починає відповідати миттєво, Again(0) означає «щокадру» -- і опит
+        // перетворюється на цикл без пауз.
+        //
+        // Виміряно на стенді: 5020 опитів за п'ять хвилин, тобто СІМНАДЦЯТЬ
+        // на секунду, кожен із розбором JSON на ігровому потоці. І сервер
+        // DayZ має рівно одне ядро.
+        //
+        // Причину усунуто на боці моста, але лишати темп цілком на розсуд
+        // чужої сторони не можна: будь-який міст -- свій зламаний, чужий,
+        // старої версії -- не мусить мати змоги розкрутити цей цикл. Чверть
+        // секунди невидима для чату й обмежує найгірший випадок четвіркою
+        // запитів на секунду замість сімнадцяти.
+        if (delay < MIN_GAP_MS)
+        {
+            int since = GetGame().GetTime() - s_LastPollAt;
+            if (since < MIN_GAP_MS)
+                delay = MIN_GAP_MS - since;
+        }
+
         GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLaterByName(s_Pump, "Tick", delay, false);
+    }
+
+    // Міст відповів -- прапорець свіжого запуску більше не потрібен.
+    //
+    // Знімаємо ЛИШЕ після відповіді, а не одразу після надсилання: опит, що
+    // не доїхав, лишає нас без проекції ролей назавжди, якщо прапорець уже
+    // зняли.
+    static void Settled()
+    {
+        s_Fresh = false;
     }
 
     static void Poll()
@@ -264,7 +312,10 @@ class OZ_BridgeClient
         p.Secret   = b.Secret;
         p.ServerId = b.ServerId;
         p.Cursor   = s_Cursor;
+        p.Fresh    = s_Fresh;
         FillOnline(p.Uids);
+
+        s_LastPollAt = GetGame().GetTime();
 
         string json;
         string err;
