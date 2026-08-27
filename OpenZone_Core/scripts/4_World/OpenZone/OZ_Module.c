@@ -200,7 +200,8 @@ class OZ_Module : CF_ModuleWorld
         // 3. І входити в набір сторінок ПРИСТРОЮ цього гравця. Саме цей крок
         //    не дає смикнути сторінку, якої в його КПК немає, навіть якщо
         //    запит підроблено.
-        if (!OZ_PageAccess.Allowed(sender, pageId, op))
+        string why;
+        if (!OZ_PageAccess.Allowed(sender, pageId, op, why))
         {
             // Dbg, не Warn -- на відміну від кроку 2 вище.
             //
@@ -215,7 +216,7 @@ class OZ_Module : CF_ModuleWorld
             w2 += "\" from " + sender.GetPlainId();
             w2 += ": not on this device";
             OZ_Log.Dbg(w2);
-            OZ_Rpc.Respond(sender, pageId, op, false, "", "STR_OZ_ERR_NO_ACCESS");
+            OZ_Rpc.Respond(sender, pageId, op, false, "", why);
             return;
         }
 

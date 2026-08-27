@@ -122,13 +122,29 @@ class OZ_PageAccess
     // не доходила зовсім.
     static bool Allowed(PlayerIdentity who, string pageId, string op)
     {
-        if (!s_Provider)
-            return true;
-        return s_Provider.Check(who, pageId, op);
+        string ignored;
+        return Allowed(who, pageId, op, ignored);
     }
 
-    // Перевизначає нащадок.
-    bool Check(PlayerIdentity who, string pageId, string op)
+    // Те саме, але з ПРИЧИНОЮ.
+    //
+    // Гейт відмовляє з різних міркувань -- сторінки немає в профілі, модуль не
+    // вставлений, пристрій замкнений, пристрій вимкнений, -- а гравець бачив
+    // одне й те саме «на цьому пристрої такого екрана немає». Для вимкненого
+    // приладу це просто неправда: екран є, живлення немає, і людина шукає
+    // модуль замість того, щоб натиснути «увімкнути».
+    static bool Allowed(PlayerIdentity who, string pageId, string op, out string why)
+    {
+        why = "STR_OZ_ERR_NO_ACCESS";
+
+        if (!s_Provider)
+            return true;
+        return s_Provider.Check(who, pageId, op, why);
+    }
+
+    // Перевизначає нащадок. `why` уже містить загальну причину -- міняти її
+    // треба лише там, де є конкретніша.
+    bool Check(PlayerIdentity who, string pageId, string op, out string why)
     {
         return true;
     }
