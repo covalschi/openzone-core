@@ -55,14 +55,6 @@ class OZ_Faction
     // розуміє віджет.
     string Color;
 
-    // Id ролі Discord, з якою синхронізується членство. Порожній -- фракція
-    // з Discord не пов'язана й живе лише в грі.
-    //
-    // Рядком, а не числом: id Discord -- це 64-бітний snowflake, і в int він
-    // не влазить. Той самий привід, з якого Steam64 всюди в цьому проєкті
-    // рядок.
-    string DiscordRoleId;
-
     // Чи можна вступити внутрішньоігровою дією. Ядро цього не enforce'ить --
     // воно лише возить прапорець для того, хто вступ і реалізує.
     bool Joinable;
@@ -144,7 +136,6 @@ class OZ_FactionsConfig : OZ_ConfigBase
         f.DisplayName   = name;
         f.Short         = tag;
         f.Color         = colour;
-        f.DiscordRoleId = "";
         f.Joinable      = false;
         f.Hidden        = false;
         f.Tags          = new array<string>();
@@ -170,7 +161,7 @@ class OZ_FactionsConfig : OZ_ConfigBase
 
     // Справжня міграція, а не штамп версії.
     //
-    // v1 не знав про Short, DiscordRoleId, Tags, Relations і Extra. Файл
+    // v1 не знав про Short, Tags, Relations і Extra. Файл
     // адміна з версією 1 треба ДОПОВНИТИ умовчаннями, а не перезаписати
     // нашими фракціями: там уже може стояти його власний список.
     override bool Migrate(int from)
@@ -722,8 +713,7 @@ class OZ_Factions
             {
                 f = new OZ_Faction();
                 f.Id            = e.Id;
-                f.DiscordRoleId = "";
-                f.Joinable      = false;
+                        f.Joinable      = false;
                 f.Hidden        = false;
                 f.Tags          = new array<string>();
                 f.Relations     = new array<ref OZ_FactionRelation>();
