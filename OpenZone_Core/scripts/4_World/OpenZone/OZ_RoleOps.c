@@ -140,6 +140,20 @@ class OZ_RoleOps
     // в конверті RPC такого поля немає.
     static void RequestAs(PlayerIdentity tell, string actorUid, string targetUid, string op, string arg)
     {
+        RequestAs(tell, actorUid, targetUid, op, arg, false);
+    }
+
+    // consented -- «за цим стоїть згода людини, яку міняють».
+    //
+    // Ставить його ТІЛЬКИ прийняте запрошення, і саме він відмикає
+    // faction.set. Без нього лідер надсилав би "faction.set" просто по
+    // проводу й записував у свою фракцію будь-кого з присутніх, не питаючи --
+    // тобто вся згода, заради якої запрошення й існує, обходилась одним RPC.
+    //
+    // Прапорець НЕ приходить від клієнта: у конверті RPC такого поля немає, і
+    // виставити його може лише код на сервері.
+    static void RequestAs(PlayerIdentity tell, string actorUid, string targetUid, string op, string arg, bool consented)
+    {
         if (!GetGame().IsServer())
             return;
         if (!tell)
@@ -166,11 +180,30 @@ class OZ_RoleOps
         if (tell.GetPlainId() == actorUid)
             admin = OZ_Perm.IsAdmin(tell);
 
+        // ВСТУП У ФРАКЦІЮ -- ТІЛЬКИ ЗІ ЗГОДИ. Ні лідер, ні хто завгодно інший
+        // не може надіслати цю операцію з проводу: єдиний шлях -- запрошення,
+        // яке людина прийняла сама.
+        if (op == OZ_RoleOp.FACTION_SET)
+        {
+            if (!consented && !admin)
+            {
+                OZ_Rpc.RoleRespond(tell, op, false, "STR_OZ_ERR_NEEDS_INVITE");
+                return;
+            }
+        }
+
         // Не адмін -- значить лідер, і це перевіряється ТУТ ТЕЖ, а не лише на
         // мості. Не заради безпеки -- міст перевірить сам і лишається
         // головним, -- а заради відповіді: «ти не лідер» мусить прийти
         // миттєво, а не за півсекунди з мережі.
-        if (!admin)
+        //
+        // Прийняте запрошення сюди НЕ заходить, і це не послаблення. Місцева
+        // перевірка питає OZ_Roles.IsLeader, а проекція ролей живе лише поки
+        // гравець у Зоні: щойно лідер вийшов -- вона стерта, і його власне
+        // запрошення перестало б працювати через те, що він відійшов від
+        // комп'ютера. Лідерство перевірить МІСТ, який дивиться в Discord і
+        // про присутність нічого не знає.
+        if (!admin && !consented)
         {
             if (!Allowed(tell, actorUid, op, arg, targetUid))
                 return;
@@ -292,15 +325,37 @@ class OZ_SpawnOps
 
         // arg -- "слаг" або "слаг радіус". Радіус необов'язковий: без нього
         // двадцять метрів, бо зона в одну точку -- це купа тіл, а не табір.
-        string role = arg;
+        string rest = Trimmed(arg);
+        string role = rest;
         float radius = 20;
 
-        int sp = arg.IndexOf(" ");
+        int sp = rest.IndexOf(" ");
         if (sp != -1)
         {
-            role = arg.Substring(0, sp);
-            radius = arg.Substring(sp + 1, arg.Length() - sp - 1).ToFloat();
+            role = rest.Substring(0, sp);
+
+            // РАДІУС МУСИТЬ БУТИ ЧИСЛОМ.
+            //
+            // ToFloat() на будь-якому смітті чесно повертає нуль, і зона
+            // ставала точкою: усі спавняться в одному пікселі, один в одному.
+            // Помилку набору не видно ніде -- команда відповідала «готово».
+            string tail = Trimmed(rest.Substring(sp + 1, rest.Length() - sp - 1));
+            if (!Number(tail))
+            {
+                OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_BAD_RADIUS");
+                return;
+            }
+
+            radius = tail.ToFloat();
         }
+
+        // ПРОБІЛ -- НЕ СЛАГ.
+        //
+        // Слаг із пробілом попереду (« duty») різався на порожній слаг і
+        // хвіст, а порожній слаг означає ЗАПАСНУ зону -- ту, куди потрапляють
+        // усі, в кого нічого не збіглося. Один зайвий пробіл у команді
+        // переносив спавн усього сервера, і відповідь була «готово».
+        role = Trimmed(role);
 
         // Порожній слаг -- це ЗАПАСНА зона, і писати його як "" у команді
         // незручно. Домовляємось: "-" означає порожній.
@@ -352,6 +407,50 @@ class OZ_SpawnOps
         }
 
         OZ_Rpc.RoleRespond(who, op, true, "");
+    }
+
+    // Пробіли з обох боків. У Enforce немає Trim(), а рядок приходить із
+    // чату -- там вони будуть.
+    private static string Trimmed(string s)
+    {
+        int from = 0;
+        int to   = s.Length();
+
+        while (from < to && s.Substring(from, 1) == " ")
+            from++;
+        while (to > from && s.Substring(to - 1, 1) == " ")
+            to--;
+
+        return s.Substring(from, to - from);
+    }
+
+    // Чи це взагалі число. ToFloat() не вміє сказати «ні», тож питаємо самі.
+    private static bool Number(string s)
+    {
+        if (s == "")
+            return false;
+
+        bool dot = false;
+
+        for (int i = 0; i < s.Length(); i++)
+        {
+            string c = s.Substring(i, 1);
+
+            if (c == ".")
+            {
+                if (dot)
+                    return false;
+                dot = true;
+                continue;
+            }
+
+            // Через набір, а не через порівняння рядків: у Enforce «менше»
+            // для string не визначене, і покластись на нього не можна.
+            if ("0123456789".IndexOf(c) == -1)
+                return false;
+        }
+
+        return true;
     }
 }
 
@@ -410,6 +509,18 @@ class OZ_FactionInvites
             return;
         }
 
+        // ПОРОЖНЯ ЦІЛЬ -- ВІДМОВА, а не мовчазний успіх.
+        //
+        // UidByName повертає порожній рядок, коли не знайшов або знайшов
+        // двох. Раніше це проходило далі: запрошення лягало під ключ "" й
+        // лідерові казали «готово». Ніхто нікого не запросив, і дізнатись
+        // про це не було як.
+        if (targetUid == "")
+        {
+            OZ_Rpc.RoleRespond(from, "invite", false, "STR_OZ_ERR_NO_TARGET");
+            return;
+        }
+
         if (targetUid == me)
         {
             OZ_Rpc.RoleRespond(from, "invite", false, "STR_OZ_ERR_SELF");
@@ -419,6 +530,23 @@ class OZ_FactionInvites
         if (OZ_Factions.OfUid(targetUid) == mine)
         {
             OZ_Rpc.RoleRespond(from, "invite", false, "STR_OZ_ERR_ALREADY_IN");
+            return;
+        }
+
+        // ЧУЖЕ ЗАПРОШЕННЯ НЕ ПЕРЕБИВАЄТЬСЯ.
+        //
+        // Ключ -- людина, і другий лідер, що встиг натиснути, просто підміняв
+        // перше запрошення своїм. На екрані в цей момент могло стояти «Долг»,
+        // а «Прийняти» відправляло б у Бандити: людина погодилась на одне, а
+        // отримала інше. Згода на те й згода, щоб стосуватись саме того, що
+        // показали.
+        //
+        // Перший встиг -- його й черга, поки не сплине строк або людина не
+        // відмовиться. Другому чесно кажемо, що зайнято.
+        OZ_FactionInvite already = Pending(targetUid);
+        if (already)
+        {
+            OZ_Rpc.RoleRespond(from, "invite", false, "STR_OZ_ERR_INVITE_BUSY");
             return;
         }
 
@@ -489,7 +617,9 @@ class OZ_FactionInvites
         // Право дає ЛІДЕР, відповідь бачить той, хто прийняв. Лідер може
         // бути офлайн -- міст дивиться на його ролі в Discord, а не на
         // присутність у Зоні.
-        OZ_RoleOps.RequestAs(who, inv.FromUid, me, OZ_RoleOp.FACTION_SET, inv.Faction);
+        // consented=true -- ЄДИНЕ місце, де це ставиться. Людина щойно
+        // натиснула «прийняти» на запрошенні, яке бачила своїми очима.
+        OZ_RoleOps.RequestAs(who, inv.FromUid, me, OZ_RoleOp.FACTION_SET, inv.Faction, true);
     }
 
     static void Decline(PlayerIdentity who)

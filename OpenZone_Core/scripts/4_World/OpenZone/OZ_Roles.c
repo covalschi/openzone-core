@@ -75,6 +75,9 @@ class OZ_Roles
         // OZ_Factions саме так його й читає.
         OZ_Factions.SetFromRole(v.Uid, v.Faction);
 
+        if (changed)
+            Remember(v);
+
         if (v.Conflict.Count() > 1)
         {
             string w = "roles: " + v.Uid;
@@ -83,6 +86,66 @@ class OZ_Roles
             w += ") - showing none until the guild is fixed";
             OZ_Log.Warn(w);
         }
+    }
+
+    // Знімок для показу офлайнових. Пишемо ЛИШЕ у власні поля Seen*, ніколи
+    // не в Faction: див. довгу причину в OZ_PlayerData.
+    private static void Remember(OZ_RoleView v)
+    {
+        OZ_PlayerData d = OZ_PlayerStore.Load(v.Uid);
+        if (!d)
+            return;
+
+        d.SeenFaction = v.Faction;
+        d.SeenRank    = v.Rank;
+
+        if (!d.SeenPosts)
+            d.SeenPosts = new array<string>();
+        if (!d.SeenTraits)
+            d.SeenTraits = new array<string>();
+
+        d.SeenPosts.Clear();
+        d.SeenTraits.Clear();
+
+        for (int i = 0; i < v.Posts.Count(); i++)
+            d.SeenPosts.Insert(v.Posts[i]);
+        for (int j = 0; j < v.Traits.Count(); j++)
+            d.SeenTraits.Insert(v.Traits[j]);
+
+        OZ_PlayerStore.MarkDirty(v.Uid);
+    }
+
+    // Останнє відоме -- ЯВНО, окремим викликом. Тим, хто питає Of(), знімок
+    // не дістається: «не знаємо» мусить лишатись відповіддю.
+    static OZ_RoleView Seen(string uid)
+    {
+        OZ_RoleView live = Of(uid);
+        if (live)
+            return live;
+
+        OZ_PlayerData d = OZ_PlayerStore.Load(uid);
+        if (!d)
+            return null;
+        if (d.SeenFaction == "" && d.SeenRank == "")
+            return null;
+
+        OZ_RoleView v = new OZ_RoleView();
+        v.Uid     = uid;
+        v.Faction = d.SeenFaction;
+        v.Rank    = d.SeenRank;
+
+        if (d.SeenPosts)
+        {
+            for (int i = 0; i < d.SeenPosts.Count(); i++)
+                v.Posts.Insert(d.SeenPosts[i]);
+        }
+        if (d.SeenTraits)
+        {
+            for (int j = 0; j < d.SeenTraits.Count(); j++)
+                v.Traits.Insert(d.SeenTraits[j]);
+        }
+
+        return v;
     }
 
     // Про цього гравця нічого не відомо: не прив'язаний, або міст його не
@@ -307,6 +370,65 @@ class OZ_Identity
     static bool HasTrait(string uid, string trait)
     {
         return OZ_Roles.HasTrait(uid, trait);
+    }
+
+    // --- останнє відоме, для офлайнових ---
+    //
+    // Ті самі три осі, але з знімка: гравця немає на сервері, питати міст про
+    // нього нема сенсу, а показати «Іванов» без фракції й звання -- це збрехати
+    // рівно там, де лідер вирішує, свій це чи ні.
+    //
+    // Окремі назви, а не прапорець у тих самих функціях: хто питає Seen*, той
+    // СВІДОМО бере застаріле й мусить це показати.
+    static string SeenFactionId(string uid)
+    {
+        // Файл акаунта старший: його ставили руками, і воно не застаріле.
+        string byFile = OZ_Factions.OfUid(uid);
+        if (byFile != "")
+            return byFile;
+
+        OZ_RoleView v = OZ_Roles.Seen(uid);
+        if (!v)
+            return "";
+        return v.Faction;
+    }
+
+    static string SeenRankName(string uid)
+    {
+        OZ_RoleView v = OZ_Roles.Seen(uid);
+        if (!v)
+            return "";
+        return OZ_RoleNames.Of(v.Rank);
+    }
+
+    static void SeenPostNames(string uid, out array<string> into)
+    {
+        if (!into)
+            return;
+
+        OZ_RoleView v = OZ_Roles.Seen(uid);
+        if (!v)
+            return;
+
+        string faction = SeenFactionId(uid);
+        if (faction == "")
+            return;
+
+        for (int i = 0; i < v.Posts.Count(); i++)
+            into.Insert(OZ_RoleNames.Of(faction + ":" + v.Posts[i]));
+    }
+
+    static void SeenTraitNames(string uid, out array<string> into)
+    {
+        if (!into)
+            return;
+
+        OZ_RoleView v = OZ_Roles.Seen(uid);
+        if (!v)
+            return;
+
+        for (int i = 0; i < v.Traits.Count(); i++)
+            into.Insert(OZ_RoleNames.Of(v.Traits[i]));
     }
 
     // Звання людською назвою, готове до показу.

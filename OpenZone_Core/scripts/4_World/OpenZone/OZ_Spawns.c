@@ -135,6 +135,18 @@ class OZ_Spawns
     // Одноразові точки від чужих модів: uid -> позиція рядком.
     private static ref map<string, string> s_Once;
 
+    // Коли одноразова точка перестає бути правдою. Ключ той самий, що й у
+    // s_Once, значення -- час рушія в мілісекундах.
+    private static ref map<string, int> s_OnceUntil;
+
+    // Скільки метрів розкиду ще має сенс, і скільки разів шукати сушу.
+    private static const float MAX_RADIUS = 1000;
+    private static const int   TRIES      = 10;
+
+    // Скільки живе одноразова точка. П'ять хвилин: рівно стільки триває
+    // ситуація, заради якої її ставлять.
+    private static const int ONCE_TTL_MS = 300000;
+
     static void ServerLoad()
     {
         if (s_Cfg)
@@ -142,6 +154,13 @@ class OZ_Spawns
         Reload();
     }
 
+    // Перечитати файл. Викликається на старті -- і ПЕРЕД КОЖНИМ ЗАПИСОМ.
+    //
+    // Save() пише ВЕСЬ документ із пам'яті, а пам'ять -- знімок останнього
+    // читання, тобто зазвичай момент старту сервера. Адмін правив Spawns.json
+    // руками при живому сервері (звична річ: файл для того й текстовий), потім
+    // ставив одну зону з гри -- і всі правки зникали під знімком тритижневої
+    // давнини. Повідомлення при цьому не було жодного: запис удався.
     static void Reload()
     {
         s_Cfg = new OZ_SpawnsConfig();
@@ -175,6 +194,8 @@ class OZ_Spawns
             return "STR_OZ_ERR_INTERNAL";
         if (!s_Cfg)
             return "STR_OZ_ERR_INTERNAL";
+
+        Reload();
 
         if (radius < 0)
             radius = 0;
@@ -227,6 +248,8 @@ class OZ_Spawns
             return "STR_OZ_ERR_INTERNAL";
         if (!s_Cfg)
             return "STR_OZ_ERR_INTERNAL";
+
+        Reload();
 
         if (role == "*")
         {
@@ -285,6 +308,19 @@ class OZ_Spawns
 
         s_Once.Set(uid, pos.ToString(false));
 
+        // СТРОК ПРИДАТНОСТІ.
+        //
+        // Точка «підняти там, де впав» правдива хвилини дві, поки медик
+        // стоїть над тілом. Але зникала вона тільки коли спрацьовувала -- а
+        // якщо гравець вирішив не відроджуватись і вийшов, вона лишалась у
+        // пам'яті сервера НАЗАВЖДИ. Через тиждень він гине на іншому кінці
+        // карти й прокидається там, де його колись намагався підняти медик,
+        // і зрозуміти це неможливо ні йому, ні адмінові.
+        if (!s_OnceUntil)
+            s_OnceUntil = new map<string, int>();
+
+        s_OnceUntil.Set(uid, GetGame().GetTime() + ONCE_TTL_MS);
+
         string m = "spawn: next spawn for " + uid;
         m += " set to " + pos.ToString(false);
         if (reason != "")
@@ -294,6 +330,9 @@ class OZ_Spawns
 
     static void ClearNextSpawn(string uid)
     {
+        if (s_OnceUntil && s_OnceUntil.Contains(uid))
+            s_OnceUntil.Remove(uid);
+
         if (!s_Once)
             return;
         if (!s_Once.Contains(uid))
@@ -305,7 +344,33 @@ class OZ_Spawns
     {
         if (!s_Once)
             return false;
-        return s_Once.Contains(uid);
+        if (!s_Once.Contains(uid))
+            return false;
+
+        return !Expired(uid);
+    }
+
+    // Чи вийшов строк. Прострочену прибираємо ТУТ САМІ: питання «чи є точка»
+    // й «чи вона ще правдива» -- одне питання, і два різних відповіді на нього
+    // розійшлись би першої ж миті.
+    private static bool Expired(string uid)
+    {
+        if (!s_OnceUntil)
+            return false;
+
+        int until;
+        if (!s_OnceUntil.Find(uid, until))
+            return false;
+
+        if (GetGame().GetTime() < until)
+            return false;
+
+        s_OnceUntil.Remove(uid);
+        if (s_Once && s_Once.Contains(uid))
+            s_Once.Remove(uid);
+
+        OZ_Log.Dbg("spawn: one-shot for " + uid + " expired unused");
+        return true;
     }
 
     // ------------------------------------------------------- розв'язання
@@ -322,12 +387,14 @@ class OZ_Spawns
         // 1. Одноразова -- З'ЇДАЄТЬСЯ. Знімаємо ДО перевірок нижче: точка,
         //    яка не спрацювала через криву координату, все одно мусить
         //    зникнути, інакше вона чекала б наступної смерті.
-        if (s_Once)
+        if (s_Once && !Expired(uid))
         {
             string once;
             if (s_Once.Find(uid, once))
             {
                 s_Once.Remove(uid);
+                if (s_OnceUntil && s_OnceUntil.Contains(uid))
+                    s_OnceUntil.Remove(uid);
 
                 vector p = once.ToVector();
                 if (p != vector.Zero)
@@ -465,16 +532,53 @@ class OZ_Spawns
     // вгадувати Y означало б, що будь-яка правка карти ховає людей під землю.
     private static vector Scatter(vector center, float radius)
     {
-        vector p = center;
-
-        if (radius > 0)
+        // ВЕРХНЯ МЕЖА РАДІУСА.
+        //
+        // Знизу нуль стерегли з першого дня, згори -- ніщо. Помилка набору
+        // («2000» замість «200») перетворювала зону фракції на пів карти, і
+        // гравці одного табору прокидались за десять кілометрів один від
+        // одного. Це виглядає як зламаний спавн, а не як зайвий нуль.
+        if (radius > MAX_RADIUS)
         {
-            float a = Math.RandomFloat(0, Math.PI2);
-            float r = Math.RandomFloat(0, radius);
-            p[0] = center[0] + Math.Cos(a) * r;
-            p[2] = center[2] + Math.Sin(a) * r;
+            OZ_Log.Warn("spawns: radius " + radius.ToString() + " capped at " + MAX_RADIUS.ToString());
+            radius = MAX_RADIUS;
         }
 
+        vector p = center;
+
+        // Пробуємо кілька разів і беремо перше НЕ У ВОДІ.
+        //
+        // Коло розкиду не знає, що під ним: зона біля берега справно кидала
+        // людей у море -- заплив, обморожений, без речей, за кілометр від
+        // своїх. SurfaceIsSea коштує дешево, а спроб треба небагато: якщо
+        // десять поспіль дали воду, то зону поставили в воду, і чесніше
+        // віддати центр, ніж шукати далі.
+        for (int attempt = 0; attempt < TRIES; attempt++)
+        {
+            p = center;
+
+            if (radius > 0)
+            {
+                float a = Math.RandomFloat(0, Math.PI2);
+                float r = Math.RandomFloat(0, radius);
+                p[0] = center[0] + Math.Cos(a) * r;
+                p[2] = center[2] + Math.Sin(a) * r;
+            }
+
+            p = InWorld(p);
+
+            if (!GetGame().SurfaceIsSea(p[0], p[2]) && !GetGame().SurfaceIsPond(p[0], p[2]))
+                return p;
+
+            if (radius <= 0)
+                break;
+        }
+
+        return p;
+    }
+
+    private static vector InWorld(vector p)
+    {
         // ЗАГАНЯЄМО В КАРТУ, і це не перестраховка.
         //
         // Розкид -- це коло, а коло біля краю виходить за нього. Радіус у
