@@ -134,9 +134,15 @@ class OZ_Module : CF_ModuleWorld
         if (!sender)
             return;
 
-        string op        = data.param1;
-        string targetUid = data.param2;
-        string arg       = data.param3;
+        string op         = data.param1;
+        string targetName = data.param2;
+        string arg        = data.param3;
+
+        // Ім'я -> особа, і тільки серед тих, хто В ЗОНІ. Клієнт назвав рядок;
+        // кому він належить, вирішуємо ми.
+        string targetUid = "";
+        if (targetName != "")
+            targetUid = OZ_RoleOps.UidByName(targetName, sender.GetPlainId());
 
         // Запрошення -- НЕ операція над ролями, тому й не йде в OZ_RoleOps:
         // до згоди воно взагалі нічого не міняє в Discord.

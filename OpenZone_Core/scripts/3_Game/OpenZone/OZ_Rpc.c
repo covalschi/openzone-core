@@ -102,12 +102,17 @@ class OZ_Rpc
 
     // ---------------------------------------------------------------- ролі
 
-    // Кого міняємо -- НЕ називаємо особою, лише uid: сервер бере актора з
-    // sender і ніколи звідси.
-    static void RoleRequest(string op, string targetUid, string arg)
+    // Кого міняємо -- ІМ'ЯМ, а не uid.
+    //
+    // Чужого Steam64 клієнт не бачить НІКОЛИ -- це межа, яку тримає вся
+    // сторінка контактів, і вона не робиться винятком заради зручності. Кому
+    // належить ім'я, вирішує сервер, і серед кого шукати -- теж він.
+    //
+    // Актора не називаємо взагалі: він завжди береться з sender.
+    static void RoleRequest(string op, string targetName, string arg)
     {
         Param3<string, string, string> p =
-            new Param3<string, string, string>(op, targetUid, arg);
+            new Param3<string, string, string>(op, targetName, arg);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_ROLE_REQ, p, true);
     }
 

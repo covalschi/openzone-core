@@ -38,13 +38,6 @@ class OZ_Roles
 {
     private static ref map<string, ref OZ_RoleView> s_By;
 
-    // Коли востаннє щось приїжджало від моста, у мілісекундах.
-    private static int s_LastAt = 0;
-
-    // Скільки проекція вважається свіжою. Опит моста тримається до восьми
-    // секунд, тож тридцять -- це «пропустили три поспіль», а не «затримка».
-    private static const int STALE_MS = 30000;
-
     static void Apply(OZ_RoleView v)
     {
         if (!GetGame().IsServer())
@@ -66,7 +59,6 @@ class OZ_Roles
             changed = !Same(had, v);
 
         s_By.Set(v.Uid, v);
-        s_LastAt = GetGame().GetTime();
 
         if (changed)
         {
@@ -181,9 +173,20 @@ class OZ_Roles
     // права не має.
     static bool Stale()
     {
-        if (s_LastAt == 0)
-            return true;
-        return (GetGame().GetTime() - s_LastAt) > STALE_MS;
+        // Питаємо МІСТ, а не власний лічильник приїздів.
+        //
+        // Тут стояло «коли востаннє приїжджала проекція», і це працювало рівно
+        // доти, доки проекція приїжджала щоопиту. Щойно її стали слати ЛИШЕ
+        // ПРИ ЗМІНІ -- а це зробили, щоб не крутити опит на сімнадцять
+        // запитів на секунду, -- лічильник перестав означати те, що означав:
+        // тридцять секунд без змін у Discord, і цілком здоровий міст читався
+        // як мертвий. Видно на екрані: підказка «мережа мовчить» під свіжим
+        // списком.
+        //
+        // Живий міст -- це «дзвінок дійшов недавно», і ця відповідь уже є в
+        // одному місці. Друга власна міра того самого була б третім домом для
+        // факту, і розійшлася б так само.
+        return !OZ_BridgeClient.Alive();
     }
 }
 
@@ -219,6 +222,73 @@ class OZ_RosterSink : OZ_BridgeSink
         }
 
         OZ_Factions.ApplyRoster(r);
+
+        // Підписи інших осей -- у словник. Фракції веде OZ_Factions, бо в них
+        // є ще й ставлення; решта -- самі лише слова.
+        OZ_RoleNames.Absorb(r.Ranks);
+        OZ_RoleNames.Absorb(r.Traits);
+        OZ_RoleNames.Absorb(r.Posts);
+    }
+}
+
+// Як звуться звання, посади й мітки.
+//
+// Живе окремо від OZ_Factions, бо це не служба, а ПРОСТО СЛОВНИК: у нього
+// немає ні ставлень, ні запасного шляху через файл акаунта, ні контракту для
+// чужого постачальника. Єдина його робота -- перекласти слаг у те, що можна
+// показати людині.
+//
+// Приїжджає з реєстру й НЕ ЗБЕРІГАЄТЬСЯ на диск, з тієї ж причини, що й
+// підписи фракцій: підпис -- косметика, і записувати чуже слово у файл
+// адміна означало б, що воно там лишиться, коли бота вже не буде.
+//
+// Слаг без підпису показуємо ЯК Є. Порожній рядок був би гірший: гравець
+// побачив би нічого там, де в нього насправді є звання.
+class OZ_RoleNames
+{
+    private static ref map<string, string> s_By;
+
+    static void Absorb(array<ref OZ_RoleName> list)
+    {
+        if (!list)
+            return;
+
+        if (!s_By)
+            s_By = new map<string, string>();
+
+        for (int i = 0; i < list.Count(); i++)
+        {
+            if (!list[i])
+                continue;
+            if (list[i].Id == "")
+                continue;
+            if (list[i].DisplayName == "")
+                continue;
+
+            s_By.Set(list[i].Id, list[i].DisplayName);
+        }
+    }
+
+    static string Of(string slug)
+    {
+        if (slug == "")
+            return "";
+
+        if (s_By)
+        {
+            string name;
+            if (s_By.Find(slug, name))
+                return name;
+        }
+
+        return slug;
+    }
+
+    static int Count()
+    {
+        if (!s_By)
+            return 0;
+        return s_By.Count();
     }
 }
 
@@ -237,5 +307,44 @@ class OZ_Identity
     static bool HasTrait(string uid, string trait)
     {
         return OZ_Roles.HasTrait(uid, trait);
+    }
+
+    // Звання людською назвою, готове до показу.
+    static string RankName(string uid)
+    {
+        return OZ_RoleNames.Of(OZ_Roles.RankOf(uid));
+    }
+
+    // Посади людськими назвами. Слаг посади в реєстрі має вигляд
+    // "duty:leader", а в проекції лежить сам "leader" -- тому фракцію
+    // додаємо тут, а не змушуємо кожного, хто малює, пам'ятати про це.
+    static void PostNames(string uid, out array<string> into)
+    {
+        if (!into)
+            return;
+
+        OZ_RoleView v = OZ_Roles.Of(uid);
+        if (!v)
+            return;
+
+        string faction = OZ_Factions.OfUid(uid);
+        if (faction == "")
+            return;
+
+        for (int i = 0; i < v.Posts.Count(); i++)
+            into.Insert(OZ_RoleNames.Of(faction + ":" + v.Posts[i]));
+    }
+
+    static void TraitNames(string uid, out array<string> into)
+    {
+        if (!into)
+            return;
+
+        OZ_RoleView v = OZ_Roles.Of(uid);
+        if (!v)
+            return;
+
+        for (int i = 0; i < v.Traits.Count(); i++)
+            into.Insert(OZ_RoleNames.Of(v.Traits[i]));
     }
 }

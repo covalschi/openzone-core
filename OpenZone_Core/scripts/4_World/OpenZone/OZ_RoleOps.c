@@ -84,6 +84,43 @@ class OZ_RoleReply : OZ_BridgeReply
 
 class OZ_RoleOps
 {
+    // Кому належить це ім'я, серед тих, хто зараз у Зоні.
+    //
+    // Однакові імена можливі, і тоді ми НЕ ВГАДУЄМО: порожнє означає «не
+    // знайшли», і дія чесно не відбувається. Вибрати одного з двох Сидорових
+    // навмання гірше за відмову -- другий не зрозуміє, за що його вигнали.
+    static string UidByName(string name, string exceptUid)
+    {
+        if (name == "")
+            return "";
+
+        array<Man> players = new array<Man>();
+        GetGame().GetPlayers(players);
+
+        string found = "";
+
+        for (int i = 0; i < players.Count(); i++)
+        {
+            if (!players[i])
+                continue;
+
+            PlayerIdentity id = players[i].GetIdentity();
+            if (!id)
+                continue;
+            if (id.GetPlainId() == exceptUid)
+                continue;
+            if (id.GetName() != name)
+                continue;
+
+            if (found != "")
+                return "";
+
+            found = id.GetPlainId();
+        }
+
+        return found;
+    }
+
     // Попросити міст змінити ролі. Особа актора -- ЗАВЖДИ з sender.
     static void Request(PlayerIdentity actor, string targetUid, string op, string arg)
     {

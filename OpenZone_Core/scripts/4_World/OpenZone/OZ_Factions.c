@@ -301,10 +301,24 @@ class OZ_FactionRosterEntry
     string Color;
 }
 
+// Підпис однієї ролі, будь-якої з трьох осей. Той самий вигляд, що й у
+// фракції, мінус колір: звання й мітки на екрані не фарбуються.
+class OZ_RoleName
+{
+    string Id;
+    string DisplayName;
+}
+
 class OZ_FactionRoster
 {
     int Stamp;
     ref array<ref OZ_FactionRosterEntry> Factions;
+
+    // Три інші осі -- лише підписи. Приїжджають тим самим конвертом, бо
+    // змінюються так само рідко й з того самого джерела.
+    ref array<ref OZ_RoleName> Ranks;
+    ref array<ref OZ_RoleName> Traits;
+    ref array<ref OZ_RoleName> Posts;
 }
 
 // Слова, якими описується ставлення. Рядками, бо їх читає адмін у JSON, і
