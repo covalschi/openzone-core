@@ -15,6 +15,17 @@ class OZ_ResponseListener
 
 class OZ_ClientState
 {
+    // Забути все при кінці місії. Статики переживають перепідключення, і
+    // без цього наступний сервер успадковував би ЧУЖИЙ знімок: прапорець
+    // адміна, перелік сторінок, рівень налагодження -- усе з минулого
+    // сервера, поки новий не пришле свій OZ_Sync. А сервер без OpenZone не
+    // пришле його ніколи.
+    static void Forget()
+    {
+        s_Payload = null;
+        OZ_Log.SetDebug(false);
+    }
+
     private static ref OZ_ResponseListener s_Listener;
 
     static void BindListener(OZ_ResponseListener l)

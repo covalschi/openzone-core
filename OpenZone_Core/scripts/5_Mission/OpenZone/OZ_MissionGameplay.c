@@ -23,6 +23,7 @@ modded class MissionGameplay
     override void OnMissionFinish()
     {
         OZ_LinkGate.Forget();
+        OZ_ClientState.Forget();
         super.OnMissionFinish();
     }
 
