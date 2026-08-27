@@ -31,6 +31,17 @@ class OZ_Rpc
     static const string RPC_ROLE_REQ = "OZ_RoleReq";
     static const string RPC_ROLE_RES = "OZ_RoleRes";
 
+    // «Покажи це» -- сервер клієнтові. Один рядок-команда, без корисного
+    // навантаження.
+    //
+    // Потрібен тому, що клієнтська половина ДІЇ не спрацьовує там, де мала б:
+    // ActionManager кличе Start() на клієнті лише після підтвердження від
+    // сервера й лише якщо пройде повторна перевірка умов, і на екрані цього
+    // не сталось жодного разу -- дія виконувалась, меню не відкривалось.
+    // Замість того щоб гадати про чужий скінченний автомат, беремо канал,
+    // який працює: сервер зробив -- сервер і сказав.
+    static const string RPC_SHOW = "OZ_Show";
+
     // Зареєстрована функція МУСИТЬ мати рівно цю форму -- її задає диспетчер
     // CF (Param4 + CallFunctionParams), ніде не оголошуючи явно:
     //
@@ -63,6 +74,7 @@ class OZ_Rpc
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_RES,  inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_RES, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ROLE_RES, inst, SingleplayerExecutionType.Client);
+        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_SHOW, inst, SingleplayerExecutionType.Client);
     }
 
     // guaranteed за замовчуванням FALSE. Усе, що тут надсилається, має
@@ -124,5 +136,12 @@ class OZ_Rpc
     {
         Param3<string, bool, string> p = new Param3<string, bool, string>(op, ok, why);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_ROLE_RES, p, true, to);
+    }
+
+    // Сервер -> клієнт: показати щось. Що саме -- вирішує той, хто підписався
+    // на OZ_Show; ядро про екрани не знає.
+    static void Show(PlayerIdentity to, string what)
+    {
+        GetRPCManager().SendRPC(OZ_Const.MOD, RPC_SHOW, new Param1<string>(what), true, to);
     }
 }

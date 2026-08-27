@@ -120,6 +120,20 @@ class OZ_ClientState
         OZ_RoleNotice.Take(data.param1, data.param2, data.param3);
     }
 
+    // «Покажи це». Ядро не знає, що саме -- лише розносить команду тим, хто
+    // підписався. КПК підписується на "pda" й відкриває себе.
+    void OZ_Show(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Client)
+            return;
+
+        Param1<string> data;
+        if (!ctx.Read(data))
+            return;
+
+        OZ_Show.Take(data.param1);
+    }
+
     void OZ_Res(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
         if (type != CallType.Client)
