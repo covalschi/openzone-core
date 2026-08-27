@@ -157,6 +157,107 @@ class OZ_Spawns
         return s_Cfg.Zones.Count();
     }
 
+    // ------------------------------------------------------ для адміна
+
+    // Зона ролі -- ТУТ, де я стою. Радіус у метрах.
+    //
+    // Координати набирали руками у файлі, і це найгірший спосіб задати місце
+    // на карті: щоб дізнатись, куди ставити, треба спершу туди прийти й
+    // подивитись координати -- а тоді вже переписати їх у файл без помилки.
+    // Прийшов, став, відмітив.
+    //
+    // Порожня роль -- ЗАПАСНА зона (для всіх, у кого нічого не збіглося).
+    // "*" -- стейджинґ. Не слаг фракції, бо стейджинґ і не роль: це відповідь
+    // на відсутність ролі.
+    static string SetZoneHere(string role, vector where, float radius)
+    {
+        if (!GetGame().IsServer())
+            return "STR_OZ_ERR_INTERNAL";
+        if (!s_Cfg)
+            return "STR_OZ_ERR_INTERNAL";
+
+        if (radius < 0)
+            radius = 0;
+
+        string pos = where.ToString(false);
+
+        if (role == "*")
+        {
+            if (!s_Cfg.Staging)
+                s_Cfg.Staging = new OZ_SpawnPlace();
+
+            s_Cfg.Staging.Center = pos;
+            s_Cfg.Staging.Radius = radius;
+            Save();
+            return "";
+        }
+
+        // Роль мусить існувати -- інакше зона нікому не дістанеться, а адмін
+        // про це не дізнається до першої чужої смерті. Порожня ("запасна")
+        // -- виняток: вона навмисно нічия.
+        if (role != "" && !OZ_Factions.Find(role))
+            return "STR_OZ_ERR_NO_FACTION";
+
+        for (int i = 0; i < s_Cfg.Zones.Count(); i++)
+        {
+            if (s_Cfg.Zones[i].Role != role)
+                continue;
+
+            s_Cfg.Zones[i].Center = pos;
+            s_Cfg.Zones[i].Radius = radius;
+            Save();
+            return "";
+        }
+
+        OZ_SpawnZone z = new OZ_SpawnZone();
+        z.Role   = role;
+        z.Center = pos;
+        z.Radius = radius;
+        s_Cfg.Zones.Insert(z);
+
+        Save();
+        return "";
+    }
+
+    // Прибрати зону. Стейджинґ вимикається порожнім центром, зона ролі --
+    // зникає зі списку: порожній запис у файлі означав би «є, але зламана».
+    static string ClearZone(string role)
+    {
+        if (!GetGame().IsServer())
+            return "STR_OZ_ERR_INTERNAL";
+        if (!s_Cfg)
+            return "STR_OZ_ERR_INTERNAL";
+
+        if (role == "*")
+        {
+            if (s_Cfg.Staging)
+            {
+                s_Cfg.Staging.Center = "";
+                s_Cfg.Staging.Radius = 0;
+            }
+            Save();
+            return "";
+        }
+
+        for (int i = 0; i < s_Cfg.Zones.Count(); i++)
+        {
+            if (s_Cfg.Zones[i].Role != role)
+                continue;
+
+            s_Cfg.Zones.Remove(i);
+            Save();
+            return "";
+        }
+
+        return "STR_OZ_ERR_NO_ZONE";
+    }
+
+    private static void Save()
+    {
+        OZ_ConfigLoader<OZ_SpawnsConfig>.Save(OZ_Const.PROFILE_DIR + "\\Spawns.json", "spawns", s_Cfg);
+        OZ_Log.Info("spawns: written, " + Count().ToString() + " zone(s)");
+    }
+
     // ------------------------------------------------- для чужих модів
 
     // Наступний спавн цього гравця -- ТУТ. Одноразово.

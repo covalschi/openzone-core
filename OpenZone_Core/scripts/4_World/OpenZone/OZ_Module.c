@@ -164,6 +164,14 @@ class OZ_Module : CF_ModuleWorld
             return;
         }
 
+        // Зони спавна -- не про гравця й не про Discord, тому окремою гілкою
+        // й без цілі: адмін ставить зону ТАМ, ДЕ СТОЇТЬ САМ.
+        if (op == OZ_RoleOp.SPAWN_HERE || op == OZ_RoleOp.SPAWN_CLEAR)
+        {
+            OZ_SpawnOps.Handle(sender, op, arg);
+            return;
+        }
+
         OZ_RoleOps.Request(sender, targetUid, op, arg);
     }
 

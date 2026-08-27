@@ -270,6 +270,91 @@ class OZ_RoleOps
     }
 }
 
+// Зони спавна -- адмінські операції.
+//
+// Живуть поруч із рольовими, бо приходять тим самим RPC і тією ж перевіркою
+// прав. Але на МІСТ вони не йдуть узагалі: координати належать карті, а не
+// Discord, і бот про них нічого не знає й знати не мусить.
+class OZ_SpawnOps
+{
+    static void Handle(PlayerIdentity who, string op, string arg)
+    {
+        if (!GetGame().IsServer())
+            return;
+        if (!who)
+            return;
+
+        if (!OZ_Perm.IsAdmin(who))
+        {
+            OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_ADMIN_ONLY");
+            return;
+        }
+
+        // arg -- "слаг" або "слаг радіус". Радіус необов'язковий: без нього
+        // двадцять метрів, бо зона в одну точку -- це купа тіл, а не табір.
+        string role = arg;
+        float radius = 20;
+
+        int sp = arg.IndexOf(" ");
+        if (sp != -1)
+        {
+            role = arg.Substring(0, sp);
+            radius = arg.Substring(sp + 1, arg.Length() - sp - 1).ToFloat();
+        }
+
+        // Порожній слаг -- це ЗАПАСНА зона, і писати його як "" у команді
+        // незручно. Домовляємось: "-" означає порожній.
+        if (role == "-")
+            role = "";
+
+        string err;
+
+        if (op == OZ_RoleOp.SPAWN_CLEAR)
+        {
+            err = OZ_Spawns.ClearZone(role);
+        }
+        else
+        {
+            PlayerBase p = PlayerBase.Cast(GetGame().GetPlayer());
+            vector here = vector.Zero;
+
+            // Позицію беремо з ЙОГО тіла на сервері, а не з чогось, що прислав
+            // клієнт: інакше зону можна було б поставити куди завгодно, не
+            // сходячи з місця.
+            array<Man> players = new array<Man>();
+            GetGame().GetPlayers(players);
+            for (int i = 0; i < players.Count(); i++)
+            {
+                if (!players[i])
+                    continue;
+                PlayerIdentity id = players[i].GetIdentity();
+                if (!id)
+                    continue;
+                if (id.GetPlainId() != who.GetPlainId())
+                    continue;
+                here = players[i].GetPosition();
+                break;
+            }
+
+            if (here == vector.Zero)
+            {
+                OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_INTERNAL");
+                return;
+            }
+
+            err = OZ_Spawns.SetZoneHere(role, here, radius);
+        }
+
+        if (err != "")
+        {
+            OZ_Rpc.RoleRespond(who, op, false, err);
+            return;
+        }
+
+        OZ_Rpc.RoleRespond(who, op, true, "");
+    }
+}
+
 // Назви операцій. Рядки збігаються з тими, що читає міст, ПОСИМВОЛЬНО.
 class OZ_RoleOp
 {
@@ -281,6 +366,10 @@ class OZ_RoleOp
     static const string TRAIT_REMOVE    = "trait.remove";
     static const string RANK_SET        = "rank.set";
     static const string LEADER_TRANSFER = "leader.transfer";
+
+    // Ці двоє до моста не доходять: карта -- не його справа.
+    static const string SPAWN_HERE  = "spawn.here";
+    static const string SPAWN_CLEAR = "spawn.clear";
 }
 
 // Запрошення до фракції.
