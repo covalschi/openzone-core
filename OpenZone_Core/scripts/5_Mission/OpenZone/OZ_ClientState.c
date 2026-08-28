@@ -36,6 +36,10 @@ class OZ_ClientState
     private static ref OZ_SyncPayload  s_Payload;
     private static ref OZ_ClientState  s_Inst;
 
+    // Частини довгих відповідей, що ще їдуть: ключ -- сторінка|операція.
+    // Фінальний OZ_Res забирає й чистить; порядок гарантує канал.
+    private ref map<string, string> m_ResParts = new map<string, string>();
+
     static OZ_ClientState Instance()
     {
         if (!s_Inst)
@@ -145,6 +149,23 @@ class OZ_ClientState
         OZ_Show.Take(data.param1);
     }
 
+    // Частина довгої відповіді: рушійний RPC псує рядки понад ~1024 байти,
+    // тому тіло їде шматками поперед свого конверта (OZ_Rpc.Respond).
+    void OZ_ResPart(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Client)
+            return;
+
+        Param3<string, string, string> part;
+        if (!ctx.Read(part))
+            return;
+
+        string key = part.param1 + "|" + part.param2;
+        string sofar = "";
+        m_ResParts.Find(key, sofar);
+        m_ResParts.Set(key, sofar + part.param3);
+    }
+
     void OZ_Res(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
         if (type != CallType.Client)
@@ -153,6 +174,15 @@ class OZ_ClientState
         Param5<string, string, bool, string, string> data;
         if (!ctx.Read(data))
             return;
+
+        // Довге тіло приїхало частинами поперед конверта -- приклеїти.
+        string pkey = data.param1 + "|" + data.param2;
+        string parts = "";
+        if (m_ResParts.Find(pkey, parts))
+        {
+            data.param4 = parts + data.param4;
+            m_ResParts.Remove(pkey);
+        }
 
         string line = "response page=" + data.param1;
         line += " op=" + data.param2;

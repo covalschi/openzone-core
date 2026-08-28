@@ -14,6 +14,11 @@ class OZ_Module : CF_ModuleWorld
     // секунд -- стеля втрати, і вона нічого не коштує: скидається лише те,
     // що позначене брудним.
     private ref Timer m_FlushTimer;
+
+    // Частини довгих запитів, що ще їдуть: ключ -- гравець|сторінка|операція.
+    // Фінальний OZ_Req забирає й чистить. Гарантований канал зберігає
+    // порядок, тому «частини, потім конверт» -- інваріант, а не сподівання.
+    private ref map<string, string> m_ReqParts = new map<string, string>();
     private static const float FLUSH_INTERVAL = 30.0;
 
     override void OnInit()
@@ -175,6 +180,23 @@ class OZ_Module : CF_ModuleWorld
         OZ_RoleOps.Request(sender, targetUid, op, arg);
     }
 
+    // Частина довгого запиту. Тільки накопичити: перевірки доступу зроблені
+    // ОДИН раз у фінальному OZ_Req -- частини без конверта нікуди не ведуть.
+    void OZ_ReqPart(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Server || !sender)
+            return;
+
+        Param3<string, string, string> data;
+        if (!ctx.Read(data))
+            return;
+
+        string key = sender.GetPlainId() + "|" + data.param1 + "|" + data.param2;
+        string sofar = "";
+        m_ReqParts.Find(key, sofar);
+        m_ReqParts.Set(key, sofar + data.param3);
+    }
+
     // Порядок перевірок нижче -- і є межа безпеки. Міняти його не можна.
     void OZ_Req(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
@@ -188,6 +210,18 @@ class OZ_Module : CF_ModuleWorld
         string pageId = data.param1;
         string op     = data.param2;
         string json   = data.param3;
+
+        // Довге тіло приїхало частинами поперед конверта -- приклеїти.
+        if (sender)
+        {
+            string pkey = sender.GetPlainId() + "|" + pageId + "|" + op;
+            string parts = "";
+            if (m_ReqParts.Find(pkey, parts))
+            {
+                json = parts + json;
+                m_ReqParts.Remove(pkey);
+            }
+        }
 
         // 1. Особа -- ЗАВЖДИ з sender. Ніколи з корисного навантаження:
         //    туди клієнт напише що завгодно.

@@ -15,6 +15,13 @@ class OZ_Rpc
     static const string RPC_REQ   = "OZ_Req";
     static const string RPC_RES   = "OZ_Res";
 
+    // Частини довгого JSON: рушійний RPC псує рядки понад ~1024 байти
+    // (див. OZ_Const.RPC_STR_CHUNK). Частини йдуть попереду, фінальний
+    // конверт несе мітку OZ_Const.CHUNKED замість тіла. Порядок доставки
+    // гарантований каналом: guaranteed-RPC приїздять у порядку відправки.
+    static const string RPC_REQ_PART = "OZ_ReqPart";
+    static const string RPC_RES_PART = "OZ_ResPart";
+
     // Прив'язка має ВЛАСНУ пару, а не сторінку в реєстрі.
     //
     // Сторінки проходять крізь OZ_PageAccess, і КПК підміняє його перевіркою
@@ -53,6 +60,7 @@ class OZ_Rpc
     {
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_HELLO, inst, SingleplayerExecutionType.Server);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_REQ,   inst, SingleplayerExecutionType.Server);
+        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_REQ_PART, inst, SingleplayerExecutionType.Server);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_REQ, inst, SingleplayerExecutionType.Server);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ROLE_REQ, inst, SingleplayerExecutionType.Server);
     }
@@ -72,6 +80,7 @@ class OZ_Rpc
     {
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_SYNC, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_RES,  inst, SingleplayerExecutionType.Client);
+        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_RES_PART, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_RES, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ROLE_RES, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_SHOW, inst, SingleplayerExecutionType.Client);
@@ -84,15 +93,41 @@ class OZ_Rpc
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_SYNC, new Param1<string>(json), true, to);
     }
 
+    // Різати можна лише МІЖ символами: Length()/Substring() байтові, а тіло
+    // UTF-8. Байт-продовження має вигляд 10xxxxxx -- відступаємо до початку
+    // символу, інакше на шві лишається половина літери.
+    private static int CutSafe(string s, int at)
+    {
+        while (at > 0 && (s.Get(at).ToAscii() & 0xC0) == 0x80)
+            at--;
+        return at;
+    }
+
     // Клієнт -> сервер: одержувача не вказуємо, CF сам знає, куди.
     static void Request(string pageId, string op, string json)
     {
+        while (json.Length() > OZ_Const.RPC_STR_CHUNK)
+        {
+            int cut = CutSafe(json, OZ_Const.RPC_STR_CHUNK);
+            Param3<string, string, string> part = new Param3<string, string, string>(pageId, op, json.Substring(0, cut));
+            GetRPCManager().SendRPC(OZ_Const.MOD, RPC_REQ_PART, part, true);
+            json = json.Substring(cut, json.Length() - cut);
+        }
+
         Param3<string, string, string> p = new Param3<string, string, string>(pageId, op, json);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_REQ, p, true);
     }
 
     static void Respond(PlayerIdentity to, string pageId, string op, bool ok, string json, string error)
     {
+        while (json.Length() > OZ_Const.RPC_STR_CHUNK)
+        {
+            int cut = CutSafe(json, OZ_Const.RPC_STR_CHUNK);
+            Param3<string, string, string> part = new Param3<string, string, string>(pageId, op, json.Substring(0, cut));
+            GetRPCManager().SendRPC(OZ_Const.MOD, RPC_RES_PART, part, true, to);
+            json = json.Substring(cut, json.Length() - cut);
+        }
+
         Param5<string, string, bool, string, string> p =
             new Param5<string, string, bool, string, string>(pageId, op, ok, json, error);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_RES, p, true, to);
