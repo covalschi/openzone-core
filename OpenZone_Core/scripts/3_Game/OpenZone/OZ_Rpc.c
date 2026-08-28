@@ -96,17 +96,22 @@ class OZ_Rpc
     // Різати можна лише МІЖ символами: Length()/Substring() байтові, а тіло
     // UTF-8. Байт-продовження має вигляд 10xxxxxx -- відступаємо до початку
     // символу, інакше на шві лишається половина літери.
-    private static int CutSafe(string s, int at)
+    //
+    // Межі -- АБСОЛЮТНІ індекси в s: різак ходить по рядку зсувом і ніколи
+    // не матеріалізує хвіст. Виміряно зондом на стенді: ВИХІД Substring
+    // мовчки ріжеться до 8191 байтів, тож стара форма "json = хвіст"
+    // втрачала все після ~9 КіБ на першій же ітерації.
+    private static int CutSafe(string s, int from, int at)
     {
         int cut = at;
-        while (cut > 0 && (s.Get(cut).ToAscii() & 0xC0) == 0x80)
+        while (cut > from && (s.Get(cut).ToAscii() & 0xC0) == 0x80)
             cut--;
 
-        // Дійшли до нуля -- перед нами не UTF-8, а суцільні хвостові байти
-        // (сміття з битого пейлоада). Ріжемо по сирій межі: биті дані
-        // лишаться битими, але цикл відправки НЕ зациклиться на Substring(0,0),
-        // який інакше вішає сервер назавжди.
-        if (cut == 0)
+        // Дійшли до початку вікна -- перед нами не UTF-8, а суцільні
+        // хвостові байти (сміття з битого пейлоада). Ріжемо по сирій межі:
+        // биті дані лишаться битими, але цикл відправки НЕ зациклиться
+        // на порожньому кроці, який інакше вішає сервер назавжди.
+        if (cut == from)
             return at;
 
         return cut;
@@ -115,30 +120,44 @@ class OZ_Rpc
     // Клієнт -> сервер: одержувача не вказуємо, CF сам знає, куди.
     static void Request(string pageId, string op, string json)
     {
-        while (json.Length() > OZ_Const.RPC_STR_CHUNK)
+        int len = json.Length();
+        int off = 0;
+
+        while (len - off > OZ_Const.RPC_STR_CHUNK)
         {
-            int cut = CutSafe(json, OZ_Const.RPC_STR_CHUNK);
-            Param3<string, string, string> part = new Param3<string, string, string>(pageId, op, json.Substring(0, cut));
+            int cut = CutSafe(json, off, off + OZ_Const.RPC_STR_CHUNK);
+            Param3<string, string, string> part = new Param3<string, string, string>(pageId, op, json.Substring(off, cut - off));
             GetRPCManager().SendRPC(OZ_Const.MOD, RPC_REQ_PART, part, true);
-            json = json.Substring(cut, json.Length() - cut);
+            off = cut;
         }
 
-        Param3<string, string, string> p = new Param3<string, string, string>(pageId, op, json);
+        string last = json;
+        if (off > 0)
+            last = json.Substring(off, len - off);
+
+        Param3<string, string, string> p = new Param3<string, string, string>(pageId, op, last);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_REQ, p, true);
     }
 
     static void Respond(PlayerIdentity to, string pageId, string op, bool ok, string json, string error)
     {
-        while (json.Length() > OZ_Const.RPC_STR_CHUNK)
+        int len = json.Length();
+        int off = 0;
+
+        while (len - off > OZ_Const.RPC_STR_CHUNK)
         {
-            int cut = CutSafe(json, OZ_Const.RPC_STR_CHUNK);
-            Param3<string, string, string> part = new Param3<string, string, string>(pageId, op, json.Substring(0, cut));
+            int cut = CutSafe(json, off, off + OZ_Const.RPC_STR_CHUNK);
+            Param3<string, string, string> part = new Param3<string, string, string>(pageId, op, json.Substring(off, cut - off));
             GetRPCManager().SendRPC(OZ_Const.MOD, RPC_RES_PART, part, true, to);
-            json = json.Substring(cut, json.Length() - cut);
+            off = cut;
         }
 
+        string last = json;
+        if (off > 0)
+            last = json.Substring(off, len - off);
+
         Param5<string, string, bool, string, string> p =
-            new Param5<string, string, bool, string, string>(pageId, op, ok, json, error);
+            new Param5<string, string, bool, string, string>(pageId, op, ok, last, error);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_RES, p, true, to);
     }
 
