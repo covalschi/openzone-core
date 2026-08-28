@@ -93,6 +93,9 @@ class OZ_PlayerData : OZ_ConfigBase
     // знайомляться в очі, а не за списком онлайну; заразом це знімає питання
     // «звідки клієнт узяв чужий Steam64»: нізвідки, він його не бачить.
     ref array<string> Friends;
+    // NPC у контактах -- псевдо-uid-и "npc:<id>". СВІДОМО окремий простір
+    // від SteamID: NPC не буває другом, членом групи чи ціллю обміну.
+    ref array<string> NpcContacts;
     ref array<string> FriendReq;
 
     // --- групові розмови ---
@@ -156,6 +159,7 @@ class OZ_PlayerData : OZ_ConfigBase
 
         Name      = "";
         Friends   = new array<string>();
+        NpcContacts = new array<string>();
         FriendReq = new array<string>();
         Chats     = new array<string>();
         Faction   = "";
@@ -176,6 +180,8 @@ class OZ_PlayerData : OZ_ConfigBase
             FriendReq = new array<string>();
         if (!Chats)
             Chats = new array<string>();
+        if (!NpcContacts)
+            NpcContacts = new array<string>();
     }
 }
 
