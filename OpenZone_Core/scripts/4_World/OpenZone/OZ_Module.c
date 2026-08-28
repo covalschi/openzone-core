@@ -21,6 +21,13 @@ class OZ_Module : CF_ModuleWorld
     private ref map<string, string> m_ReqParts = new map<string, string>();
     private static const float FLUSH_INTERVAL = 30.0;
 
+    // Стелі проти зловмисних/обірваних частин. Легальний chunked-запит --
+    // це список нотаток чи книжка чипа, десятки кілобайт щонайбільше, і
+    // на сервер одночасно летить дай Боже одна-дві на гравця. Клієнт, що
+    // шле частини без фінального конверта, інакше ріс би в пам'яті вічно.
+    private static const int REQPART_MAX_BYTES = 262144;  // 256 KB на ключ
+    private static const int REQPART_MAX_KEYS  = 64;       // усього в польоті
+
     override void OnInit()
     {
         super.OnInit();
@@ -193,8 +200,42 @@ class OZ_Module : CF_ModuleWorld
 
         string key = sender.GetPlainId() + "|" + data.param1 + "|" + data.param2;
         string sofar = "";
-        m_ReqParts.Find(key, sofar);
+        bool known = m_ReqParts.Find(key, sofar);
+
+        // Новий ключ у переповнену мапу не пускаємо: конверт, що склеює й
+        // чистить, для такого потоку може не прийти взагалі.
+        if (!known && m_ReqParts.Count() >= REQPART_MAX_KEYS)
+        {
+            OZ_Log.Warn("reqpart: too many in-flight keys, dropping from " + sender.GetPlainId());
+            return;
+        }
+
+        // Тіло понад стелю -- або баг, або атака: викидаємо накопичене, щоб
+        // не тримати чужий мегабайт до кінця сеансу.
+        if (sofar.Length() + data.param3.Length() > REQPART_MAX_BYTES)
+        {
+            m_ReqParts.Remove(key);
+            OZ_Log.Warn("reqpart: body over cap, dropped key from " + sender.GetPlainId());
+            return;
+        }
+
         m_ReqParts.Set(key, sofar + data.param3);
+    }
+
+    // Викинути всі недособрані частини гравця. Кличеться на дисконекті:
+    // без конверта вони нікуди не ведуть, а тримати їх нема кому.
+    private void ForgetReqParts(string uid)
+    {
+        string prefix = uid + "|";
+        array<string> doomed = new array<string>();
+        for (int i = 0; i < m_ReqParts.Count(); i++)
+        {
+            string k = m_ReqParts.GetKey(i);
+            if (k.IndexOf(prefix) == 0)
+                doomed.Insert(k);
+        }
+        for (int j = 0; j < doomed.Count(); j++)
+            m_ReqParts.Remove(doomed[j]);
     }
 
     // Порядок перевірок нижче -- і є межа безпеки. Міняти його не можна.
@@ -392,6 +433,9 @@ class OZ_Module : CF_ModuleWorld
         // недосяжний і OZ_Factions.ForgetRole -- тобто розрізнення, яке вони
         // боронять, не працювало ЖОДНОГО разу.
         OZ_Roles.Forget(dArgs.UID);
+
+        // Недособрані частини довгих запитів цього гравця -- геть.
+        ForgetReqParts(dArgs.UID);
 
         OZ_Log.Dbg("disconnect " + dArgs.UID);
     }
