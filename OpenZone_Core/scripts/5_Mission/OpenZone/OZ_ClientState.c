@@ -28,6 +28,18 @@ class OZ_ClientState
 
     private static ref OZ_ResponseListener s_Listener;
 
+    // Другий, НЕадресний слухач: усі відповіді й пуші, що приїхали клієнтові,
+    // байдуже, відкрите меню чи ні. Потрібен речам поза меню -- тост чату
+    // на HUD слухає саме тут. Лінивий: нікому не треба -- нічого й немає.
+    private static ref ScriptInvoker s_Watch;
+
+    static ScriptInvoker ResponseWatch()
+    {
+        if (!s_Watch)
+            s_Watch = new ScriptInvoker();
+        return s_Watch;
+    }
+
     static void BindListener(OZ_ResponseListener l)
     {
         s_Listener = l;
@@ -193,5 +205,8 @@ class OZ_ClientState
 
         if (s_Listener)
             s_Listener.OnResponse(data.param1, data.param2, data.param3, data.param4, data.param5);
+
+        if (s_Watch)
+            s_Watch.Invoke(data.param1, data.param2, data.param3, data.param4, data.param5);
     }
 }
