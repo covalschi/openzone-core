@@ -34,6 +34,21 @@ class OZ_RoleView
     }
 }
 
+// Дзвінок «ролі змінились»: сторінки фракції і контактів оновлюються
+// самі, а не чекають, поки гравець перевідкриє вкладку. Лінива побудова
+// навмисно: статичний new у декларації НЕ виконується (зміряно).
+class OZ_RoleNotify
+{
+    private static ref ScriptInvoker s_On;
+
+    static ScriptInvoker On()
+    {
+        if (!s_On)
+            s_On = new ScriptInvoker();
+        return s_On;
+    }
+}
+
 class OZ_Roles
 {
     private static ref map<string, ref OZ_RoleView> s_By;
@@ -76,7 +91,10 @@ class OZ_Roles
         OZ_Factions.SetFromRole(v.Uid, v.Faction);
 
         if (changed)
+        {
             Remember(v);
+            OZ_RoleNotify.On().Invoke(v.Uid);
+        }
 
         if (v.Conflict.Count() > 1)
         {
@@ -151,6 +169,22 @@ class OZ_Roles
     // Про цього гравця нічого не відомо: не прив'язаний, або міст його не
     // бачить. Прибираємо ЗАПИС, а не ставимо порожній -- «немає ролі» й «ми
     // не знаємо» різні відповіді.
+    // Усі, про кого сервер ЗНАЄ, що вони в цій фракції. Це кеш проекцій
+    // за цей запуск -- офлайн, про якого ніхто не питав, сюди не потрапить,
+    // і чесніше показати менше, ніж вигадати повний список.
+    static void FactionMembers(string faction, array<string> outUids)
+    {
+        if (!s_By || faction == "")
+            return;
+
+        for (int i = 0; i < s_By.Count(); i++)
+        {
+            OZ_RoleView v = s_By.GetElement(i);
+            if (v && v.Faction == faction && outUids.Find(v.Uid) == -1)
+                outUids.Insert(v.Uid);
+        }
+    }
+
     static void Forget(string uid)
     {
         if (s_By && s_By.Contains(uid))

@@ -141,6 +141,16 @@ class OZ_BridgePump
     }
 }
 
+// Кого ще вважати «онлайном» для моста, крім самих гравців. Наповнює мод
+// пристроїв: захоплений живий термінал говорить за свого власника й тоді,
+// коли самого власника в Зоні немає, -- і його акаунт мусить дренуватись,
+// інакше тримач не побачить ехо власних відправлень. Ядро пристроїв не
+// знає, воно лише тримає гачок.
+class OZ_BridgeUidProvider
+{
+    void Fill(array<string> uids) {}
+}
+
 class OZ_BridgeClient
 {
     static const int BACKOFF_MS = 5000;
@@ -381,6 +391,16 @@ class OZ_BridgeClient
 
             uids.Insert(id.GetPlainId());
         }
+
+        for (int pi = 0; pi < s_UidProviders.Count(); pi++)
+            s_UidProviders[pi].Fill(uids);
+    }
+
+    private static ref array<ref OZ_BridgeUidProvider> s_UidProviders = new array<ref OZ_BridgeUidProvider>();
+
+    static void RegisterUidProvider(OZ_BridgeUidProvider p)
+    {
+        s_UidProviders.Insert(p);
     }
 
     // Вихідний лист сторінки. reply може бути порожнім -- тоді відповідь
