@@ -346,11 +346,74 @@ class OZ_Roles
         Absorb(list, s_RankIds);
     }
 
+    // Внутрiфракцiйнi звання зберiгаємо З ПОРЯДКОМ: без нього «пiдвищити»
+    // не має змiсту -- слаги гра знає, а хто з них вищий, каже реєстр.
+    private static ref array<int> s_FRankOrder;
+
     static void RememberFRankIds(array<ref OZ_RoleName> list)
     {
         if (!s_FRankIds)
             s_FRankIds = new array<string>();
-        Absorb(list, s_FRankIds);
+        if (!s_FRankOrder)
+            s_FRankOrder = new array<int>();
+
+        if (!list)
+            return;
+
+        for (int i = 0; i < list.Count(); i++)
+        {
+            if (!list[i] || list[i].Id == "")
+                continue;
+
+            int at = s_FRankIds.Find(list[i].Id);
+            if (at == -1)
+            {
+                s_FRankIds.Insert(list[i].Id);
+                s_FRankOrder.Insert(list[i].Order);
+                continue;
+            }
+
+            // Порядок могли переставити -- беремо свiжий.
+            s_FRankOrder[at] = list[i].Order;
+        }
+    }
+
+    // Драбина ОДНIЄЇ фракцiї, знизу вгору: слаги без префiкса й пiдписи
+    // поруч. Порожньо -- у фракцiї звань не завели.
+    static void FRankLadder(string faction, out array<string> outIds, out array<string> outNames)
+    {
+        if (!outIds)
+            outIds = new array<string>();
+        if (!outNames)
+            outNames = new array<string>();
+        outIds.Clear();
+        outNames.Clear();
+
+        if (faction == "" || !s_FRankIds || !s_FRankOrder)
+            return;
+
+        string prefix = faction + ":";
+        array<int> orders = new array<int>();
+
+        for (int i = 0; i < s_FRankIds.Count(); i++)
+        {
+            if (s_FRankIds[i].IndexOf(prefix) != 0)
+                continue;
+
+            string bare = s_FRankIds[i].Substring(prefix.Length(), s_FRankIds[i].Length() - prefix.Length());
+            int ord = s_FRankOrder[i];
+
+            // Вставляємо ЗА ПОРЯДКОМ одразу: драбина мусить приїхати
+            // клiєнтовi шикованою, iнакше «наступне вище» рахуватиме
+            // кожен екран сам i по-своєму.
+            int at = 0;
+            while (at < orders.Count() && orders[at] <= ord)
+                at++;
+
+            orders.InsertAt(ord, at);
+            outIds.InsertAt(bare, at);
+            outNames.InsertAt(OZ_RoleNames.Of(s_FRankIds[i]), at);
+        }
     }
 
     private static void Absorb(array<ref OZ_RoleName> list, array<string> into)
