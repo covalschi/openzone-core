@@ -32,8 +32,15 @@ class OZ_Perm
             // Незареєстроване право VPP відхиляє ЗАВЖДИ, хоч би хто його
             // питав (permissionmanager.c:715). Без цього рядка вся гілка VPP
             // тихо відповідала б «ні» кожному.
+            //
+            // "OZ_VppAdminMenu" -- право КНОПКИ вкладки OpenZone: перший
+            // аргумент InsertButton у VPP -- одночасно iм'я права i класу
+            // підменю. Реєструє СЕРВЕР, бо клієнтський pbo вкладки на
+            // сервері може бути взагалі не завантажений, а кнопка без
+            // серверного права мертва навіть для супер-адміна.
             array<string> perms = new array<string>();
             perms.Insert(OZ_Settings.Get().VppPermission);
+            perms.Insert("OZ_VppAdminMenu");
             GetPermissionManager().AddPermissionType(perms);
         }
 #endif

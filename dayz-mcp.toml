@@ -5,12 +5,13 @@
 name = "openzone-core"
 
 [build]
-# Ядро — один pbo, один предмет Workshop. Джерело в <root>/OpenZone_Core,
-# pbo стає OpenZone_Core.pbo, зібрана тека — @OpenZone_Core.
+# Ядро — pbo плюс НЕОБОВ'ЯЗКОВА вкладка VPP окремим pbo: у вкладки жорстка
+# залежність від VPP (requiredAddons), і нести її в ядрі означало б вимагати
+# VPP від кожного сервера. Джерела в <root>/OpenZone_Core і <root>/OpenZone_VPP.
 #
 # Ядро володіє лише Settings.json. Profiles.json (профілі пристроїв) належить
 # КПК: конфіг-служба тут, а самі файли оголошує той мод, якому вони потрібні.
-mods = ["OpenZone_Core"]
+mods = ["OpenZone_Core", "OpenZone_VPP"]
 
 [expect]
 # Рядок, який ядро друкує, коли всі його конфіги прочитані.

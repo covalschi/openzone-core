@@ -1,0 +1,57 @@
+// Один рядок списку вкладки VPP: кнопка з плашкою вибору.
+
+ButtonWidgetClass OZ_VppRow {
+ visible 1
+ position 0 0
+ size 560 30
+ hexactpos 1
+ vexactpos 1
+ hexactsize 1
+ vexactsize 1
+ text ""
+ {
+  PanelWidgetClass VRowBg {
+   visible 1
+   ignorepointer 1
+   color 0.055 0.055 0.062 1
+   position 0 0
+   size 560 28
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 0
+   style rover_sim_colorable
+  }
+  PanelWidgetClass VRowPick {
+   visible 0
+   ignorepointer 1
+   color 1 0.478 0.102 1
+   position 0 0
+   size 3 28
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 1
+   style rover_sim_colorable
+  }
+  TextWidgetClass VRowText {
+   visible 1
+   ignorepointer 1
+   position 10 0
+   size 540 28
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   color 0.788 0.788 0.816 1
+   text ""
+   font "gui/fonts/MetronBook14"
+   "exact text" 1
+   "text halign" left
+   "text valign" center
+   priority 2
+  }
+ }
+}

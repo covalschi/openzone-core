@@ -1,0 +1,59 @@
+// Одна кнопка-вкладка адмiнського вiкна. Iм'я ставить скрипт: "tab:<id>".
+
+ButtonWidgetClass OZ_VppTab {
+ visible 1
+ position 0 0
+ size 150 28
+ hexactpos 1
+ vexactpos 1
+ hexactsize 1
+ vexactsize 1
+ text ""
+ priority 4
+ {
+  PanelWidgetClass OZ_VppTabEdge {
+   visible 1
+   ignorepointer 1
+   color 0.31 0.31 0.35 1
+   position -1 -1
+   size 152 30
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 0
+   style rover_sim_colorable
+  }
+  PanelWidgetClass OZ_VppTabBg {
+   visible 1
+   ignorepointer 1
+   color 0.145 0.145 0.161 1
+   position 0 0
+   size 150 28
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 1
+   style rover_sim_colorable
+  }
+  TextWidgetClass OZ_VppTabText {
+   visible 1
+   ignorepointer 1
+   position 0 0
+   size 150 28
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   color 1 0.478 0.102 1
+   text ""
+   font "gui/fonts/sdf_MetronBook24"
+   "exact text" 1
+   "exact text size" 12
+   "text halign" center
+   "text valign" center
+   priority 2
+  }
+ }
+   }

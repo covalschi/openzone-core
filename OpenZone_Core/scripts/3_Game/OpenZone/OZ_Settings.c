@@ -21,6 +21,16 @@ class OZ_BridgeSettings
     int    PollTimeoutSec = 30;
 }
 
+// Фракцiйнi межi -- рiшення сервера, не Discord. Стеля складу живе НЕ тут,
+// а в кожнiй фракцiї окремо (Factions.json, поле MaxMembers): у кожного
+// угруповання свiй штат, i редагується вiн через адмiнську консоль.
+class OZ_FactionLimits
+{
+    // Скiльки живе запрошення у фракцiю. Довше -- i гравець приймає
+    // запрошення вiд лiдера, який давно передумав.
+    int InviteTtlSeconds = 120;
+}
+
 class OZ_Settings : OZ_ConfigBase
 {
     bool                  DebugMode = true;
@@ -44,6 +54,8 @@ class OZ_Settings : OZ_ConfigBase
     // виходу. false -- не пускати, для того, хто свідомо хоче саме цього.
     bool AllowPlayWhenBridgeDown = true;
 
+    ref OZ_FactionLimits Faction;
+
     private static ref OZ_Settings s_Inst;
 
     static OZ_Settings Get()
@@ -65,13 +77,22 @@ class OZ_Settings : OZ_ConfigBase
         AdminIds      = new array<string>();
         VppPermission = "OpenZone:Admin";
         Bridge        = new OZ_BridgeSettings();
+        Faction       = new OZ_FactionLimits();
+
+        RequireDiscordLink      = true;
+        AllowPlayWhenBridgeDown = true;
     }
 
     override bool Migrate(int from)
     {
-        // Ланцюжок покрокових міграцій: v1->v2, v2->v3 і далі. Схема поки одна,
-        // тож мігрувати нічого -- але місце для цього вже є, і додати крок буде
-        // дешево. Дописувати міграції заднім числом -- дорого.
+        // Ланцюжок покрокових мiграцiй: кожен крок пiднiмає на одну версiю.
+        if (from < 2)
+        {
+            // v2: фракцiйнi межi. Новий блок з умовчаннями -- стара поведiнка
+            // (без лiмiту, двi хвилини на запрошення) зберiгається дослiвно.
+            Faction = new OZ_FactionLimits();
+        }
+
         Version = LatestVersion();
         return true;
     }
@@ -85,6 +106,15 @@ class OZ_Settings : OZ_ConfigBase
             AdminIds = new array<string>();
         if (!Bridge)
             Bridge = new OZ_BridgeSettings();
+        if (!Faction)
+            Faction = new OZ_FactionLimits();
+
+        if (Faction.InviteTtlSeconds < 10)
+        {
+            OZ_Log.Warn("Faction.InviteTtlSeconds under 10 s cannot be read in time, clamped to 10");
+            Faction.InviteTtlSeconds = 10;
+            warnings++;
+        }
 
         for (int i = 0; i < AdminIds.Count(); i++)
         {

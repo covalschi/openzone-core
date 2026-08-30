@@ -67,6 +67,12 @@ class OZ_Module : CF_ModuleWorld
         OZ_Factions.ServerLoad();
         OZ_Spawns.ServerLoad();
 
+        // Адмiнська консоль: сторiнка з власними воротами (OZ_Perm.IsAdmin)
+        // i реєстр редагованих конфiгiв. КПК допише сюди свої.
+        OZ_PageRegistry.Register(OZ_Const.PAGE_ADMIN, "", "", new OZ_AdminPage());
+        OZ_AdminCfg.Register("Factions", OZ_Const.PROFILE_DIR + "\\Factions.json", new OZ_FactionsCfgApplier());
+        OZ_AdminCfg.Register("Spawns",   OZ_Const.PROFILE_DIR + "\\Spawns.json",   new OZ_SpawnsCfgApplier());
+
         OZ_Rpc.RegisterServer(this);
 
         m_FlushTimer = new Timer(CALL_CATEGORY_SYSTEM);

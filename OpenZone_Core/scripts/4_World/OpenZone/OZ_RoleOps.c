@@ -491,9 +491,7 @@ class OZ_FactionInvites
 {
     private static ref map<string, ref OZ_FactionInvite> s_By;
 
-    // Дві хвилини. Довше -- і гравець приймає запрошення від лідера, який
-    // давно передумав; коротше -- не встигає прочитати.
-    private static const int TTL_MS = 120000;
+    // Строк життя береться з Settings.json (Faction.InviteTtlSeconds).
 
     static void Offer(PlayerIdentity from, string targetUid)
     {
@@ -533,6 +531,16 @@ class OZ_FactionInvites
             return;
         }
 
+        // МIСЦЯ МАЄ ВИСТАЧАТИ ВЖЕ ЗАРАЗ. Межа з Settings.json; нуль -- без
+        // межi. Рахуються проекцiї ролей -- увесь вiдомий склад, не лише
+        // присутнi. Перевiрка повторюється на прийняттi: за двi хвилини
+        // строку запрошення фракцiя могла заповнитись iншими.
+        if (!FactionHasRoom(mine))
+        {
+            OZ_Rpc.RoleRespond(from, "invite", false, "STR_OZ_ERR_FACTION_FULL");
+            return;
+        }
+
         // ЧУЖЕ ЗАПРОШЕННЯ НЕ ПЕРЕБИВАЄТЬСЯ.
         //
         // Ключ -- людина, і другий лідер, що встиг натиснути, просто підміняв
@@ -557,7 +565,7 @@ class OZ_FactionInvites
         inv.Faction   = mine;
         inv.FromUid   = me;
         inv.FromName  = from.GetName();
-        inv.ExpiresAt = GetGame().GetTime() + TTL_MS;
+        inv.ExpiresAt = GetGame().GetTime() + OZ_Settings.Get().Faction.InviteTtlSeconds * 1000;
 
         s_By.Set(targetUid, inv);
 
@@ -605,6 +613,14 @@ class OZ_FactionInvites
             return;
         }
 
+        // Мiсце могло скiнчитись, поки запрошення лежало.
+        if (!FactionHasRoom(inv.Faction))
+        {
+            s_By.Remove(me);
+            OZ_Rpc.RoleRespond(who, "accept", false, "STR_OZ_ERR_FACTION_FULL");
+            return;
+        }
+
         // ЗНІМАЄМО ДО виклику моста. Запрошення, яке не спрацювало через
         // мовчазний міст, усе одно використане: інакше воно лишалось би
         // висіти й спрацювало б від наступного натискання, коли лідер уже
@@ -620,6 +636,19 @@ class OZ_FactionInvites
         // consented=true -- ЄДИНЕ місце, де це ставиться. Людина щойно
         // натиснула «прийняти» на запрошенні, яке бачила своїми очима.
         OZ_RoleOps.RequestAs(who, inv.FromUid, me, OZ_RoleOp.FACTION_SET, inv.Faction, true);
+    }
+
+    // Чи є мiсце. Межа -- поле САМОЇ фракцiї у Factions.json; нуль або
+    // вiдсутнiсть поля -- межi немає.
+    private static bool FactionHasRoom(string faction)
+    {
+        OZ_Faction f = OZ_Factions.Find(faction);
+        if (!f || f.MaxMembers <= 0)
+            return true;
+
+        array<string> members = new array<string>();
+        OZ_Roles.FactionMembers(faction, members);
+        return members.Count() < f.MaxMembers;
     }
 
     static void Decline(PlayerIdentity who)

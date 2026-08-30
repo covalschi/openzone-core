@@ -18,7 +18,12 @@ class OZ_Const
     static const string SETTINGS    = "$profile:OpenZone\\Settings.json";
 
     // Версія схеми Settings.json. Зростає лише разом із міграцією.
-    static const int SCHEMA_SETTINGS = 1;
+    static const int SCHEMA_SETTINGS = 2;
+
+    // Сторiнка адмiнської консолi. Реєструється в загальному реєстрi, але
+    // вкладкою КПК не стає: вкладки роздає профiль пристрою, а ця сторiнка
+    // нi в один профiль не входить. Ворота на нiй -- OZ_Perm.IsAdmin.
+    static const string PAGE_ADMIN = "admin";
 
     // Межі, задані рушієм, а не нами: RestApi.SetOption приймає таймаут саме в
     // цих секундах. Конфіг, що обіцяє більше, обіцяє нездійсненне.
