@@ -88,6 +88,11 @@ class OZ_Module : CF_ModuleWorld
         OZ_BridgeClient.Subscribe("roles", new OZ_RolesSink());
         OZ_BridgeClient.Subscribe("roster", new OZ_RosterSink());
 
+        // Пермадес, запущений НЕ з гри: команда бота робить свою половину й
+        // штовхає сюди, щоб гра зробила свою. Без цієї підписки «стерти»
+        // з Discord скидало ролі й лишало КПК небіжчика живими.
+        OZ_BridgeClient.Subscribe("wipe", new OZ_WipeSink());
+
         OZ_BridgeClient.Start();
 
         string summary = "core loaded: admins=" + s.AdminIds.Count();

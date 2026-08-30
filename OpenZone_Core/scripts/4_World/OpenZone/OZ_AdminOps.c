@@ -80,6 +80,11 @@ class OZ_AdminAsk
 class OZ_AdminWipeAsk
 {
     string Uid = "";
+
+    // «Ігрову половину вже зроблено». Ставить ГРА, коли пермадес почався в
+    // нiй: тодi мiст робить лише своє й не шле поштовх назад. Порожнє (з
+    // команди бота) означає протилежне -- мiст мусить розбудити гру.
+    bool FromGame = false;
 }
 
 // Вiдповiдь моста на команду: вдалося чи нi, i чому.
@@ -249,45 +254,13 @@ class OZ_AdminPage : OZ_PageHandler
             return "";
         }
 
-        OZ_PlayerData d = OZ_PlayerStore.Load(uid);
-        d.SessionEpoch = d.SessionEpoch + 1;
-
-        if (d.Friends)
-            d.Friends.Clear();
-        if (d.FriendReq)
-            d.FriendReq.Clear();
-        if (d.NpcContacts)
-            d.NpcContacts.Clear();
-        if (d.Chats)
-            d.Chats.Clear();
-        if (d.TransponderTo)
-            d.TransponderTo.Clear();
-
-        d.TransponderMode = "off";
-        d.PresenceHidden  = false;
-        d.Faction         = "";
-        d.SeenFaction     = "";
-        d.SeenRank        = "";
-        d.SeenFRank       = "";
-        if (d.SeenPosts)
-            d.SeenPosts.Clear();
-        if (d.SeenTraits)
-            d.SeenTraits.Clear();
-
-        OZ_PlayerStore.Flush(uid);
-
-        // Точки спавну: одноразова й особиста. ClearPersonal чесно скаже
-        // «не було» -- нам однаково, головне, що пiсля вайпу її немає.
-        OZ_Spawns.ClearNextSpawn(uid);
-        OZ_Spawns.ClearPersonal(uid);
-
-        // Проекцiю ролей забуваємо: мiст пришле нову, вже новачкову.
-        OZ_Roles.Forget(uid);
-
+        OZ_PlayerWipe.Local(uid);
         OZ_Log.Info("admin: player " + uid + " wiped by " + sender.GetPlainId());
 
         OZ_AdminWipeAsk a = new OZ_AdminWipeAsk();
         a.Uid = uid;
+        // Гру ми вже вiдпрацювали самi -- хай мiст не шле нам поштовх назад.
+        a.FromGame = true;
 
         string letter;
         string jerr;
@@ -448,5 +421,94 @@ class OZ_SpawnsCfgApplier : OZ_AdminCfgApplier
         OZ_ConfigLoader<OZ_SpawnsConfig>.Save(OZ_Const.PROFILE_DIR + "\\Spawns.json", "spawns", tmp);
         OZ_Spawns.Reload();
         return true;
+    }
+}
+
+
+// ІГРОВА ПОЛОВИНА ПЕРМАДЕСУ, окремо від того, хто її попросив.
+//
+// Просять двоє: адмінська консоль у грі (і тоді вона ж кличе міст) і сам
+// МІСТ -- коли пермадес запустили командою бота, а не з гри. Без цього
+// класу друга дорога робила лише половину справи: ролі в Discord
+// скидались, а КПК небіжчика лишались живими, бо гра про смерть не чула.
+class OZ_PlayerWipe
+{
+    static void Local(string uid)
+    {
+        if (!GetGame().IsServer())
+            return;
+        if (uid == "")
+            return;
+
+        // СПЕРШУ ЗАМОРОЗКА, потiм чистка. Старе життя лягає в окремий файл
+        // цiлим -- з контактами, нотатками й усiм, що в ньому було, -- i
+        // лише пiсля цього живий запис стає новим персонажем.
+        OZ_PlayerStore.Freeze(uid);
+
+        OZ_PlayerData d = OZ_PlayerStore.Load(uid);
+        d.SessionEpoch = d.SessionEpoch + 1;
+
+        if (d.Friends)
+            d.Friends.Clear();
+        if (d.FriendReq)
+            d.FriendReq.Clear();
+        if (d.NpcContacts)
+            d.NpcContacts.Clear();
+        if (d.Chats)
+            d.Chats.Clear();
+        if (d.TransponderTo)
+            d.TransponderTo.Clear();
+
+        d.TransponderMode = "off";
+        d.PresenceHidden  = false;
+        d.Faction         = "";
+        d.SeenFaction     = "";
+        d.SeenRank        = "";
+        d.SeenFRank       = "";
+        if (d.SeenPosts)
+            d.SeenPosts.Clear();
+        if (d.SeenTraits)
+            d.SeenTraits.Clear();
+
+        OZ_PlayerStore.Flush(uid);
+
+        // Точки спавну: одноразова й особиста. ClearPersonal чесно скаже
+        // «не було» -- нам однаково, головне, що пiсля вайпу її немає.
+        OZ_Spawns.ClearNextSpawn(uid);
+        OZ_Spawns.ClearPersonal(uid);
+
+        // ЧУЖІ ЗАПИСНИКИ НЕ ЧІПАЄМО, і це рішення власника 2026-08-30.
+        //
+        // Викреслити небiжчика з чужих контактiв означало б РОЗПОВIСТИ про
+        // його смерть: рядок, який зник, читається однозначно. КПК не
+        // повiдомляє про смерть -- нiколи. Запис лишається на мiсцi
+        // замороженим, з датою останньої появи в Зонi, i чи людина загинула,
+        // чи просто не заходить, з нього не видно.
+        //
+        // Нове життя того самого акаунта -- ОКРЕМИЙ запис (uid#покоління),
+        // якого нi в кого ще немає: знайомитись доведеться наново.
+
+        // Проекцiю ролей забуваємо: мiст пришле нову, вже новачкову.
+        OZ_Roles.Forget(uid);
+
+        OZ_Log.Info("player " + uid + " wiped: generation frozen, devices sealed");
+    }
+}
+
+// Поштовх «цього гравця стерли» -- від моста. Приходить, коли пермадес
+// запустили командою бота: гра робить свою половину тут.
+class OZ_WipeSink : OZ_BridgeSink
+{
+    override void Deliver(string json)
+    {
+        OZ_AdminWipeAsk a;
+        string err;
+        if (!JsonFileLoader<OZ_AdminWipeAsk>.LoadData(json, a, err) || !a)
+        {
+            OZ_Log.Warn("wipe: unreadable push from the bridge: " + err);
+            return;
+        }
+
+        OZ_PlayerWipe.Local(a.Uid);
     }
 }

@@ -54,6 +54,15 @@ class OZ_PlayerData : OZ_ConfigBase
     // який гравець колись тримав у руках.
     int SessionEpoch = 1;
 
+    // ПОКОЛІННЯ ПЕРСОНАЖА. Один Steam-акаунт -- багато життів у Зоні, і це
+    // різні люди: після пермадесу старий запис заморожується у власний файл
+    // (players\<uid>.g<N>.json), а тут починається новий -- з тим самим
+    // Steam64 і чистим усім.
+    //
+    // Нуль у старому файлі означає перше покоління: до пермадесу все, що
+    // існувало, було першим життям.
+    int Gen = 1;
+
     // --- транспондер ---
     //
     // Кому видно твою позицію на чужій карті. Рядком, бо це ж слово лежить у
@@ -184,6 +193,37 @@ class OZ_PlayerData : OZ_ConfigBase
             Chats = new array<string>();
         if (!NpcContacts)
             NpcContacts = new array<string>();
+
+        // Файл, написаний до пермадесу, покоління не знає -- воно перше.
+        if (Gen < 1)
+            Gen = 1;
+
+        // КОНТАКТИ СТАРОГО ЗРАЗКА -- голі Steam64. Дописуємо їм перше
+        // покоління тут, один раз при читанні файла: інакше кожне місце, яке
+        // порівнює ключі, мусило б знати обидва написання, і рано чи пізно
+        // хтось порівняв би "76561..." з "76561...#1" і не знайшов друга.
+        Generational(Friends);
+        Generational(FriendReq);
+        Generational(TransponderTo);
+    }
+
+    // Голий uid -> "uid#1". NPC ("npc:...") і вже позначені ключі не чіпаємо.
+    private void Generational(array<string> list)
+    {
+        if (!list)
+            return;
+
+        for (int i = 0; i < list.Count(); i++)
+        {
+            if (list[i] == "")
+                continue;
+            if (list[i].IndexOf("#") != -1)
+                continue;
+            if (list[i].IndexOf("npc:") == 0)
+                continue;
+
+            list[i] = list[i] + "#1";
+        }
     }
 }
 
@@ -264,6 +304,125 @@ class OZ_PlayerStore
         Ensure();
         Flush(uid);
         s_Cache.Remove(uid);
+    }
+
+    // ------------------------------------------- ключ персонажа
+    //
+    // Один Steam-акаунт -- багато життів, і в записнику це РІЗНІ ЛЮДИ. Тому
+    // контакти, запити й транспондер зберігають не Steam64, а КЛЮЧ
+    // ПЕРСОНАЖА: "<uid>#<покоління>".
+    //
+    // Голий uid у старому файлі означає перше покоління -- до пермадесу
+    // інших і не було.
+    static string KeyOf(string uid)
+    {
+        OZ_PlayerData d = Load(uid);
+        if (!d)
+            return uid + "#1";
+        return uid + "#" + d.Gen.ToString();
+    }
+
+    static string UidOfKey(string key)
+    {
+        int at = key.IndexOf("#");
+        if (at == -1)
+            return key;
+        return key.Substring(0, at);
+    }
+
+    static int GenOfKey(string key)
+    {
+        int at = key.IndexOf("#");
+        if (at == -1)
+            return 1;
+        return key.Substring(at + 1, key.Length() - at - 1).ToInt();
+    }
+
+    // Чи це ЖИВЕ покоління -- той самий персонаж, а не той, ким цей акаунт
+    // був колись. Заморожений контакт не буває онлайн, не оновлює фракцію й
+    // не отримує повідомлень.
+    static bool IsLive(string key)
+    {
+        string uid = UidOfKey(key);
+        if (uid == "")
+            return false;
+
+        OZ_PlayerData d = Load(uid);
+        if (!d)
+            return false;
+
+        return GenOfKey(key) == d.Gen;
+    }
+
+    // Заморожений запис минулого покоління -- з диска, ОДИН раз.
+    //
+    // Читається рідко (лише коли в чиємусь записнику лишився старий
+    // персонаж), тож кеш маленький і живе до кінця сеансу.
+    private static ref map<string, ref OZ_PlayerData> s_Frozen;
+
+    static OZ_PlayerData FrozenOf(string key)
+    {
+        if (!s_Frozen)
+            s_Frozen = new map<string, ref OZ_PlayerData>();
+
+        if (s_Frozen.Contains(key))
+            return s_Frozen.Get(key);
+
+        string uid = UidOfKey(key);
+        string path = OZ_Const.PLAYERS_DIR + "\\" + uid + ".g" + GenOfKey(key).ToString() + ".json";
+
+        OZ_PlayerData d;
+        if (FileExist(path))
+        {
+            d = new OZ_PlayerData();
+            OZ_ConfigLoader<OZ_PlayerData>.Load(path, "grave_" + key, d, false);
+        }
+
+        s_Frozen.Set(key, d);
+        return d;
+    }
+
+    // Запис ЗА КЛЮЧЕМ: живий або заморожений. Може бути null -- покоління
+    // є в чиємусь записнику, а файла вже немає (адмін прибрав руками).
+    static OZ_PlayerData ByKey(string key)
+    {
+        if (IsLive(key))
+            return Load(UidOfKey(key));
+        return FrozenOf(key);
+    }
+
+    // ---------------------------------------------------- пермадес
+    //
+    // ЗАМОРОЗИТИ запис і почати наступний. Старе життя лишається на диску
+    // цілим -- окремим файлом із номером покоління, -- а живий запис іде
+    // далі вже як новий персонаж.
+    //
+    // Копія, а не перейменування: живий файл мусить лишатись на місці, бо
+    // Steam64 не змінився й наступний Load піде саме за ним.
+    static void Freeze(string uid)
+    {
+        Ensure();
+
+        OZ_PlayerData d = Load(uid);
+        if (!d)
+            return;
+
+        // На диск -- ПЕРЕД копіюванням: у пам'яті може бути свіжіше.
+        MarkDirty(uid);
+        Flush(uid);
+
+        string grave = OZ_Const.PLAYERS_DIR + "\\" + uid + ".g" + d.Gen.ToString() + ".json";
+        if (FileExist(PathOf(uid)))
+        {
+            if (!CopyFile(PathOf(uid), grave))
+                OZ_Log.Warn("player " + uid + ": could not freeze generation " + d.Gen.ToString());
+            else
+                OZ_Log.Info("player " + uid + ": generation " + d.Gen.ToString() + " frozen as " + grave);
+        }
+
+        d.Gen = d.Gen + 1;
+        MarkDirty(uid);
+        Flush(uid);
     }
 
     static int CachedCount()
