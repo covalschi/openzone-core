@@ -238,7 +238,9 @@ class OZ_RoleOps
     // без причини -- найгірше, що інтерфейс може сказати.
     private static bool Allowed(PlayerIdentity tell, string actorUid, string op, string arg, string targetUid)
     {
-        string mine = OZ_Factions.OfUid(actorUid);
+        // ОРГАНIЗАЦIЯ, а не просто фракцiя: базова («сталкери») нiкому не
+        // дає прав, бо в неї немає нi лiдера, нi складу.
+        string mine = OZ_Factions.OrgOfUid(actorUid);
 
         if (mine == "")
         {
@@ -272,6 +274,12 @@ class OZ_RoleOps
         if (op == OZ_RoleOp.FACTION_CLEAR)
             return true;
         if (op == OZ_RoleOp.LEADER_TRANSFER)
+            return true;
+
+        // Пiдвищення й пониження в СВОЇЙ фракцiї -- лiдерська справа
+        // (рiшення власника 2026-08-30). Цiль уже перевiрена вище: вона в
+        // його фракцiї, а голий слаг мiст розбере проти ЇЇ драбини.
+        if (op == OZ_RoleOp.FRANK_SET)
             return true;
 
         if (op == OZ_RoleOp.POST_ADD || op == OZ_RoleOp.POST_REMOVE)
@@ -320,6 +328,14 @@ class OZ_SpawnOps
         if (!OZ_Perm.IsAdmin(who))
         {
             OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_ADMIN_ONLY");
+            return;
+        }
+
+        // Особиста точка: arg -- "uid" або "uid радіус". Гілка окрема, бо
+        // uid -- не слаг ролі й перевіряти його по таблиці фракцій не можна.
+        if (op == OZ_RoleOp.SPAWN_UID_HERE || op == OZ_RoleOp.SPAWN_UID_CLEAR)
+        {
+            HandlePersonal(who, op, arg);
             return;
         }
 
@@ -409,6 +425,82 @@ class OZ_SpawnOps
         OZ_Rpc.RoleRespond(who, op, true, "");
     }
 
+    // Особиста точка гравця. Позиція -- тіло АДМІНА на сервері, як і в
+    // зоні: «стань там, де його дім, і натисни».
+    private static void HandlePersonal(PlayerIdentity who, string op, string arg)
+    {
+        string rest = Trimmed(arg);
+        string uid  = rest;
+        float radius = 20;
+
+        int sp = rest.IndexOf(" ");
+        if (sp != -1)
+        {
+            uid = rest.Substring(0, sp);
+
+            string tail = Trimmed(rest.Substring(sp + 1, rest.Length() - sp - 1));
+            if (!Number(tail))
+            {
+                OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_BAD_RADIUS");
+                return;
+            }
+            radius = tail.ToFloat();
+        }
+
+        uid = Trimmed(uid);
+        if (uid == "")
+        {
+            OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_NO_TARGET");
+            return;
+        }
+
+        string err;
+
+        if (op == OZ_RoleOp.SPAWN_UID_CLEAR)
+        {
+            err = OZ_Spawns.ClearPersonal(uid);
+        }
+        else
+        {
+            vector here = BodyOf(who);
+            if (here == vector.Zero)
+            {
+                OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_INTERNAL");
+                return;
+            }
+
+            err = OZ_Spawns.SetPersonalHere(uid, here, radius);
+        }
+
+        if (err != "")
+        {
+            OZ_Rpc.RoleRespond(who, op, false, err);
+            return;
+        }
+
+        OZ_Rpc.RoleRespond(who, op, true, "");
+    }
+
+    // Тіло гравця НА СЕРВЕРІ -- не координата, яку прислав клієнт: інакше
+    // точку можна було б поставити куди завгодно, не сходячи з місця.
+    private static vector BodyOf(PlayerIdentity who)
+    {
+        array<Man> players = new array<Man>();
+        GetGame().GetPlayers(players);
+        for (int i = 0; i < players.Count(); i++)
+        {
+            if (!players[i])
+                continue;
+            PlayerIdentity id = players[i].GetIdentity();
+            if (!id)
+                continue;
+            if (id.GetPlainId() != who.GetPlainId())
+                continue;
+            return players[i].GetPosition();
+        }
+        return vector.Zero;
+    }
+
     // Пробіли з обох боків. У Enforce немає Trim(), а рядок приходить із
     // чату -- там вони будуть.
     private static string Trimmed(string s)
@@ -464,11 +556,24 @@ class OZ_RoleOp
     static const string TRAIT_ADD       = "trait.add";
     static const string TRAIT_REMOVE    = "trait.remove";
     static const string RANK_SET        = "rank.set";
+
+    // Внутрiфракцiйне звання. Аргумент -- ГОЛИЙ слаг: до якої драбини вiн
+    // належить, вирiшує фракцiя ЦIЛI, тому лiдер Долгу фiзично не може
+    // назвати звання Волi. Порожнiй аргумент знiмає звання зовсiм.
+    static const string FRANK_SET       = "frank.set";
     static const string LEADER_TRANSFER = "leader.transfer";
 
-    // Ці двоє до моста не доходять: карта -- не його справа.
-    static const string SPAWN_HERE  = "spawn.here";
-    static const string SPAWN_CLEAR = "spawn.clear";
+    // Адмiнське «лiдер -- ВIН»: пост знiмається з усiх i вдягається на
+    // цiль. Вiд transfer вiдрiзняється правом: transfer -- акт лiдера,
+    // set -- акт консолi, i leaderMay на мостi його не пропускає нiкому.
+    static const string LEADER_SET      = "leader.set";
+
+    // Ці до моста не доходять: карта -- не його справа. Пара uid-варіантів
+    // -- особиста точка ОДНОГО гравця, поверх фракційних зон.
+    static const string SPAWN_HERE      = "spawn.here";
+    static const string SPAWN_CLEAR     = "spawn.clear";
+    static const string SPAWN_UID_HERE  = "spawn.uidhere";
+    static const string SPAWN_UID_CLEAR = "spawn.uidclear";
 }
 
 // Запрошення до фракції.
@@ -500,7 +605,9 @@ class OZ_FactionInvites
 
         string me = from.GetPlainId();
 
-        string mine = OZ_Factions.OfUid(me);
+        // Запрошують В ОРГАНIЗАЦIЮ. У базову фракцiю не запрошують: у нiй i
+        // так усi, i лiдера, який мiг би покликати, в неї немає.
+        string mine = OZ_Factions.OrgOfUid(me);
         if (mine == "" || !OZ_Roles.IsLeader(me))
         {
             OZ_Rpc.RoleRespond(from, "invite", false, "STR_OZ_ERR_NOT_LEADER");

@@ -1,6 +1,6 @@
 // Куди з'являється гравець.
 //
-// Три незалежні речі під одним дахом, і плутати їх не можна:
+// Чотири незалежні речі під одним дахом, і плутати їх не можна:
 //
 //   1. ЗОНА РОЛІ -- постійна. «Борг з'являється біля Ростока». Живе в
 //      Spawns.json, ключ -- той самий слаг, що й у фракції.
@@ -8,16 +8,20 @@
 //      де він упав». Ставиться викликом, з'їдається НА НАЙБЛИЖЧОМУ спавні й
 //      зникає. Саме одноразовість робить її придатною: мод, який лікує, не
 //      мусить пам'ятати, коли прибрати за собою.
-//   3. СТЕЙДЖИНҐ -- куди тих, у кого ролі немає ЗОВСІМ. Це не «запасна зона»:
+//   3. ОСОБИСТА ТОЧКА -- постійна прив'язка ОДНОГО гравця до місця, поверх
+//      його фракції та будь-чого. Вигнанець, відлюдник, персонаж квесту.
+//      Ставить адмін; діє, доки адмін не зняв.
+//   4. СТЕЙДЖИНҐ -- куди тих, у кого ролі немає ЗОВСІМ. Це не «запасна зона»:
 //      запасна ловить того, чия фракція є, але зони їй не завели. Стейджинґ
 //      ловить того, кого нікуди не взяли, і головне -- новачка, який ще не
 //      прив'язався. Ворота прив'язки тримають його на місці, тож місце має
 //      бути таким, де стояти не соромно.
 //
-// Порядок: одноразова -> зона ролі -> стейджинґ -> запасна -> те, що дав
-// рушій. Нічого не налаштовано -- нічого й не змінюється: ванільна поведінка
-// лишається недоторканою, і це умова того, щоб мод можна було просто
-// поставити.
+// Порядок: одноразова -> особиста -> зона ролі -> стейджинґ -> запасна ->
+// те, що дав рушій. Одноразова ЗАВЖДИ нагорі: вона каже про цю конкретну
+// смерть, і жодне постійне правило не сміє її перебити. Нічого не
+// налаштовано -- нічого й не змінюється: ванільна поведінка лишається
+// недоторканою, і це умова того, щоб мод можна було просто поставити.
 //
 // ДЕ ЦЕ ЧІПЛЯЄТЬСЯ, і чому саме там. MissionServer.CreateCharacter -- єдиний
 // шов, крізь який проходить створення НОВОГО персонажа: два виклики в усьому
@@ -49,9 +53,23 @@ class OZ_SpawnZone
     float  Radius;
 }
 
+// Особистий спавн ОДНОГО гравця -- поверх фракцій і будь-чого. Постійний,
+// на відміну від одноразової точки: живе у файлі, переживає рестарти й діє,
+// доки адмін його не зніме. «Цей у вигнанні за периметром», «той живе на
+// маяку» -- прив'язка до долі людини, а не до слага її фракції.
+class OZ_SpawnPersonal
+{
+    string Uid;
+    string Center;
+    float  Radius;
+}
+
 class OZ_SpawnsConfig : OZ_ConfigBase
 {
     ref array<ref OZ_SpawnZone> Zones;
+
+    // Особисті точки: гравець -> місце. Дивляться ПЕРЕД зонами ролей.
+    ref array<ref OZ_SpawnPersonal> Personal;
 
     // Куди тих, у кого ролі немає. Порожній Center -- вимкнено, і тоді вони
     // йдуть тим самим шляхом, що й раніше.
@@ -59,7 +77,7 @@ class OZ_SpawnsConfig : OZ_ConfigBase
 
     override int LatestVersion()
     {
-        return 2;
+        return 3;
     }
 
     override void LoadDefaults()
@@ -69,8 +87,9 @@ class OZ_SpawnsConfig : OZ_ConfigBase
         // ПОРОЖНЬО навмисно. Координати належать карті, а карт багато, і
         // вигадана точка на Чернарусі означала б, що на Сахаліні всі
         // з'являються в морі. Порожній список -- це «нічого не чіпаємо».
-        Zones   = new array<ref OZ_SpawnZone>();
-        Staging = new OZ_SpawnPlace();
+        Zones    = new array<ref OZ_SpawnZone>();
+        Personal = new array<ref OZ_SpawnPersonal>();
+        Staging  = new OZ_SpawnPlace();
     }
 
     override bool Migrate(int from)
@@ -79,6 +98,10 @@ class OZ_SpawnsConfig : OZ_ConfigBase
         // працював учора, мусить поводитись сьогодні так само.
         if (!Staging)
             Staging = new OZ_SpawnPlace();
+
+        // 2 -> 3: особисті точки. Теж порожніми з тієї ж причини.
+        if (!Personal)
+            Personal = new array<ref OZ_SpawnPersonal>();
 
         Version = LatestVersion();
         return true;
@@ -90,6 +113,9 @@ class OZ_SpawnsConfig : OZ_ConfigBase
 
         if (!Zones)
             Zones = new array<ref OZ_SpawnZone>();
+
+        if (!Personal)
+            Personal = new array<ref OZ_SpawnPersonal>();
 
         // Може не бути в файлі зовсім -- тоді серіалізатор лишає null, а не
         // порожній об'єкт.
@@ -123,6 +149,20 @@ class OZ_SpawnsConfig : OZ_ConfigBase
             string w = "spawn zone #" + i.ToString();
             w += " has no Center - it will never be used";
             OZ_Log.Warn(w);
+            warnings++;
+        }
+
+        for (int k = 0; k < Personal.Count(); k++)
+        {
+            if (Personal[k].Radius < 0)
+                Personal[k].Radius = 0;
+
+            if (Personal[k].Uid != "" && Personal[k].Center != "")
+                continue;
+
+            string pw = "personal spawn #" + k.ToString();
+            pw += " misses Uid or Center - it will never be used";
+            OZ_Log.Warn(pw);
             warnings++;
         }
     }
@@ -275,6 +315,78 @@ class OZ_Spawns
         return "STR_OZ_ERR_NO_ZONE";
     }
 
+    // Особиста точка ЦЬОГО гравця -- ТУТ, де стоїть адмін. Постійна.
+    static string SetPersonalHere(string uid, vector where, float radius)
+    {
+        if (!GetGame().IsServer())
+            return "STR_OZ_ERR_INTERNAL";
+        if (!s_Cfg)
+            return "STR_OZ_ERR_INTERNAL";
+        if (uid == "")
+            return "STR_OZ_ERR_NO_TARGET";
+
+        Reload();
+
+        if (radius < 0)
+            radius = 0;
+
+        string pos = where.ToString(false);
+
+        for (int i = 0; i < s_Cfg.Personal.Count(); i++)
+        {
+            if (s_Cfg.Personal[i].Uid != uid)
+                continue;
+
+            s_Cfg.Personal[i].Center = pos;
+            s_Cfg.Personal[i].Radius = radius;
+            Save();
+            return "";
+        }
+
+        OZ_SpawnPersonal p = new OZ_SpawnPersonal();
+        p.Uid    = uid;
+        p.Center = pos;
+        p.Radius = radius;
+        s_Cfg.Personal.Insert(p);
+
+        Save();
+        return "";
+    }
+
+    static string ClearPersonal(string uid)
+    {
+        if (!GetGame().IsServer())
+            return "STR_OZ_ERR_INTERNAL";
+        if (!s_Cfg)
+            return "STR_OZ_ERR_INTERNAL";
+
+        Reload();
+
+        for (int i = 0; i < s_Cfg.Personal.Count(); i++)
+        {
+            if (s_Cfg.Personal[i].Uid != uid)
+                continue;
+
+            s_Cfg.Personal.Remove(i);
+            Save();
+            return "";
+        }
+
+        return "STR_OZ_ERR_NO_ZONE";
+    }
+
+    static bool HasPersonal(string uid)
+    {
+        if (!s_Cfg || !s_Cfg.Personal)
+            return false;
+        for (int i = 0; i < s_Cfg.Personal.Count(); i++)
+        {
+            if (s_Cfg.Personal[i].Uid == uid && s_Cfg.Personal[i].Center != "")
+                return true;
+        }
+        return false;
+    }
+
     private static void Save()
     {
         OZ_ConfigLoader<OZ_SpawnsConfig>.Save(OZ_Const.PROFILE_DIR + "\\Spawns.json", "spawns", s_Cfg);
@@ -405,7 +517,17 @@ class OZ_Spawns
             }
         }
 
-        // 2. Зона ролі або стейджинґ.
+        // 2. Особиста точка. Нижче одноразової НАВМИСНО: дефібрилятор каже
+        //    про ЦЮ смерть, а особиста -- про долю взагалі, і конкретне
+        //    мусить перебивати загальне.
+        vector personal = PersonalFor(uid);
+        if (personal != vector.Zero)
+        {
+            Told(uid, personal, "personal");
+            return personal;
+        }
+
+        // 3. Зона ролі або стейджинґ.
         string why;
         vector zoned = ZoneFor(uid, why);
         if (zoned != vector.Zero)
@@ -414,9 +536,30 @@ class OZ_Spawns
             return zoned;
         }
 
-        // 3. Рушій.
+        // 4. Рушій.
         Told(uid, fallback, "engine");
         return fallback;
+    }
+
+    private static vector PersonalFor(string uid)
+    {
+        if (!s_Cfg || !s_Cfg.Personal)
+            return vector.Zero;
+
+        for (int i = 0; i < s_Cfg.Personal.Count(); i++)
+        {
+            if (s_Cfg.Personal[i].Uid != uid)
+                continue;
+            if (s_Cfg.Personal[i].Center == "")
+                continue;
+
+            vector c = s_Cfg.Personal[i].Center.ToVector();
+            if (c == vector.Zero)
+                continue;
+
+            return Scatter(c, s_Cfg.Personal[i].Radius);
+        }
+        return vector.Zero;
     }
 
     // Один рядок на спавн, ЗАВЖДИ, і в ньому названа гілка.

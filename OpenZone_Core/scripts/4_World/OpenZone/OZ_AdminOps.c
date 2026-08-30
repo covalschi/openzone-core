@@ -77,6 +77,66 @@ class OZ_AdminAsk
     string Json = "";
 }
 
+class OZ_AdminWipeAsk
+{
+    string Uid = "";
+}
+
+// Вiдповiдь моста на команду: вдалося чи нi, i чому.
+class OZ_BridgeAck
+{
+    bool   Ok  = false;
+    string Why = "";
+}
+
+// Мiст вiдповiв на вайп -- доносимо вiдповiдь адмiновi. Iгрова половина
+// на цю мить УЖЕ зроблена: якщо мiст вiдмовив, адмiн бачить причину й
+// повторює команду -- iгрова половина iдемпотентна (епоха просто пiде ще
+// на крок уперед, порожнi списки лишаться порожнiми).
+class OZ_AdminWipeReply : OZ_BridgeReply
+{
+    protected string m_AdminUid;
+    protected string m_Op;
+
+    void OZ_AdminWipeReply(string adminUid, string op)
+    {
+        m_AdminUid = adminUid;
+        m_Op       = op;
+    }
+
+    override void OnBody(string json)
+    {
+        PlayerIdentity to = OZ_Link.Online(m_AdminUid);
+        if (!to)
+            return;
+
+        OZ_BridgeAck ack;
+        string err;
+        if (!JsonFileLoader<OZ_BridgeAck>.LoadData(json, ack, err) || !ack)
+        {
+            OZ_Rpc.Respond(to, OZ_Const.PAGE_ADMIN, m_Op, false, "", "STR_OZ_ERR_INTERNAL");
+            return;
+        }
+
+        if (!ack.Ok)
+        {
+            OZ_Log.Warn("admin: bridge refused the wipe: " + ack.Why);
+            OZ_Rpc.Respond(to, OZ_Const.PAGE_ADMIN, m_Op, false, "", ack.Why);
+            return;
+        }
+
+        OZ_Rpc.Respond(to, OZ_Const.PAGE_ADMIN, m_Op, true, "{}", "");
+    }
+
+    override void OnFail(int code)
+    {
+        PlayerIdentity to = OZ_Link.Online(m_AdminUid);
+        if (!to)
+            return;
+        OZ_Rpc.Respond(to, OZ_Const.PAGE_ADMIN, m_Op, false, "", "STR_OZ_ERR_NO_BRIDGE");
+    }
+}
+
 class OZ_AdminCfgList
 {
     ref array<string> Names;
@@ -94,6 +154,10 @@ class OZ_AdminRosterRow
     string Name    = "";
     string Uid     = "";
     string Faction = "";
+    string DName   = "";
+    string Traits  = "";
+    string Rank    = "";
+    string FRank   = "";
     bool   Leader  = false;
 }
 
@@ -102,10 +166,19 @@ class OZ_AdminRoster
     ref array<ref OZ_AdminRosterRow> Rows;
     ref array<string> Factions;
 
+    // Каталоги з реєстру бота: адмiну треба з чого вибирати. FRanks --
+    // внутрiфракцiйнi звання, id вигляду "duty:sergeant".
+    ref array<string> Traits;
+    ref array<string> Ranks;
+    ref array<string> FRanks;
+
     void OZ_AdminRoster()
     {
         Rows     = new array<ref OZ_AdminRosterRow>();
         Factions = new array<string>();
+        Traits   = new array<string>();
+        Ranks    = new array<string>();
+        FRanks   = new array<string>();
     }
 }
 
@@ -125,14 +198,110 @@ class OZ_AdminPage : OZ_PageHandler
 
         if (op == "cfg_list")
             return CfgList(ok, error);
-        if (op == "cfg_get")
-            return CfgGet(json, ok, error);
-        if (op == "cfg_set")
-            return CfgSet(json, sender, ok, error);
+
+        // Iм'я конфiгу живе В САМIЙ операцiї, а тiло їде СИРИМ тiлом
+        // запиту/вiдповiдi. Конверт зi строковим полем тут заборонений:
+        // JsonFileLoader рiже строкове ЗНАЧЕННЯ на 1023 байтах при розборi
+        // (змiряно 2026-08-30: envelope=2925, body=1023), i будь-який конфiг
+        // довший за кiлобайт приїздив обрубком.
+        if (op.IndexOf("cfg_get:") == 0)
+            return CfgGet(op.Substring(8, op.Length() - 8), ok, error);
+        if (op.IndexOf("cfg_set:") == 0)
+            return CfgSet(op.Substring(8, op.Length() - 8), json, sender, ok, error);
+
         if (op == "roster")
             return Roster(ok, error);
 
+        // Пермадес. Iм'я живе в операцiї з тiєї ж причини, що й у cfg_*:
+        // uid короткий, але правило одне на всi адмiнськi операцiї.
+        if (op.IndexOf("player_wipe:") == 0)
+            return PlayerWipe(op.Substring(12, op.Length() - 12), op, sender, ok, error);
+
         error = "STR_OZ_ERR_UNKNOWN_OP";
+        return "";
+    }
+
+    // «Чистий аркуш»: персонаж помер назавжди, ГРАВЕЦЬ лишається.
+    //
+    // Ігрова половина -- тут i одразу: епоха сесiй +1 (всi його КПК
+    // замерзають назавжди -- сесiю вiдкриває лише безхазяйний пристрiй,
+    // а цi назавжди лишаються зайнятими мертвою сесiєю), друзi, запити,
+    // групи, транспондер, особиста точка спавну -- геть. Прив'язка Discord
+    // ЛИШАЄТЬСЯ: гравець той самий, це персонаж новий.
+    //
+    // Половина моста (вихiд iз приватних тредiв, скидання ролей до
+    // новачка) їде викликом v1/player/wipe, i вiдповiдь клiєнтовi -- ТIЛЬКИ
+    // пiсля неї: адмiн мусить знати, що вайп пройшов ЦIЛКОМ, а не наполовину.
+    private string PlayerWipe(string uid, string op, PlayerIdentity sender, out bool ok, out string error)
+    {
+        if (uid == "")
+        {
+            error = "STR_OZ_ERR_NO_TARGET";
+            return "";
+        }
+
+        // Мiст питаємо ПЕРШИМ: якщо його немає, не робимо НIЧОГО. Половина
+        // вайпу гiрша за жодного -- замерзлi КПК при живих тредах виглядали
+        // б як баг, а не як смерть.
+        if (!OZ_BridgeClient.Alive())
+        {
+            error = "STR_OZ_ERR_NO_BRIDGE";
+            return "";
+        }
+
+        OZ_PlayerData d = OZ_PlayerStore.Load(uid);
+        d.SessionEpoch = d.SessionEpoch + 1;
+
+        if (d.Friends)
+            d.Friends.Clear();
+        if (d.FriendReq)
+            d.FriendReq.Clear();
+        if (d.NpcContacts)
+            d.NpcContacts.Clear();
+        if (d.Chats)
+            d.Chats.Clear();
+        if (d.TransponderTo)
+            d.TransponderTo.Clear();
+
+        d.TransponderMode = "off";
+        d.PresenceHidden  = false;
+        d.Faction         = "";
+        d.SeenFaction     = "";
+        d.SeenRank        = "";
+        d.SeenFRank       = "";
+        if (d.SeenPosts)
+            d.SeenPosts.Clear();
+        if (d.SeenTraits)
+            d.SeenTraits.Clear();
+
+        OZ_PlayerStore.Flush(uid);
+
+        // Точки спавну: одноразова й особиста. ClearPersonal чесно скаже
+        // «не було» -- нам однаково, головне, що пiсля вайпу її немає.
+        OZ_Spawns.ClearNextSpawn(uid);
+        OZ_Spawns.ClearPersonal(uid);
+
+        // Проекцiю ролей забуваємо: мiст пришле нову, вже новачкову.
+        OZ_Roles.Forget(uid);
+
+        OZ_Log.Info("admin: player " + uid + " wiped by " + sender.GetPlainId());
+
+        OZ_AdminWipeAsk a = new OZ_AdminWipeAsk();
+        a.Uid = uid;
+
+        string letter;
+        string jerr;
+        if (!JsonFileLoader<OZ_AdminWipeAsk>.MakeData(a, letter, jerr, false))
+        {
+            error = "STR_OZ_ERR_INTERNAL";
+            return "";
+        }
+
+        OZ_BridgeClient.Call("v1/player/wipe", letter, new OZ_AdminWipeReply(sender.GetPlainId(), op));
+
+        // Вiдповiдь пiде з OZ_AdminWipeReply, коли мiст вiдпишеться.
+        ok    = false;
+        error = OZ_Const.DEFER;
         return "";
     }
 
@@ -153,17 +322,9 @@ class OZ_AdminPage : OZ_PageHandler
         return outJson;
     }
 
-    private string CfgGet(string json, out bool ok, out string error)
+    private string CfgGet(string name, out bool ok, out string error)
     {
-        OZ_AdminAsk a;
-        string err;
-        if (!JsonFileLoader<OZ_AdminAsk>.LoadData(json, a, err) || !a)
-        {
-            error = "STR_OZ_ERR_INTERNAL";
-            return "";
-        }
-
-        OZ_AdminCfgEntry e = OZ_AdminCfg.Find(a.Name);
+        OZ_AdminCfgEntry e = OZ_AdminCfg.Find(name);
         if (!e)
         {
             error = "STR_OZ_ERR_NO_SUCH_CFG";
@@ -172,34 +333,13 @@ class OZ_AdminPage : OZ_PageHandler
 
         // Сирий текст файлу, а не пересерiалiзований об'єкт: адмiн править
         // САМЕ ТЕ, що лежить на диску, разом iз вiдсутнiми полями й усiм.
-        string text = ReadFileText(e.Path);
-
-        OZ_AdminAsk res = new OZ_AdminAsk();
-        res.Name = a.Name;
-        res.Json = text;
-
-        string outJson;
-        if (!JsonFileLoader<OZ_AdminAsk>.MakeData(res, outJson, err, false))
-        {
-            error = "STR_OZ_ERR_INTERNAL";
-            return "";
-        }
-
         ok = true;
-        return outJson;
+        return ReadFileText(e.Path);
     }
 
-    private string CfgSet(string json, PlayerIdentity sender, out bool ok, out string error)
+    private string CfgSet(string name, string body, PlayerIdentity sender, out bool ok, out string error)
     {
-        OZ_AdminAsk a;
-        string err;
-        if (!JsonFileLoader<OZ_AdminAsk>.LoadData(json, a, err) || !a)
-        {
-            error = "STR_OZ_ERR_INTERNAL";
-            return "";
-        }
-
-        OZ_AdminCfgEntry e = OZ_AdminCfg.Find(a.Name);
+        OZ_AdminCfgEntry e = OZ_AdminCfg.Find(name);
         if (!e || !e.Applier)
         {
             error = "STR_OZ_ERR_NO_SUCH_CFG";
@@ -208,13 +348,13 @@ class OZ_AdminPage : OZ_PageHandler
 
         // Розбiр -- ДО диска: смiття не досягає файлу, чинна версiя чинна.
         // Хто саме зламався -- скаже лог; клiєнтовi досить «не розiбралось».
-        if (!e.Applier.Apply(a.Json))
+        if (!e.Applier.Apply(body))
         {
             error = "STR_OZ_ERR_CFG_REJECTED";
             return "";
         }
 
-        OZ_Log.Info("admin: config \"" + a.Name + "\" applied by " + sender.GetPlainId());
+        OZ_Log.Info("admin: config " + name + " applied by " + sender.GetPlainId());
 
         ok = true;
         return "{}";
@@ -224,6 +364,9 @@ class OZ_AdminPage : OZ_PageHandler
     {
         OZ_AdminRoster r = new OZ_AdminRoster();
         OZ_Factions.Ids(r.Factions);
+        OZ_Roles.TraitIds(r.Traits);
+        OZ_Roles.RankIds(r.Ranks);
+        OZ_Roles.FRankIds(r.FRanks);
 
         array<Man> players = new array<Man>();
         GetGame().GetPlayers(players);
@@ -240,6 +383,10 @@ class OZ_AdminPage : OZ_PageHandler
             row.Name    = id.GetName();
             row.Uid     = id.GetPlainId();
             row.Faction = OZ_Factions.OfUid(row.Uid);
+            row.DName   = OZ_Roles.DiscordNameOf(row.Uid);
+            row.Traits  = OZ_Roles.TraitsLineOf(row.Uid);
+            row.Rank    = OZ_Roles.RankOf(row.Uid);
+            row.FRank   = OZ_Roles.FRankOf(row.Uid);
             row.Leader  = OZ_Roles.IsLeader(row.Uid);
             r.Rows.Insert(row);
         }
@@ -279,27 +426,13 @@ class OZ_AdminPage : OZ_PageHandler
     }
 }
 
-// Аплаєри ядра: фракцiї i спавни. Розбiр у ТИМЧАСОВИЙ об'єкт, збереження
-// через той самий лоадер (вiн робить .bak), потiм Reload -- живий конфiг
+// Аплаєр ядра: спавни. Розбiр у ТИМЧАСОВИЙ об'єкт, збереження через той
+// самий лоадер (вiн робить .bak), потiм Reload -- живий конфiг
 // перечитується з уже перевiреного диска повним конвеєром валiдацiї.
-class OZ_FactionsCfgApplier : OZ_AdminCfgApplier
-{
-    override bool Apply(string json)
-    {
-        OZ_FactionsConfig tmp;
-        string err;
-        if (!JsonFileLoader<OZ_FactionsConfig>.LoadData(json, tmp, err) || !tmp)
-        {
-            OZ_Log.Warn("admin: Factions.json rejected: " + err);
-            return false;
-        }
-
-        OZ_ConfigLoader<OZ_FactionsConfig>.Save(OZ_Const.PROFILE_DIR + "\\Factions.json", "factions", tmp);
-        OZ_Factions.Reload();
-        return true;
-    }
-}
-
+//
+// Аплаєра фракцiй тут БIЛЬШЕ НЕМАЄ: фракцiї народжуються й вмирають
+// тiльки через бота (рiшення власника 2026-08-30), i редактор файла був
+// би обхiдною стежкою повз це правило.
 class OZ_SpawnsCfgApplier : OZ_AdminCfgApplier
 {
     override bool Apply(string json)

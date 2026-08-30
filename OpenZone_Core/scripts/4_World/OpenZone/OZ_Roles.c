@@ -18,6 +18,13 @@ class OZ_RoleView
     string Uid          = "";
     string Faction      = "";
     string Rank         = "";
+    // ВНУТРIФРАКЦIЙНЕ звання -- окрема вiсь вiд сталкерського Rank
+    // (рiшення власника 2026-08-30): живе всерединi фракцiї, вмирає разом
+    // iз членством, роздає лiдер. Слаг ГОЛИЙ, без префiкса фракцiї -- чиє
+    // це звання, каже Faction поруч.
+    string FRank        = "";
+    // Видиме iм'я Discord: тiльки для адмiнських екранiв, гравцям не їде.
+    string DName        = "";
     ref array<string> Posts;
     ref array<string> Traits;
 
@@ -53,6 +60,19 @@ class OZ_Roles
 {
     private static ref map<string, ref OZ_RoleView> s_By;
 
+    private static ref map<string, string> s_DName;
+
+    // Видиме iм'я Discord з останньої проекцiї; порожньо, коли не знаємо.
+    static string DiscordNameOf(string uid)
+    {
+        if (!s_DName)
+            return "";
+        string n;
+        if (!s_DName.Find(uid, n))
+            return "";
+        return n;
+    }
+
     static void Apply(OZ_RoleView v)
     {
         if (!GetGame().IsServer())
@@ -61,6 +81,13 @@ class OZ_Roles
             return;
         if (v.Uid == "")
             return;
+
+        if (v.DName != "")
+        {
+            if (!s_DName)
+                s_DName = new map<string, string>();
+            s_DName.Set(v.Uid, v.DName);
+        }
 
         if (!s_By)
             s_By = new map<string, ref OZ_RoleView>();
@@ -80,6 +107,7 @@ class OZ_Roles
             string m = "roles: " + v.Uid;
             m += " faction=\"" + v.Faction;
             m += "\" rank=\"" + v.Rank;
+            m += "\" frank=\"" + v.FRank;
             m += "\" posts=" + v.Posts.Count().ToString();
             m += " traits=" + v.Traits.Count().ToString();
             OZ_Log.Info(m);
@@ -116,6 +144,7 @@ class OZ_Roles
 
         d.SeenFaction = v.Faction;
         d.SeenRank    = v.Rank;
+        d.SeenFRank   = v.FRank;
 
         if (!d.SeenPosts)
             d.SeenPosts = new array<string>();
@@ -151,6 +180,7 @@ class OZ_Roles
         v.Uid     = uid;
         v.Faction = d.SeenFaction;
         v.Rank    = d.SeenRank;
+        v.FRank   = d.SeenFRank;
 
         if (d.SeenPosts)
         {
@@ -201,6 +231,8 @@ class OZ_Roles
             return false;
         if (a.Rank != b.Rank)
             return false;
+        if (a.FRank != b.FRank)
+            return false;
         if (a.Posts.Count() != b.Posts.Count())
             return false;
         if (a.Traits.Count() != b.Traits.Count())
@@ -240,6 +272,17 @@ class OZ_Roles
         return v.Rank;
     }
 
+    // Внутрiфракцiйне звання. Порожньо -- без звання, або поза фракцiєю,
+    // або проекцiя ще не приїхала. Iнтерфейс для ЧУЖИХ модiв теж: квест
+    // може питати FRankOf так само, як HasTrait.
+    static string FRankOf(string uid)
+    {
+        OZ_RoleView v = Of(uid);
+        if (!v)
+            return "";
+        return v.FRank;
+    }
+
     static bool HasPost(string uid, string post)
     {
         OZ_RoleView v = Of(uid);
@@ -259,6 +302,93 @@ class OZ_Roles
         if (!v)
             return false;
         return v.Traits.Find(trait) != -1;
+    }
+
+    // Мiтки гравця одним рядком ("medic,mechanic") -- для адмiнського
+    // ростера. Порожньо -- мiток немає або проекцiя ще не приїхала.
+    static string TraitsLineOf(string uid)
+    {
+        OZ_RoleView v = Of(uid);
+        if (!v)
+            return "";
+
+        string line = "";
+        for (int i = 0; i < v.Traits.Count(); i++)
+        {
+            if (line != "")
+                line += ",";
+            line += v.Traits[i];
+        }
+        return line;
+    }
+
+    // ------------------------------------------- каталоги мiток i звань
+    //
+    // КАТАЛОГИ, а не чиїсь ролi: перелiки слагiв, якi реєстр бота взагалi
+    // знає. Потрiбнi адмiнському UI, щоб було з чого вибирати. Живуть тут,
+    // бо приїжджають тим самим конвертом роду "roster", що й проекцiї.
+    private static ref array<string> s_TraitIds;
+    private static ref array<string> s_RankIds;
+    // Внутрiфракцiйнi звання, id-шники вигляду "duty:sergeant".
+    private static ref array<string> s_FRankIds;
+
+    static void RememberTraitIds(array<ref OZ_RoleName> list)
+    {
+        if (!s_TraitIds)
+            s_TraitIds = new array<string>();
+        Absorb(list, s_TraitIds);
+    }
+
+    static void RememberRankIds(array<ref OZ_RoleName> list)
+    {
+        if (!s_RankIds)
+            s_RankIds = new array<string>();
+        Absorb(list, s_RankIds);
+    }
+
+    static void RememberFRankIds(array<ref OZ_RoleName> list)
+    {
+        if (!s_FRankIds)
+            s_FRankIds = new array<string>();
+        Absorb(list, s_FRankIds);
+    }
+
+    private static void Absorb(array<ref OZ_RoleName> list, array<string> into)
+    {
+        if (!list)
+            return;
+
+        for (int i = 0; i < list.Count(); i++)
+        {
+            if (!list[i] || list[i].Id == "")
+                continue;
+            if (into.Find(list[i].Id) == -1)
+                into.Insert(list[i].Id);
+        }
+    }
+
+    static void TraitIds(array<string> into)
+    {
+        if (!into || !s_TraitIds)
+            return;
+        for (int i = 0; i < s_TraitIds.Count(); i++)
+            into.Insert(s_TraitIds[i]);
+    }
+
+    static void RankIds(array<string> into)
+    {
+        if (!into || !s_RankIds)
+            return;
+        for (int i = 0; i < s_RankIds.Count(); i++)
+            into.Insert(s_RankIds[i]);
+    }
+
+    static void FRankIds(array<string> into)
+    {
+        if (!into || !s_FRankIds)
+            return;
+        for (int i = 0; i < s_FRankIds.Count(); i++)
+            into.Insert(s_FRankIds[i]);
     }
 
     // Чи протухла проекція. Не «моста немає» -- саме «давно нічого не
@@ -325,6 +455,13 @@ class OZ_RosterSink : OZ_BridgeSink
         OZ_RoleNames.Absorb(r.Ranks);
         OZ_RoleNames.Absorb(r.Traits);
         OZ_RoleNames.Absorb(r.Posts);
+        OZ_RoleNames.Absorb(r.FRanks);
+
+        // А СЛАГИ мiток i звань -- ще й списками: адмiнському UI треба з
+        // чого вибирати, а словник вибору не вiддає.
+        OZ_Roles.RememberTraitIds(r.Traits);
+        OZ_Roles.RememberRankIds(r.Ranks);
+        OZ_Roles.RememberFRankIds(r.FRanks);
     }
 }
 

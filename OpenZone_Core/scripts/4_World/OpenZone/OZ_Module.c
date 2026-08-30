@@ -69,9 +69,13 @@ class OZ_Module : CF_ModuleWorld
 
         // Адмiнська консоль: сторiнка з власними воротами (OZ_Perm.IsAdmin)
         // i реєстр редагованих конфiгiв. КПК допише сюди свої.
+        //
+        // Factions.json тут НЕМАЄ навмисно: фракцiї народжуються й вмирають
+        // тiльки через бота (рiшення власника 2026-08-30) -- iнакше в
+        // фракцiї не було б ролi в Discord. Редактор, який дозволяє дописати
+        // фракцiю в файл, був би обхiдною стежкою повз це правило.
         OZ_PageRegistry.Register(OZ_Const.PAGE_ADMIN, "", "", new OZ_AdminPage());
-        OZ_AdminCfg.Register("Factions", OZ_Const.PROFILE_DIR + "\\Factions.json", new OZ_FactionsCfgApplier());
-        OZ_AdminCfg.Register("Spawns",   OZ_Const.PROFILE_DIR + "\\Spawns.json",   new OZ_SpawnsCfgApplier());
+        OZ_AdminCfg.Register("Spawns", OZ_Const.PROFILE_DIR + "\\Spawns.json", new OZ_SpawnsCfgApplier());
 
         OZ_Rpc.RegisterServer(this);
 
@@ -158,9 +162,32 @@ class OZ_Module : CF_ModuleWorld
 
         // Ім'я -> особа, і тільки серед тих, хто В ЗОНІ. Клієнт назвав рядок;
         // кому він належить, вирішуємо ми.
+        //
+        // АДМІНСЬКИЙ ВИНЯТОК: адреса "uid:<steam64>" називає особу точно.
+        // Приймається ЛИШЕ від адміна -- консоль і так бачить uid-и в
+        // ростері, а лідерські операції лишаються іменними: межа «клієнт не
+        // оперує чужими Steam64» стоїть для гравців, не для адмінки.
         string targetUid = "";
-        if (targetName != "")
+        if (targetName.IndexOf("uid:") == 0)
+        {
+            if (!OZ_Perm.IsAdmin(sender))
+            {
+                OZ_Rpc.RoleRespond(sender, op, false, "STR_OZ_ERR_ADMIN_ONLY");
+                return;
+            }
+            targetUid = targetName.Substring(4, targetName.Length() - 4);
+        }
+        else if (targetName != "")
+        {
             targetUid = OZ_RoleOps.UidByName(targetName, sender.GetPlainId());
+
+            // СЕБЕ ЗА ІМЕНЕМ ТЕЖ МОЖНА. UidByName виключає відправника,
+            // щоб тезка не пiдставився пiд чужу операцiю, -- але той, хто
+            // називає ВЛАСНЕ iм'я, не двозначний (змiряно 2026-08-30:
+            // єдиний гравець на стендi не мiг призначити фракцiю нiкому).
+            if (targetUid == "" && sender.GetName() == targetName)
+                targetUid = sender.GetPlainId();
+        }
 
         // Запрошення -- НЕ операція над ролями, тому й не йде в OZ_RoleOps:
         // до згоди воно взагалі нічого не міняє в Discord.
@@ -183,8 +210,16 @@ class OZ_Module : CF_ModuleWorld
         }
 
         // Зони спавна -- не про гравця й не про Discord, тому окремою гілкою
-        // й без цілі: адмін ставить зону ТАМ, ДЕ СТОЇТЬ САМ.
-        if (op == OZ_RoleOp.SPAWN_HERE || op == OZ_RoleOp.SPAWN_CLEAR)
+        // й без цілі: адмін ставить зону ТАМ, ДЕ СТОЇТЬ САМ. uid-варіанти --
+        // особиста точка одного гравця, теж від місця, де стоїть адмін.
+        //
+        // Умова НЕ переноситься на другий рядок: парсер Enforce падає на
+        // багаторядковому if iз хвостовим || (змiряно 2026-08-30, диаг-збiрка
+        // назвала саме цей рядок).
+        bool spawnOp = op == OZ_RoleOp.SPAWN_HERE || op == OZ_RoleOp.SPAWN_CLEAR;
+        if (!spawnOp)
+            spawnOp = op == OZ_RoleOp.SPAWN_UID_HERE || op == OZ_RoleOp.SPAWN_UID_CLEAR;
+        if (spawnOp)
         {
             OZ_SpawnOps.Handle(sender, op, arg);
             return;

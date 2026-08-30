@@ -63,6 +63,18 @@ class OZ_Faction
     // сюжетні угруповання, які ще не мали з'явитись.
     bool Hidden;
 
+    // БАЗОВА ІДЕНТИЧНІСТЬ, а не організація (рішення власника 2026-08-30).
+    //
+    // «Сталкери» -- це всі в Зоні: значок носить кожен, він не знімається при
+    // вступі кудись іще, і в нього немає ні лідера, ні складу, ні внутрішніх
+    // звань. Тому фракційний екран для такого запису НЕ ВІДКРИВАЄТЬСЯ: бачити
+    // там поіменний список усіх сталкерів сервера і кнопку «вигнати» --
+    // безглуздо й до того ж видало б людей, яких ніхто не питав.
+    //
+    // Для всього іншого це звичайна фракція: назва, колір, ставлення,
+    // зона спавну працюють як завжди.
+    bool BaseFaction;
+
     // Стеля складу САМЕ ЦІЄЇ фракції: скільки людей у ній може бути разом
     // (рахуються проекції ролей -- увесь відомий склад, не лише присутні).
     // 0 -- без межі. Рішення власника 2026-08-30: межа фракційна, не
@@ -87,7 +99,7 @@ class OZ_FactionsConfig : OZ_ConfigBase
 
     override int LatestVersion()
     {
-        return 3;
+        return 4;
     }
 
     override void LoadDefaults()
@@ -116,6 +128,12 @@ class OZ_FactionsConfig : OZ_ConfigBase
         Add("freedom",   "Воля",       "ВОЛ", " 96 176  72");
         Add("mercenary", "Найманці",   "НАЙ", " 80 130 190");
         Add("neutral",   "Нейтрали",   "НЕЙ", "200 200 200");
+        // «Нейтрали» -- органiзацiя з лiдером; вiльнi сталкери -- БАЗОВА
+        // фракцiя (рiшення власника 2026-08-30): її носять усi, вона не
+        // знiмається вступом кудись iще й не має нi лiдера, нi складу.
+        // Порожнiй Id як був, так i лишається «одинаком» без приналежностi
+        // взагалi -- це не те саме, що бути сталкером.
+        Add("stalker",   "Сталкери",   "СТК", "216 192 112", true);
         Add("bandit",    "Бандити",    "БАН", "150 120  70");
         Add("clearsky",  "Чисте небо", "ЧН",  "120 190 200");
         Add("monolith",  "Моноліт",    "МНЛ", "170 150 220");
@@ -135,7 +153,7 @@ class OZ_FactionsConfig : OZ_ConfigBase
         Relate("ecolog",   "clearsky", "friendly");
     }
 
-    private void Add(string id, string name, string tag, string colour)
+    private void Add(string id, string name, string tag, string colour, bool baseFaction = false)
     {
         OZ_Faction f = new OZ_Faction();
         f.Id            = id;
@@ -144,6 +162,7 @@ class OZ_FactionsConfig : OZ_ConfigBase
         f.Color         = colour;
         f.Joinable      = false;
         f.Hidden        = false;
+        f.BaseFaction   = baseFaction;
         f.Tags          = new array<string>();
         f.Relations     = new array<ref OZ_FactionRelation>();
         f.Extra         = "";
@@ -190,6 +209,18 @@ class OZ_FactionsConfig : OZ_ConfigBase
         {
             Rename("ecologist", "ecolog",  "Ecologists", "Вчені");
             Rename("loner",     "neutral", "Loners",     "Нейтрали");
+        }
+
+        // v3 -> v4: з'явилась базова фракцiя. Позначаємо ЛИШЕ «сталкерiв» i
+        // лише якщо запис у файлi є: чужi фракцiї адмiна це не чiпає, а
+        // прапорець на них ставити нема за що.
+        if (from < 4)
+        {
+            for (int i = 0; i < Factions.Count(); i++)
+            {
+                if (Factions[i].Id == "stalker")
+                    Factions[i].BaseFaction = true;
+            }
         }
 
         // Порожні поля роздасть Validate() -- він біжить одразу після
@@ -296,6 +327,10 @@ class OZ_FactionRosterEntry
     string Id;
     string DisplayName;
     string Color;
+
+    // Базова фракцiя: її носять усi й вона не є органiзацiєю. Див. довге
+    // пояснення в полi OZ_Faction.BaseFaction.
+    bool Base;
 }
 
 // Підпис однієї ролі, будь-якої з трьох осей. Той самий вигляд, що й у
@@ -311,11 +346,13 @@ class OZ_FactionRoster
     int Stamp;
     ref array<ref OZ_FactionRosterEntry> Factions;
 
-    // Три інші осі -- лише підписи. Приїжджають тим самим конвертом, бо
-    // змінюються так само рідко й з того самого джерела.
+    // Iншi осi -- лише пiдписи. Приїжджають тим самим конвертом, бо
+    // змiнюються так само рiдко й з того самого джерела. FRanks --
+    // внутрiфракцiйнi звання, id вигляду "duty:sergeant".
     ref array<ref OZ_RoleName> Ranks;
     ref array<ref OZ_RoleName> Traits;
     ref array<ref OZ_RoleName> Posts;
+    ref array<ref OZ_RoleName> FRanks;
 }
 
 // Слова, якими описується ставлення. Рядками, бо їх читає адмін у JSON, і
@@ -439,6 +476,34 @@ class OZ_Factions
             }
             outIds.Insert(s_Cfg.Factions[i].Id);
         }
+    }
+
+    // Чи це БАЗОВА фракцiя -- та, яку носять усi (сталкери). Питати треба
+    // всюди, де йдеться про фракцiю ЯК ПРО ОРГАНIЗАЦIЮ: склад, лiдер,
+    // внутрiшнi звання, запрошення. Там, де йдеться про назву й колiр,
+    // питати не треба -- базова фракцiя малюється, як усi.
+    //
+    // Незнайоме id -- НЕ базове: мовчазне «так» зачинило б фракцiйний
+    // екран тим, кого ми просто ще не знаємо.
+    static bool IsBase(string id)
+    {
+        OZ_Faction f = Find(id);
+        if (!f)
+            return false;
+        return f.BaseFaction;
+    }
+
+    // Фракцiя ЯК ОРГАНIЗАЦIЯ: те саме, що OfUid, але базова вважається
+    // вiдсутнiстю. Один виклик замiсть пари «взяв i перевiрив», щоб
+    // правило жило в одному мiсцi.
+    static string OrgOfUid(string uid)
+    {
+        string slug = OfUid(uid);
+        if (slug == "")
+            return "";
+        if (IsBase(slug))
+            return "";
+        return slug;
     }
 
     // Людська назва. Незнайоме id повертаємо ЯК Є: чуже слово на екрані
@@ -737,11 +802,36 @@ class OZ_Factions
 
             if (e.Color != "")
                 f.Color = e.Color;
+
+            // Базовiсть -- слово РЕЄСТРУ: саме бот вирiшує, яка фракцiя
+            // всезагальна, бо саме вiн вдягає її значок на кожного при
+            // прив'язцi. Ставимо лише true: власний прапорець адмiна в
+            // файлi реєстр не знiмає, бо реєстр про нього не знає.
+            if (e.Base)
+                f.BaseFaction = true;
         }
 
         string m = "factions: roster from the bridge, stamp " + r.Stamp.ToString();
         m += " (" + added.ToString() + " added, ";
         m += renamed.ToString() + " renamed)";
+
+        // БАЗОВУ НАЗИВАЄМО ВГОЛОС. Її прапорець приходить лише з реєстру й
+        // на диск не лягає (записи бота живуть у пам'ятi), тож без цього
+        // рядка перевiрити, чи вiн доїхав, можна було б тiльки з гри --
+        // саме та дiагностика, яку шукають о другiй ночi.
+        string bases = "";
+        for (int b = 0; b < s_Cfg.Factions.Count(); b++)
+        {
+            if (!s_Cfg.Factions[b].BaseFaction)
+                continue;
+            if (bases != "")
+                bases += ",";
+            bases += s_Cfg.Factions[b].Id;
+        }
+        if (bases == "")
+            bases = "none";
+        m += " base=" + bases;
+
         OZ_Log.Info(m);
     }
 
