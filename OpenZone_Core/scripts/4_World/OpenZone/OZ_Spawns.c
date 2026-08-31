@@ -204,7 +204,7 @@ class OZ_Spawns
     static void Reload()
     {
         s_Cfg = new OZ_SpawnsConfig();
-        OZ_ConfigLoader<OZ_SpawnsConfig>.Load(OZ_Const.PROFILE_DIR + "\\Spawns.json", "spawns", s_Cfg);
+        OZ_ConfigLoader<OZ_SpawnsConfig>.Load(OZ_Const.PROFILE_DIR + "\\OZ_Core_Spawns.json", "spawns", s_Cfg);
     }
 
     static int Count()
@@ -389,7 +389,7 @@ class OZ_Spawns
 
     private static void Save()
     {
-        OZ_ConfigLoader<OZ_SpawnsConfig>.Save(OZ_Const.PROFILE_DIR + "\\Spawns.json", "spawns", s_Cfg);
+        OZ_ConfigLoader<OZ_SpawnsConfig>.Save(OZ_Const.PROFILE_DIR + "\\OZ_Core_Spawns.json", "spawns", s_Cfg);
         OZ_Log.Info("spawns: written, " + Count().ToString() + " zone(s)");
     }
 

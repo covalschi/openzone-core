@@ -75,7 +75,7 @@ class OZ_Module : CF_ModuleWorld
         // фракцiї не було б ролi в Discord. Редактор, який дозволяє дописати
         // фракцiю в файл, був би обхiдною стежкою повз це правило.
         OZ_PageRegistry.Register(OZ_Const.PAGE_ADMIN, "", "", new OZ_AdminPage());
-        OZ_AdminCfg.Register("Spawns", OZ_Const.PROFILE_DIR + "\\Spawns.json", new OZ_SpawnsCfgApplier());
+        OZ_AdminCfg.Register("Spawns", OZ_Const.PROFILE_DIR + "\\OZ_Core_Spawns.json", new OZ_SpawnsCfgApplier());
 
         OZ_Rpc.RegisterServer(this);
 

@@ -15,7 +15,7 @@ class OZ_Const
     static const string BACKUP_DIR  = "$profile:OpenZone\\Backup";
     static const string PLAYERS_DIR = "$profile:OpenZone\\players";
     static const string LANG_DIR    = "$profile:OpenZone\\Lang";
-    static const string SETTINGS    = "$profile:OpenZone\\Settings.json";
+    static const string SETTINGS    = "$profile:OpenZone\\OZ_Core_Settings.json";
 
     // Версія схеми Settings.json. Зростає лише разом із міграцією.
     static const int SCHEMA_SETTINGS = 2;

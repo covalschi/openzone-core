@@ -418,7 +418,7 @@ class OZ_SpawnsCfgApplier : OZ_AdminCfgApplier
             return false;
         }
 
-        OZ_ConfigLoader<OZ_SpawnsConfig>.Save(OZ_Const.PROFILE_DIR + "\\Spawns.json", "spawns", tmp);
+        OZ_ConfigLoader<OZ_SpawnsConfig>.Save(OZ_Const.PROFILE_DIR + "\\OZ_Core_Spawns.json", "spawns", tmp);
         OZ_Spawns.Reload();
         return true;
     }

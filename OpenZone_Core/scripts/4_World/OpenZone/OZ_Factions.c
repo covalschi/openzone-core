@@ -431,7 +431,7 @@ class OZ_Factions
     static void Reload()
     {
         s_Cfg = new OZ_FactionsConfig();
-        OZ_ConfigLoader<OZ_FactionsConfig>.Load(OZ_Const.PROFILE_DIR + "\\Factions.json", "factions", s_Cfg);
+        OZ_ConfigLoader<OZ_FactionsConfig>.Load(OZ_Const.PROFILE_DIR + "\\OZ_Core_Factions.json", "factions", s_Cfg);
     }
 
     static int Count()
