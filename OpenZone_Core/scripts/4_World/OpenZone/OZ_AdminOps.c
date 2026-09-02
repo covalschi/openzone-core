@@ -118,6 +118,14 @@ class OZ_ConfigSection : OZ_AdminSection
         if (op.IndexOf("cfg_set:") == 0)
             return CfgSet(op.Substring(8, op.Length() - 8), json, sender, ok, error);
 
+        // Дзеркало Discord -- операція, не правка файла (ТЗ-2 R5.1): вмикання
+        // спершу заливає історію ботом. Живе в розділі конфігів, бо міняє
+        // саме Settings, і адмін шукатиме її поруч із RAW JSON.
+        if (op == "mirror_list")
+            return OZ_MirrorOps.List(ok, error);
+        if (op.IndexOf("mirror_set:") == 0)
+            return OZ_MirrorOps.Set(op.Substring(11, op.Length() - 11), op, sender, ok, error);
+
         error = "STR_OZ_ERR_UNKNOWN_OP";
         return "";
     }

@@ -194,6 +194,13 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     // МІСТ (news_voices); панель його лише малює й по колу перебирає. Вона
     // не вирішує прав і не вигадує імен: список -- підказка, грант -- факт,
     // і маршрут запису перевіряє це ще раз (R3.2).
+    // Дзеркало чату (ТЗ-2 §8): стан приходить mirror_list, перемикання --
+    // mirror_set у два натискання, бо вмикання заливає в Discord усю
+    // історію, а це дія назовні.
+    protected bool m_MirrorKnown = false;
+    protected bool m_MirrorOn    = false;
+    protected bool m_MirrorArmed = false;
+
     protected ref array<string> m_NwVoices;
     protected int               m_NwPick;
     protected string            m_NwSelf;
@@ -252,7 +259,12 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         if (id == "spawns")
             AskCfg("Spawns");
         if (id == "raw")
+        {
             Ask(OZ_AdminSect.CONFIG, "cfg_list", "{}");
+            m_MirrorArmed = false;
+            PaintMirror();
+            Ask(OZ_AdminSect.CONFIG, "mirror_list", "{}");
+        }
         if (id == "news")
             Ask(OZ_AdminSect.NEWS, OZ_NewsOp.VOICES, "{}");
     }
@@ -417,7 +429,56 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             // Вiдмова на cfg_get мусить звiльнити чергу, iнакше вона стане.
             if (op.IndexOf("cfg_get:") == 0)
                 CfgDone(op.Substring(8, op.Length() - 8));
+            if (op.IndexOf("mirror_set:") == 0)
+            {
+                m_MirrorArmed = false;
+                PaintMirror();
+            }
             Hint("#" + error);
+            return;
+        }
+
+        if (op == "mirror_list")
+        {
+            OZ_MirrorState mst;
+            string merr;
+            if (JsonFileLoader<OZ_MirrorState>.LoadData(json, mst, merr) && mst && mst.Mirrors)
+            {
+                m_MirrorKnown = true;
+                m_MirrorOn    = false;
+                for (int mi = 0; mi < mst.Mirrors.Count(); mi++)
+                {
+                    if (mst.Mirrors[mi] && mst.Mirrors[mi].Kind == "chat")
+                        m_MirrorOn = mst.Mirrors[mi].Mirror;
+                }
+                PaintMirror();
+            }
+            return;
+        }
+
+        if (op.IndexOf("mirror_set:") == 0)
+        {
+            OZ_MirrorReport mrep;
+            string rerr;
+            m_MirrorArmed = false;
+            if (JsonFileLoader<OZ_MirrorReport>.LoadData(json, mrep, rerr) && mrep)
+            {
+                m_MirrorKnown = true;
+                m_MirrorOn    = mrep.On;
+                string line = mrep.Kind + " mirror ";
+                if (mrep.On)
+                    line += "ON";
+                else
+                    line += "OFF";
+                if (mrep.Skipped == 1 && mrep.Pushed == 0 && mrep.Failed == 0 && mrep.Note.IndexOf("already") == 0)
+                    line += " (unchanged)";
+                else
+                    line += ": pushed " + mrep.Pushed.ToString() + ", skipped " + mrep.Skipped.ToString() + ", failed " + mrep.Failed.ToString();
+                if (mrep.Note != "")
+                    line += " - " + mrep.Note;
+                Hint(line);
+            }
+            PaintMirror();
             return;
         }
 
@@ -934,6 +995,37 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             return true;
         }
 
+        if (nm == "BtnMirror")
+        {
+            if (!m_MirrorKnown)
+            {
+                Hint("the mirror state has not arrived yet");
+                Ask(OZ_AdminSect.CONFIG, "mirror_list", "{}");
+                return true;
+            }
+
+            // Два натискання: перше каже, що саме станеться, друге робить.
+            if (!m_MirrorArmed)
+            {
+                m_MirrorArmed = true;
+                PaintMirror();
+                if (m_MirrorOn)
+                    Hint("turning the chat mirror OFF: the bot stops writing, the Discord threads stay as an archive - press again to confirm");
+                else
+                    Hint("turning the chat mirror ON: the whole chat history goes into Discord threads first - press again to confirm");
+                return true;
+            }
+
+            m_MirrorArmed = false;
+            PaintMirror();
+            Hint("switching the chat mirror...");
+            if (m_MirrorOn)
+                Ask(OZ_AdminSect.CONFIG, "mirror_set:chat:off", "{}");
+            else
+                Ask(OZ_AdminSect.CONFIG, "mirror_set:chat:on", "{}");
+            return true;
+        }
+
         if (nm == "BtnRawReload")
         {
             if (m_RawPicked != "")
@@ -958,6 +1050,34 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         }
 
         return super.OnClick(w, x, y, button);
+    }
+
+    protected void PaintMirror()
+    {
+        if (!M_SUB_WIDGET)
+            return;
+
+        TextWidget lbl = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("MirrorLabel"));
+        if (lbl)
+        {
+            if (!m_MirrorKnown)
+                lbl.SetText("chat mirror: ?");
+            else if (m_MirrorOn)
+                lbl.SetText("chat mirror: ON");
+            else
+                lbl.SetText("chat mirror: OFF");
+        }
+
+        TextWidget bt = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnMirrorText"));
+        if (bt)
+        {
+            if (m_MirrorArmed)
+                bt.SetText("PRESS AGAIN");
+            else if (m_MirrorKnown && m_MirrorOn)
+                bt.SetText("MIRROR OFF");
+            else
+                bt.SetText("MIRROR ON");
+        }
     }
 
     // ---------------------------------------------------------- дрiбне

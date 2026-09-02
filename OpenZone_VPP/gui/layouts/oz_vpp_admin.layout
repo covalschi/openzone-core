@@ -946,6 +946,81 @@ FrameWidgetClass OZ_VppRoot {
      }
     }
    }
+   TextWidgetClass MirrorLabel {
+    visible 1
+    ignorepointer 1
+    position 400 452
+    size 230 20
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.541 0.541 0.565 1
+    text ""
+    font "gui/fonts/sdf_MetronBook24"
+    "exact text" 1
+    "exact text size" 12
+    "text halign" left
+    "text valign" center
+    priority 3
+   }
+   ButtonWidgetClass BtnMirror {
+    visible 1
+    position 640 448
+    size 180 28
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    text ""
+    priority 4
+    {
+     PanelWidgetClass BtnMirrorEdge {
+      visible 1
+      ignorepointer 1
+      color 0.31 0.31 0.35 1
+      position -1 -1
+      size 182 30
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      priority 0
+      style rover_sim_colorable
+     }
+     PanelWidgetClass BtnMirrorBg {
+      visible 1
+      ignorepointer 1
+      color 0.145 0.145 0.161 1
+      position 0 0
+      size 180 28
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      priority 1
+      style rover_sim_colorable
+     }
+     TextWidgetClass BtnMirrorText {
+      visible 1
+      ignorepointer 1
+      position 0 0
+      size 180 28
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      color 1 0.478 0.102 1
+      text "RELOAD"
+      font "gui/fonts/sdf_MetronBook24"
+      "exact text" 1
+      "exact text size" 12
+      "text halign" center
+      "text valign" center
+      priority 2
+     }
+    }
+   }
    TextWidgetClass RawHint {
     visible 1
     ignorepointer 1
