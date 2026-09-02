@@ -32,6 +32,9 @@ class OZ_AdminRosterRow
     string Rank    = "";
     string FRank   = "";
     bool   Leader  = false;
+    // У Зоні зараз. Ростер тепер перелічує й відсутніх (ТЗ-4 R-C4.2), і
+    // консоль мусить їх розрізняти: відсутнього не покличеш до слова.
+    bool   Online  = false;
 }
 
 class OZ_AdminRoster
@@ -216,6 +219,75 @@ class OZ_WipeSink : OZ_BridgeSink
     }
 }
 
+// Проекції з бази бота -- усі, хто прив'язав акаунт, присутні чи ні.
+class OZ_RosterViews
+{
+    bool   Ok  = false;
+    string Why = "";
+    ref array<ref OZ_RoleView> Rows;
+
+    void OZ_RosterViews()
+    {
+        Rows = new array<ref OZ_RoleView>();
+    }
+}
+
+// Мiст вiдповiв на запит ростера -- збираємо його й вiддаємо адмiновi.
+// Мовчання чи вiдмова моста НЕ лишають екран порожнiм: тодi ростер такий,
+// як був до цього, -- лише присутнi, з кешу проекцiй.
+class OZF_RosterReply : OZ_BridgeReply
+{
+    protected string m_AdminUid;
+    protected string m_Op;
+
+    void OZF_RosterReply(string adminUid, string op)
+    {
+        m_AdminUid = adminUid;
+        m_Op       = op;
+    }
+
+    override void OnBody(string json)
+    {
+        PlayerIdentity to = OZ_Link.Online(m_AdminUid);
+        if (!to)
+            return;
+
+        OZ_RosterViews v;
+        string err;
+        if (!JsonFileLoader<OZ_RosterViews>.LoadData(json, v, err) || !v)
+        {
+            OZ_Log.Warn("admin: roster from the bridge is unreadable: " + err);
+            Send(to, null);
+            return;
+        }
+
+        if (!v.Ok)
+        {
+            OZ_Log.Warn("admin: bridge refused the roster: " + v.Why);
+            Send(to, null);
+            return;
+        }
+
+        Send(to, v.Rows);
+    }
+
+    override void OnFail(int code)
+    {
+        PlayerIdentity to = OZ_Link.Online(m_AdminUid);
+        if (!to)
+            return;
+        Send(to, null);
+    }
+
+    private void Send(PlayerIdentity to, array<ref OZ_RoleView> rows)
+    {
+        bool ok;
+        string error;
+        string body = OZF_AdminSection.BuildRoster(rows, ok, error);
+        OZ_Rpc.AdminRespond(to, OZF_Const.SECTION, m_Op, ok, body, error);
+    }
+}
+
 class OZF_AdminSection : OZ_AdminSection
 {
     override string Handle(string op, string json, PlayerIdentity sender, out bool ok, out string error)
@@ -226,7 +298,7 @@ class OZF_AdminSection : OZ_AdminSection
         // розбору операції. Межа безпеки одна на всі розділи всіх модів.
 
         if (op == "roster")
-            return Roster(ok, error);
+            return Roster(op, sender, ok, error);
 
         // Пермадес. Iм'я живе в операцiї з тiєї ж причини, що й у cfg_*:
         // uid короткий, але правило одне на всi адмiнськi операцiї.
@@ -289,13 +361,85 @@ class OZF_AdminSection : OZ_AdminSection
             return "";
         }
 
-    private string Roster(out bool ok, out string error)
+    // Ростер -- З БАЗИ БОТА, i в ньому є вiдсутнi (ТЗ-4 R-C4.2). Досi вiн
+    // перелiчував лише тих, хто в Зонi, бо кеш проекцiй живе поки гравець
+    // пiдключений, -- i вiдсутнього не можна було нi вайпнути, нi призначити.
+    // Мiст знає кожного, хто прив'язав акаунт; присутнiх без прив'язки
+    // додаємо самi. Вiдповiдь iде з OZF_RosterReply; без моста -- одразу,
+    // як ранiше.
+    private string Roster(string op, PlayerIdentity sender, out bool ok, out string error)
         {
+            if (!OZ_BridgeClient.Alive())
+                return BuildRoster(null, ok, error);
+
+            OZ_BridgeClient.Call("v1/roles/roster", "{}", new OZF_RosterReply(sender.GetPlainId(), op));
+
+            ok    = false;
+            error = OZ_Const.DEFER;
+            return "";
+        }
+
+    // Рядки ростера: спершу проекцiї моста (присутнi, потiм вiдсутнi), далi
+    // присутнi, яких мiст не знає. Iм'я вiдсутнього -- з його файла гравця;
+    // коли й там порожньо -- iм'я в Discord, а на крайнiй випадок uid.
+    static string BuildRoster(array<ref OZ_RoleView> views, out bool ok, out string error)
+        {
+            ok = false;
+
             OZ_AdminRoster r = new OZ_AdminRoster();
             OZ_Factions.Ids(r.Factions);
             OZ_Roles.TraitIds(r.Traits);
             OZ_Roles.RankIds(r.Ranks);
             OZ_Roles.FRankIds(r.FRanks);
+
+            array<string> seen = new array<string>();
+
+            if (views)
+            {
+                for (int pass = 0; pass < 2; pass++)
+                {
+                    for (int v = 0; v < views.Count(); v++)
+                    {
+                        OZ_RoleView view = views[v];
+                        if (!view || view.Uid == "")
+                            continue;
+
+                        PlayerIdentity on = OZ_Link.Online(view.Uid);
+                        bool here = on != null;
+                        if (here != (pass == 0))
+                            continue;
+                        if (seen.Find(view.Uid) != -1)
+                            continue;
+                        seen.Insert(view.Uid);
+
+                        OZ_AdminRosterRow row = new OZ_AdminRosterRow();
+                        row.Uid    = view.Uid;
+                        row.Online = here;
+                        if (on)
+                        {
+                            row.Name = on.GetName();
+                        }
+                        else
+                        {
+                            OZ_PlayerData pd = OZ_PlayerStore.Load(view.Uid);
+                            if (pd)
+                                row.Name = pd.Name;
+                        }
+                        if (row.Name == "")
+                            row.Name = view.DName;
+                        if (row.Name == "")
+                            row.Name = view.Uid;
+                        row.Base    = view.Base;
+                        row.Org     = view.Org;
+                        row.DName   = view.DName;
+                        row.Traits  = OZ_Roles.TraitsLine(view);
+                        row.Rank    = view.Rank;
+                        row.FRank   = view.FRank;
+                        row.Leader  = OZ_Roles.ViewIsLeader(view);
+                        r.Rows.Insert(row);
+                    }
+                }
+            }
 
             array<Man> players = new array<Man>();
             GetGame().GetPlayers(players);
@@ -307,18 +451,21 @@ class OZF_AdminSection : OZ_AdminSection
                 PlayerIdentity id = players[i].GetIdentity();
                 if (!id)
                     continue;
+                if (seen.Find(id.GetPlainId()) != -1)
+                    continue;
 
-                OZ_AdminRosterRow row = new OZ_AdminRosterRow();
-                row.Name    = id.GetName();
-                row.Uid     = id.GetPlainId();
-                row.Base    = OZ_Factions.BaseOfUid(row.Uid);
-                row.Org     = OZ_Factions.OrgOfUid(row.Uid);
-                row.DName   = OZ_Roles.DiscordNameOf(row.Uid);
-                row.Traits  = OZ_Roles.TraitsLineOf(row.Uid);
-                row.Rank    = OZ_Roles.RankOf(row.Uid);
-                row.FRank   = OZ_Roles.FRankOf(row.Uid);
-                row.Leader  = OZ_Roles.IsLeader(row.Uid);
-                r.Rows.Insert(row);
+                OZ_AdminRosterRow prow = new OZ_AdminRosterRow();
+                prow.Name    = id.GetName();
+                prow.Uid     = id.GetPlainId();
+                prow.Online  = true;
+                prow.Base    = OZ_Factions.BaseOfUid(prow.Uid);
+                prow.Org     = OZ_Factions.OrgOfUid(prow.Uid);
+                prow.DName   = OZ_Roles.DiscordNameOf(prow.Uid);
+                prow.Traits  = OZ_Roles.TraitsLineOf(prow.Uid);
+                prow.Rank    = OZ_Roles.RankOf(prow.Uid);
+                prow.FRank   = OZ_Roles.FRankOf(prow.Uid);
+                prow.Leader  = OZ_Roles.IsLeader(prow.Uid);
+                r.Rows.Insert(prow);
             }
 
             string outJson;

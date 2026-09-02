@@ -331,6 +331,16 @@ class OZ_Roles
         OZ_RoleView v = Of(uid);
         if (!v)
             return "";
+        return TraitsLine(v);
+    }
+
+    // Те саме для проекції, якої в кеші НЕМАЄ: адмінський ростер везе з
+    // бази бота й офлайнових (ТЗ-4 R-C4.2), а класти їх у кеш не можна --
+    // кеш означає «в Зоні».
+    static string TraitsLine(OZ_RoleView v)
+    {
+        if (!v)
+            return "";
 
         string line = "";
         for (int i = 0; i < v.Traits.Count(); i++)
@@ -340,6 +350,13 @@ class OZ_Roles
             line += v.Traits[i];
         }
         return line;
+    }
+
+    static bool ViewIsLeader(OZ_RoleView v)
+    {
+        if (!v)
+            return false;
+        return v.Posts.Find("leader") != -1;
     }
 
     // ------------------------------------------- каталоги мiток i звань

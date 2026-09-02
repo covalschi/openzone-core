@@ -22,6 +22,13 @@ class OZ_PdaPageFaction : OZ_PdaPage
     private int m_RowsY = 0;
     private string m_Picked = "";     // ім'я обраного члена
 
+    // ДВА КРОКИ на кожну незворотну дію (ТЗ-4 R-C5.1): перший клік озброює
+    // й називає ціль і дію словами (R-C5.2), другий -- той самий, поки не
+    // вийшов час, -- виконує. Інший вибір знімає озброєння.
+    private string m_Armed      = "";
+    private float  m_ArmedUntil = 0;
+    private static const float ARM_MS = 8000;
+
     private ButtonWidget m_BtnKick;
     private ButtonWidget m_BtnLead;
     private ButtonWidget m_BtnInvite;
@@ -176,7 +183,7 @@ class OZ_PdaPageFaction : OZ_PdaPage
 
         w.SetPos(0, m_RowsY);
         m_RowsY += 34;
-        w.SetName(m.Name);
+        w.SetName(RowKey(m));
         w.SetUserID(8);
         m_RowWgts.Insert(w);
 
@@ -212,7 +219,7 @@ class OZ_PdaPageFaction : OZ_PdaPage
 
         Widget pick = w.FindAnyWidget("FRowPick");
         if (pick)
-            pick.Show(m.Name == m_Picked);
+            pick.Show(RowKey(m) == m_Picked);
     }
 
     // Кого вибрано в СУСІДНІЙ половині вкладки. Саме його кличуть у
@@ -226,7 +233,7 @@ class OZ_PdaPageFaction : OZ_PdaPage
         OZ_PdaPageContacts c = OZ_PdaPageContacts.Cast(menu.PageOf(OZ_PdaConst.PAGE_CONTACTS));
         if (!c)
             return "";
-        return c.PickedName();
+        return c.PickedKey();
     }
 
     private void PaintButtons()
@@ -285,13 +292,117 @@ class OZ_PdaPageFaction : OZ_PdaPage
         return m_St.RankIds[at - 1];
     }
 
+    // Ім'я віджета рядка й m_Picked -- ключ персонажа; ім'я лише тоді, коли
+    // сервер старий і ключа не дав.
+    private string RowKey(OZ_FactionMember m)
+    {
+        if (m.Key != "")
+            return m.Key;
+        return m.Name;
+    }
+
+    // Адреса обраного для сервера: ключем (ТЗ-4 R-C4.1), а без ключа --
+    // іменем, як раніше.
+    private string Target()
+    {
+        OZ_FactionMember m = PickedMember();
+        if (m && m.Key != "")
+            return "key:" + m.Key;
+        return m_Picked;
+    }
+
+    private string PickedLabel()
+    {
+        OZ_FactionMember m = PickedMember();
+        if (m)
+            return m.Name;
+        return m_Picked;
+    }
+
+    private string T(string key)
+    {
+        return Widget.TranslateString("#" + key);
+    }
+
+    // Перший клік -- озброїти й сказати словами, що саме станеться; другий
+    // такий самий у межах ARM_MS -- виконати. Підтверджується САМЕ те, що
+    // написано: інша дія чи інша ціль починають спочатку.
+    private bool Confirm(string what, string text)
+    {
+        float now = GetGame().GetTime();
+        if (m_Armed == what && now < m_ArmedUntil)
+        {
+            m_Armed = "";
+            SetText("FactionHint", "");
+            return true;
+        }
+
+        m_Armed      = what;
+        m_ArmedUntil = now + ARM_MS;
+        SetHintSticky("FactionHint", text);
+        return false;
+    }
+
+    private string Ask(string key, string who)
+    {
+        return T(key) + " " + who + " - " + T("STR_OZ_F_AGAIN");
+    }
+
+    private string RankLabel(string id)
+    {
+        if (id == "")
+            return T("STR_OZ_F_NO_RANK");
+        if (m_St && m_St.RankIds && m_St.RankNames)
+        {
+            int at = m_St.RankIds.Find(id);
+            if (at >= 0 && at < m_St.RankNames.Count())
+                return m_St.RankNames[at];
+        }
+        return id;
+    }
+
+    private string MyFRank()
+    {
+        if (!m_St || !m_St.Members)
+            return "";
+        for (int i = 0; i < m_St.Members.Count(); i++)
+        {
+            if (m_St.Members[i].Me)
+                return m_St.Members[i].FRank;
+        }
+        return "";
+    }
+
+    // Що саме буде втрачено (ТЗ-4 R-C2.2): угруповання, звання, посада.
+    // Із посад клієнт знає лише лідерство -- решта живе в Discord.
+    private string LossTail()
+    {
+        string s = "";
+        string fr = MyFRank();
+        if (fr != "")
+            s += ", " + T("STR_OZ_F_LOSE_RANK") + " " + fr;
+        if (m_St && m_St.MeLeader)
+            s += " " + T("STR_OZ_F_LOSE_LEAD");
+        return s;
+    }
+
+    private string JoinText()
+    {
+        return T("STR_OZ_F_ASK_JOIN") + " " + m_St.InviteFaction + ": " + T("STR_OZ_F_LOSE") + " " + m_St.FactionName + LossTail() + " - " + T("STR_OZ_F_AGAIN");
+    }
+
+    private string LeaveText()
+    {
+        return T("STR_OZ_F_ASK_LEAVE") + " " + m_St.FactionName + LossTail() + " - " + T("STR_OZ_F_AGAIN");
+    }
+
     private OZ_FactionMember PickedMember()
     {
         if (!m_St || !m_St.Members)
             return null;
         for (int i = 0; i < m_St.Members.Count(); i++)
         {
-            if (m_St.Members[i].Name == m_Picked)
+            if (RowKey(m_St.Members[i]) == m_Picked)
                 return m_St.Members[i];
         }
         return null;
@@ -303,7 +414,7 @@ class OZ_PdaPageFaction : OZ_PdaPage
             return false;
         for (int i = 0; i < m_St.Members.Count(); i++)
         {
-            if (m_St.Members[i].Name == m_Picked)
+            if (RowKey(m_St.Members[i]) == m_Picked)
                 return m_St.Members[i].Me;
         }
         return false;
@@ -317,13 +428,17 @@ class OZ_PdaPageFaction : OZ_PdaPage
         if (w.GetUserID() == 8)
         {
             m_Picked = w.GetName();
+            m_Armed  = "";
             Paint();
             return true;
         }
 
         if (w == m_BtnJoin)
         {
-            OZ_Rpc.RoleRequest("accept", "", "");
+            // Ця вкладка є лише в того, хто ВЖЕ в угрупованні, тож прийняти
+            // тут -- завжди покинути своє: кажемо, що саме (ТЗ-4 R-C2.2).
+            if (m_St && Confirm("join", JoinText()))
+                OZ_Rpc.RoleRequest("accept", "", "");
             return true;
         }
 
@@ -335,15 +450,15 @@ class OZ_PdaPageFaction : OZ_PdaPage
 
         if (w == m_BtnKick)
         {
-            if (m_Picked != "")
-                OZ_Rpc.RoleRequest(OZ_RoleOp.FACTION_CLEAR, m_Picked, "");
+            if (m_Picked != "" && Confirm("kick:" + m_Picked, Ask("STR_OZ_F_ASK_KICK", PickedLabel())))
+                OZ_Rpc.RoleRequest(OZ_RoleOp.FACTION_CLEAR, Target(), "");
             return true;
         }
 
         if (w == m_BtnLead)
         {
-            if (m_Picked != "")
-                OZ_Rpc.RoleRequest(OZ_RoleOp.LEADER_TRANSFER, m_Picked, "");
+            if (m_Picked != "" && Confirm("lead:" + m_Picked, Ask("STR_OZ_F_ASK_LEAD", PickedLabel())))
+                OZ_Rpc.RoleRequest(OZ_RoleOp.LEADER_TRANSFER, Target(), "");
             return true;
         }
 
@@ -356,7 +471,9 @@ class OZ_PdaPageFaction : OZ_PdaPage
                 SetHintSticky("FactionHint", "#STR_OZ_FRIEND_PICK");
                 return true;
             }
-            OZ_Rpc.RoleRequest("invite", who, "");
+            // Запрошення підтвердження не потребує: воно нічого не міняє,
+            // поки той не погодиться сам. Адреса -- ключ персонажа.
+            OZ_Rpc.RoleRequest("invite", "key:" + who, "");
             return true;
         }
 
@@ -367,14 +484,18 @@ class OZ_PdaPageFaction : OZ_PdaPage
 
             // Сходинку рахує клієнт -- він має драбину, -- але право на
             // саму зміну перевіряють сервер і міст, як і завжди.
-            OZ_Rpc.RoleRequest(OZ_RoleOp.FRANK_SET, m_Picked, NextRank(w == m_BtnPromote));
+            string next = NextRank(w == m_BtnPromote);
+            string ask  = T("STR_OZ_F_ASK_RANK") + " " + PickedLabel() + ": " + RankLabel(next) + " - " + T("STR_OZ_F_AGAIN");
+            if (Confirm("rank:" + m_Picked + ":" + next, ask))
+                OZ_Rpc.RoleRequest(OZ_RoleOp.FRANK_SET, Target(), next);
             return true;
         }
 
         if (w == m_BtnLeave)
         {
             // Ціль не називаємо: піти можна тільки самому.
-            OZ_Rpc.RoleRequest("leave", "", "");
+            if (m_St && Confirm("leave", LeaveText()))
+                OZ_Rpc.RoleRequest("leave", "", "");
             return true;
         }
 

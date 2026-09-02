@@ -37,6 +37,7 @@ modded class OZ_VppAdminMenu
         protected ref array<string> m_RosterFRanks;
         protected ref array<string> m_RosterTraits;
         protected ref array<bool>   m_RosterLeads;
+        protected ref array<bool>   m_RosterOnline;
         protected int m_RosterPicked = -1;
 
         // Каталоги з реєстру бота, i що зараз пiд курсором циклерiв. FRanks --
@@ -71,6 +72,7 @@ modded class OZ_VppAdminMenu
         m_RosterFRanks   = new array<string>();
         m_RosterTraits   = new array<string>();
         m_RosterLeads    = new array<bool>();
+        m_RosterOnline   = new array<bool>();
         m_Traits  = new array<string>();
         m_Ranks   = new array<string>();
         m_FRanks  = new array<string>();
@@ -246,6 +248,7 @@ modded class OZ_VppAdminMenu
             m_RosterFRanks.Clear();
             m_RosterTraits.Clear();
             m_RosterLeads.Clear();
+            m_RosterOnline.Clear();
             m_RosterPicked = -1;
             m_WipeArmed = false;
 
@@ -262,6 +265,7 @@ modded class OZ_VppAdminMenu
                 m_RosterFRanks.Insert(row.FRank);
                 m_RosterTraits.Insert(row.Traits);
                 m_RosterLeads.Insert(row.Leader);
+                m_RosterOnline.Insert(row.Online);
 
                 if (keepUid != "" && row.Uid == keepUid)
                     m_RosterPicked = i;
@@ -290,6 +294,10 @@ modded class OZ_VppAdminMenu
                     line = "> ";
 
                 line += m_RosterNames[i];
+                // Вiдсутнi теж у списку (ТЗ-4 R-C4.2) -- i позначенi: їх можна
+                // вайпнути чи призначити, але не покликати до слова.
+                if (!m_RosterOnline[i])
+                    line += " (offline)";
 
                 // УГРУПОВАННЯ, а коли його немає -- базова в дужках. Без
                 // другої половини одинак і той, хто не заходив жодного разу,
@@ -343,7 +351,12 @@ modded class OZ_VppAdminMenu
             int i = m_RosterPicked;
 
             if (nameT)
-                nameT.SetText(m_RosterNames[i]);
+            {
+                string shown = m_RosterNames[i];
+                if (!m_RosterOnline[i])
+                    shown += "  (offline)";
+                nameT.SetText(shown);
+            }
 
             if (discordT)
             {

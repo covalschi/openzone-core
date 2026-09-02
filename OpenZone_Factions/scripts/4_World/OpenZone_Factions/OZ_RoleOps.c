@@ -24,6 +24,11 @@ class OZ_RoleAsk
     string Op        = "";
     string Arg       = "";
     bool   Admin     = false;
+
+    // Стеля складу З ГРИ (Factions.json, MaxMembers) -- лише для faction.set.
+    // Рахує й порівнює МІСТ (ТЗ-4 R-C3.2): свого лічильника гра більше не
+    // має. Нуль -- гра межі не ставить; власний Limit реєстру бота головніший.
+    int    Max       = 0;
 }
 
 class OZ_RoleAnswer
@@ -84,6 +89,66 @@ class OZ_RoleReply : OZ_BridgeReply
 
 class OZ_RoleOps
 {
+    // Непрозорий ключ персонажа -> Steam64 (ТЗ-4 R-C4.1). Ключ -- хеш від
+    // "<uid>#<gen>", той самий, що клієнт бачить у контактах і в складі
+    // фракції; розгортається лише серед тих, кого відправник і так може
+    // назвати: його друзі (записник тримає ключі персонажів), його
+    // угруповання й присутні. Двозначний хеш -- відмова (PickIn), ключ
+    // мертвого покоління -- відмова (IsLive): нове життя на тому ж Steam64
+    // за старим ключем не називається.
+    static string UidByTag(string tag, string askerUid)
+    {
+        if (tag == "" || askerUid == "")
+            return "";
+
+        array<string> keys = new array<string>();
+
+        OZ_PlayerData me = OZ_PlayerStore.Load(askerUid);
+        if (me && me.Friends)
+        {
+            for (int f = 0; f < me.Friends.Count(); f++)
+            {
+                if (keys.Find(me.Friends[f]) == -1)
+                    keys.Insert(me.Friends[f]);
+            }
+        }
+
+        string org = OZ_Factions.OrgOfUid(askerUid);
+        if (org != "")
+        {
+            array<string> members = new array<string>();
+            OZ_Roles.OrgMembers(org, members);
+            for (int m = 0; m < members.Count(); m++)
+            {
+                string mk = OZ_PlayerStore.KeyOf(members[m]);
+                if (keys.Find(mk) == -1)
+                    keys.Insert(mk);
+            }
+        }
+
+        array<Man> players = new array<Man>();
+        GetGame().GetPlayers(players);
+        for (int p = 0; p < players.Count(); p++)
+        {
+            if (!players[p])
+                continue;
+            PlayerIdentity pid = players[p].GetIdentity();
+            if (!pid)
+                continue;
+            string pk = OZ_PlayerStore.KeyOf(pid.GetPlainId());
+            if (keys.Find(pk) == -1)
+                keys.Insert(pk);
+        }
+
+        string key = OZ_Names.PickIn(keys, tag);
+        if (key == "" || !OZ_PlayerStore.IsLive(key))
+            return "";
+
+        string uid = OZ_PlayerStore.UidOfKey(key);
+        OZ_Log.Dbg("roles: tag " + tag + " -> " + uid + " for " + askerUid);
+        return uid;
+    }
+
     // Кому належить це ім'я, серед тих, хто зараз у Зоні.
     //
     // Однакові імена можливі, і тоді ми НЕ ВГАДУЄМО: порожнє означає «не
@@ -214,6 +279,13 @@ class OZ_RoleOps
         a.Op        = op;
         a.Arg       = arg;
         a.Admin     = admin;
+
+        if (op == OZ_RoleOp.FACTION_SET)
+        {
+            OZ_Faction fmax = OZ_Factions.Find(arg);
+            if (fmax)
+                a.Max = fmax.MaxMembers;
+        }
 
         // Актора адміністратор не називає: міст тоді не питає про лідерство.
         if (!admin)
@@ -417,15 +489,6 @@ class OZ_FactionInvites
             return;
         }
 
-        // МIСЦЯ МАЄ ВИСТАЧАТИ ВЖЕ ЗАРАЗ. Межа з Settings.json; нуль -- без
-        // межi. Рахуються проекцiї ролей -- увесь вiдомий склад, не лише
-        // присутнi. Перевiрка повторюється на прийняттi: за двi хвилини
-        // строку запрошення фракцiя могла заповнитись iншими.
-        if (!FactionHasRoom(mine))
-        {
-            OZ_Rpc.RoleRespond(from, "invite", false, "STR_OZ_ERR_FACTION_FULL");
-            return;
-        }
 
         // ЧУЖЕ ЗАПРОШЕННЯ НЕ ПЕРЕБИВАЄТЬСЯ.
         //
@@ -499,13 +562,6 @@ class OZ_FactionInvites
             return;
         }
 
-        // Мiсце могло скiнчитись, поки запрошення лежало.
-        if (!FactionHasRoom(inv.Faction))
-        {
-            s_By.Remove(me);
-            OZ_Rpc.RoleRespond(who, "accept", false, "STR_OZ_ERR_FACTION_FULL");
-            return;
-        }
 
         // ЗНІМАЄМО ДО виклику моста. Запрошення, яке не спрацювало через
         // мовчазний міст, усе одно використане: інакше воно лишалось би
@@ -524,18 +580,6 @@ class OZ_FactionInvites
         OZ_RoleOps.RequestAs(who, inv.FromUid, me, OZ_RoleOp.FACTION_SET, inv.Faction, true);
     }
 
-    // Чи є мiсце. Межа -- поле САМОЇ фракцiї у Factions.json; нуль або
-    // вiдсутнiсть поля -- межi немає.
-    private static bool FactionHasRoom(string faction)
-    {
-        OZ_Faction f = OZ_Factions.Find(faction);
-        if (!f || f.MaxMembers <= 0)
-            return true;
-
-        array<string> members = new array<string>();
-        OZ_Roles.OrgMembers(faction, members);
-        return members.Count() < f.MaxMembers;
-    }
 
     static void Decline(PlayerIdentity who)
     {

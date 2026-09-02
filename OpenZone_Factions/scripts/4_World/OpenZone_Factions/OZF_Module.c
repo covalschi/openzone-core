@@ -130,7 +130,24 @@ class OZF_Module : CF_ModuleWorld
         // ростері, а лідерські операції лишаються іменними: межа «клієнт не
         // оперує чужими Steam64» стоїть для гравців, не для адмінки.
         string targetUid = "";
-        if (targetName.IndexOf("uid:") == 0)
+        if (targetName.IndexOf("key:") == 0)
+        {
+            // КЛЮЧ ПЕРСОНАЖА (ТЗ-4 R-C4.1) у тій самій непрозорій формі, що
+            // й у контактах: клієнт бачить хеш, не Steam64. Розгортається
+            // лише серед тих, кого відправник і так може назвати -- його
+            // друзі, його угруповання, присутні, -- і називає ОДНЕ живе
+            // життя: ключ вайпнутого персонажа не називає нікого. Адресація
+            // іменем лишається нижче як застаріла: вона мовчки не працювала
+            // ні на відсутніх, ні на тезках.
+            string tag = targetName.Substring(4, targetName.Length() - 4);
+            targetUid = OZ_RoleOps.UidByTag(tag, sender.GetPlainId());
+            if (targetUid == "")
+            {
+                OZ_Rpc.RoleRespond(sender, op, false, "STR_OZ_ERR_NO_TARGET");
+                return;
+            }
+        }
+        else if (targetName.IndexOf("uid:") == 0)
         {
             if (!OZ_Perm.IsAdmin(sender))
             {

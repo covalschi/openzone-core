@@ -107,6 +107,7 @@ class OZ_PdaHandlerFaction : OZ_PageHandler
             OZ_FactionMember m = new OZ_FactionMember();
             OZ_PlayerData md = OZ_PlayerStore.Load(uids[i]);
             m.Name   = md.Name;
+            m.Key    = OZ_Names.KeyOf(OZ_PlayerStore.KeyOf(uids[i]));
             if (m.Name == "")
                 continue;   // безіменний кеш нікому нічого не скаже
             m.Rank    = OZ_RoleNames.Of(OZ_Roles.RankOf(uids[i]));
