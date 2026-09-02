@@ -216,7 +216,6 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         if (!btn)
             return;
 
-        btn.SetPos(20 + m_TabIds.Count() * 160, 52);
         btn.SetName("tab:" + id);
 
         TextWidget t = TextWidget.Cast(btn.FindAnyWidget("OZ_VppTabText"));
@@ -226,6 +225,61 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         m_TabIds.Insert(id);
         m_TabBtns.Insert(btn);
         m_Panes.Set(id, pane);
+
+        LayoutTabs();
+    }
+
+    // Вкладки діляться шириною панелі. На кроці 160 шоста вкладка (RADIO,
+    // яку докладає склейка рації) вилазила за правий край і клацнути її було
+    // неможливо -- зміряно на стенді 2026-09-02. Крок стискається, поки всі
+    // не влізуть; SetPos тут рахує в екранних пікселях, а розмір розкладки --
+    // у власних одиницях, тому масштаб береться з самої кнопки.
+    protected void LayoutTabs()
+    {
+        int n = m_TabBtns.Count();
+        if (n == 0 || !M_SUB_WIDGET)
+            return;
+
+        float pw, ph;
+        M_SUB_WIDGET.GetScreenSize(pw, ph);
+        float step = 160;
+        float room = pw - 40;
+        if (room > 0 && step * n > room)
+            step = room / n;
+
+        float lw, lh, sw, sh;
+        m_TabBtns[0].GetSize(lw, lh);
+        m_TabBtns[0].GetScreenSize(sw, sh);
+        float scale = 1;
+        if (lw > 0 && sw > 0)
+            scale = sw / lw;
+
+        float want = step - 8;
+        for (int i = 0; i < n; i++)
+        {
+            Widget b = m_TabBtns[i];
+            b.SetPos(20 + i * step, 52);
+            float bw, bh;
+            b.GetScreenSize(bw, bh);
+            if (bw > want && scale > 0)
+                ShrinkTab(b, want / scale);
+        }
+    }
+
+    // Кнопка і всі її діти (рамка, тло, напис) вужчають на одне число.
+    private void ShrinkTab(Widget b, float width)
+    {
+        float w, h;
+        b.GetSize(w, h);
+        float d = w - width;
+        b.SetSize(width, h);
+        Widget c = b.GetChildren();
+        while (c)
+        {
+            c.GetSize(w, h);
+            c.SetSize(w - d, h);
+            c = c.GetSibling();
+        }
     }
 
     protected void ShowPane(string id)
