@@ -17,6 +17,7 @@ infrastructure.
 | **Page registry** | Screens register themselves once; any mod can add one |
 | **Player store** | Per-SteamID JSON that survives character death |
 | **Bridge client** | Long-poll client for the OpenZone Discord bridge |
+| **Spawn loadouts** | A service another mod fills in (`OZ_Loadout`, three-valued: no opinion / naked / preset) plus an applicator that strips what the mission gave a new character and dresses it from a preset, in the same frame after `OnClientNewEvent`; one-shot spawn points may carry a loadout word. The factions mod supplies the ladder (`OZ_Factions_Loadouts.json`) |
 
 ## Requirements
 

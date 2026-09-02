@@ -207,6 +207,13 @@ class OZ_Spawns
     // s_Once, значення -- час рушія в мілісекундах.
     private static ref map<string, int> s_OnceUntil;
 
+    // Рішення одноразової точки про НАБІР (ТЗ-3 R5.1): "" -- не сказано,
+    // OZ_Loadout.NONE -- нічого не надягати, інакше id пресета. Живе разом
+    // із точкою і з'їдається тим самим Resolve (R2.5); те, що він з'їв,
+    // чекає в s_OnceDecided, поки OZ_Loadout.OnSpawn не забере.
+    private static ref map<string, string> s_OnceLoadout;
+    private static ref map<string, string> s_OnceDecided;
+
     // Скільки метрів розкиду ще має сенс, і скільки разів шукати сушу.
     private static const float MAX_RADIUS = 1000;
     private static const int   TRIES      = 10;
@@ -439,7 +446,13 @@ class OZ_Spawns
     // спрацювала. Другий виклик до спавну просто замінює першу.
     //
     // Порожня позиція СКАСОВУЄ раніше поставлену: так у мода є чим передумати.
-    static void SetNextSpawn(string uid, vector pos, string reason)
+    //
+    // `loadout` -- що надягти на цій появі (ТЗ-3 R5.1): "" -- нічого не
+    // сказано, драбина мода фракцій вирішує сама; OZ_Loadout.NONE -- голим;
+    // інакше id пресета, який розгортає мод фракцій, а не ядро (R5.3).
+    // Зовнішніх викликів на момент зміни підпису не було (R5.2, grep по всіх
+    // репозиторіях 2026-09-02).
+    static void SetNextSpawn(string uid, vector pos, string reason, string loadout)
     {
         if (!GetGame().IsServer())
             return;
@@ -448,6 +461,8 @@ class OZ_Spawns
 
         if (!s_Once)
             s_Once = new map<string, string>();
+        if (!s_OnceLoadout)
+            s_OnceLoadout = new map<string, string>();
 
         if (pos == vector.Zero)
         {
@@ -456,6 +471,7 @@ class OZ_Spawns
         }
 
         s_Once.Set(uid, pos.ToString(false));
+        s_OnceLoadout.Set(uid, loadout);
 
         // СТРОК ПРИДАТНОСТІ.
         //
@@ -481,6 +497,8 @@ class OZ_Spawns
     {
         if (s_OnceUntil && s_OnceUntil.Contains(uid))
             s_OnceUntil.Remove(uid);
+        if (s_OnceLoadout && s_OnceLoadout.Contains(uid))
+            s_OnceLoadout.Remove(uid);
 
         if (!s_Once)
             return;
@@ -497,6 +515,20 @@ class OZ_Spawns
             return false;
 
         return !Expired(uid);
+    }
+
+    // Рішення одноразової точки про набір, з'їдене останнім Resolve цього
+    // гравця. true -- точка була, і `spec` -- її слово ("" = не сказано).
+    // Забирається один раз: наступна поява починає з чистого.
+    static bool TakeOnceLoadout(string uid, out string spec)
+    {
+        spec = "";
+        if (!s_OnceDecided)
+            return false;
+        if (!s_OnceDecided.Find(uid, spec))
+            return false;
+        s_OnceDecided.Remove(uid);
+        return true;
     }
 
     // Чи вийшов строк. Прострочену прибираємо ТУТ САМІ: питання «чи є точка»
@@ -517,6 +549,8 @@ class OZ_Spawns
         s_OnceUntil.Remove(uid);
         if (s_Once && s_Once.Contains(uid))
             s_Once.Remove(uid);
+        if (s_OnceLoadout && s_OnceLoadout.Contains(uid))
+            s_OnceLoadout.Remove(uid);
 
         OZ_Log.Dbg("spawn: one-shot for " + uid + " expired unused");
         return true;
@@ -544,6 +578,15 @@ class OZ_Spawns
                 s_Once.Remove(uid);
                 if (s_OnceUntil && s_OnceUntil.Contains(uid))
                     s_OnceUntil.Remove(uid);
+
+                // Рішення про набір іде разом із точкою -- і тоді, коли
+                // координата крива й точка не спрацює (ТЗ-3 R2.5).
+                string spec = "";
+                if (s_OnceLoadout && s_OnceLoadout.Find(uid, spec))
+                    s_OnceLoadout.Remove(uid);
+                if (!s_OnceDecided)
+                    s_OnceDecided = new map<string, string>();
+                s_OnceDecided.Set(uid, spec);
 
                 vector p = once.ToVector();
                 if (p != vector.Zero)

@@ -31,6 +31,14 @@ modded class MissionServer
     override PlayerBase OnClientNewEvent(PlayerIdentity identity, vector pos, ParamsReadContext ctx)
     {
         vector where = OZ_Spawns.Resolve(identity, pos);
-        return super.OnClientNewEvent(identity, where, ctx);
+        PlayerBase player = super.OnClientNewEvent(identity, where, ctx);
+
+        // СПОРЯДЖЕННЯ (ТЗ-3) -- ПІСЛЯ super: на цю мить місія вже одягла
+        // персонажа обома своїми шляхами (missionserver.c:566 і :580), і
+        // «видати поверх» неможливо -- лише зняти її й одягти своє. Без
+        // думки служби нічого не змінюється. Виміряно 2026-09-02: одягання
+        // в тому ж кадрі, без CallLater, працює (ТЗ-3 R6.2).
+        OZ_Loadout.OnSpawn(player, identity);
+        return player;
     }
 }

@@ -32,6 +32,11 @@ class OZF_Module : CF_ModuleWorld
             return;
 
         OZ_Factions.ServerLoad();
+        OZF_Loadouts.ServerLoad();
+
+        // Спорядження на появі (ТЗ-3): драбина фракцій, звань, посад і міток
+        // живе тут; ядро лише роздягає й одягає те, що ми назвемо.
+        OZ_Loadout.Provide(new OZF_LoadoutService());
 
         // Ось той самий односторонній зв'язок: ядро отримує реалізацію й
         // роздає її всім охочим, не знаючи, звідки вона.
