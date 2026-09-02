@@ -103,3 +103,11 @@ class OZ_AdminSect
     static const string SPAWNS = "spawns";
     static const string NEWS   = "news";
 }
+
+// Операції розділу NEWS: одне написання для сервера (OZ_NewsSection) і для
+// панелі VPP. Рядок, набраний двічі в двох pbo, розходиться мовчки.
+class OZ_NewsOp
+{
+    static const string VOICES = "news_voices";
+    static const string POST   = "news_post";
+}

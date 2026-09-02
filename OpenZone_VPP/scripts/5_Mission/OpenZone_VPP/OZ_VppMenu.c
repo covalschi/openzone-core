@@ -154,9 +154,13 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         m_RawRows = new array<string>();
         m_SpawnRowKind = new array<string>();
         m_SpawnRowKey  = new array<string>();
+        m_NwVoices = new array<string>();
+        m_NwPick   = 0;
+        m_NwSelf   = "";
 
         RegisterPane("spawns",   "SPAWNS",   M_SUB_WIDGET.FindAnyWidget("PaneSpawns"), "SpawnHint");
         RegisterPane("raw",      "RAW JSON", M_SUB_WIDGET.FindAnyWidget("PaneRaw"),    "RawHint");
+        RegisterPane("news",     "NEWS",     M_SUB_WIDGET.FindAnyWidget("PaneNews"),   "NewsHint");
 
         if (!m_Ears)
         {
@@ -184,6 +188,16 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
     // Вкладка: кнопка з окремої розмiтки, панель -- вiд того, хто реєструє.
     // Субмод КПК кличе це саме з modded OnCreate.
+    // ------------------------------------------------------------ NEWS
+    //
+    // Розділ адміна (ТЗ-6 R2.2). Список імен, якими він може підписати, дає
+    // МІСТ (news_voices); панель його лише малює й по колу перебирає. Вона
+    // не вирішує прав і не вигадує імен: список -- підказка, грант -- факт,
+    // і маршрут запису перевіряє це ще раз (R3.2).
+    protected ref array<string> m_NwVoices;
+    protected int               m_NwPick;
+    protected string            m_NwSelf;
+
     protected void RegisterPane(string id, string label, Widget pane, string hintName = "")
     {
         if (!pane)
@@ -239,6 +253,8 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             AskCfg("Spawns");
         if (id == "raw")
             Ask(OZ_AdminSect.CONFIG, "cfg_list", "{}");
+        if (id == "news")
+            Ask(OZ_AdminSect.NEWS, OZ_NewsOp.VOICES, "{}");
     }
 
     override void OnMenuShow()
@@ -387,6 +403,12 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             return;
         }
 
+        if (sectionId == OZ_AdminSect.NEWS)
+        {
+            OnNewsAnswer(op, ok, json, error);
+            return;
+        }
+
         if (sectionId != OZ_AdminSect.CONFIG)
             return;
 
@@ -460,6 +482,103 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         Hint(op + ": done");
         AskCfg("Spawns");
+    }
+
+    // Відповідь розділу NEWS: список імен або результат публікації.
+    protected void OnNewsAnswer(string op, bool ok, string json, string error)
+    {
+        if (!IsOpen())
+            return;
+
+        if (!ok)
+        {
+            Hint(op + ": " + Words(error));
+            return;
+        }
+
+        if (op == OZ_NewsOp.VOICES)
+        {
+            OZ_NewsAdminVoices v;
+            string verr;
+            if (!JsonFileLoader<OZ_NewsAdminVoices>.LoadData(json, v, verr) || !v)
+            {
+                Hint("voices: unreadable answer");
+                return;
+            }
+
+            m_NwSelf = v.Self;
+            m_NwVoices.Clear();
+            if (v.Voices)
+            {
+                for (int i = 0; i < v.Voices.Count(); i++)
+                    m_NwVoices.Insert(v.Voices[i]);
+            }
+
+            // Вибір не зберігаємо між відповідями: список міг змінитись, і
+            // старий індекс показував би одне ім'я, а підписував інше.
+            m_NwPick = 0;
+            PaintNewsWho();
+
+            if (m_NwVoices.Count() == 0)
+                Hint("no personas granted to you; posts go under your own name");
+            else
+                Hint(m_NwVoices.Count().ToString() + " persona(s) available");
+            return;
+        }
+
+        if (op == OZ_NewsOp.POST)
+        {
+            OZ_NewsAdminAnswer a;
+            string aerr;
+            string who = "";
+            if (JsonFileLoader<OZ_NewsAdminAnswer>.LoadData(json, a, aerr) && a)
+                who = a.Who;
+
+            SetEdit("NwTitle", "");
+            MultilineEditBoxWidget body = MultilineEditBoxWidget.Cast(M_SUB_WIDGET.FindAnyWidget("NwBody"));
+            if (body)
+                body.SetText("");
+
+            Hint("posted as \"" + who + "\"");
+            return;
+        }
+    }
+
+    // Помилка -- або ключ таблиці рядків, або слова моста. Міст відмовляє
+    // словами (not_your_voice, no_title), і перекладати їх нема куди: показуємо
+    // як є, а ключі -- через таблицю.
+    protected string Words(string error)
+    {
+        if (error.IndexOf("STR_") == 0)
+            return Widget.TranslateString("#" + error);
+        return error;
+    }
+
+    // Кнопка підпису показує поточний вибір: нуль -- своє ім'я.
+    protected void PaintNewsWho()
+    {
+        TextWidget t = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnNwWhoText"));
+        if (!t)
+            return;
+
+        if (m_NwPick <= 0 || m_NwPick > m_NwVoices.Count())
+        {
+            m_NwPick = 0;
+            if (m_NwSelf != "")
+                t.SetText(m_NwSelf + "  (myself)");
+            else
+                t.SetText("myself");
+            return;
+        }
+
+        t.SetText(m_NwVoices[m_NwPick - 1] + "  (persona)");
+    }
+
+    protected string PickedVoice()
+    {
+        if (m_NwPick <= 0 || m_NwPick > m_NwVoices.Count())
+            return "";
+        return m_NwVoices[m_NwPick - 1];
     }
 
     // Текст конфiгу приїхав. Субмод КПК перехоплює свої iмена через super.
@@ -763,6 +882,55 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             {
                 Ask(OZ_AdminSect.SPAWNS, OZ_SpawnOp.UID_CLEAR, uid);
             }
+            return true;
+        }
+
+        if (nm == "BtnNwWho")
+        {
+            m_NwPick++;
+            if (m_NwPick > m_NwVoices.Count())
+                m_NwPick = 0;
+            PaintNewsWho();
+            return true;
+        }
+
+        if (nm == "BtnNwPost")
+        {
+            string title = GetEdit("NwTitle");
+            string text  = "";
+            MultilineEditBoxWidget nb = MultilineEditBoxWidget.Cast(M_SUB_WIDGET.FindAnyWidget("NwBody"));
+            if (nb)
+                nb.GetText(text);
+
+            // Порожнє відхиляємо ТУТ, до мосту: він відмовив би тими ж
+            // словами, але за круг через сервер, і адмін чекав би на відповідь
+            // про те, що бачить сам.
+            if (title.Trim() == "")
+            {
+                Hint("a title first");
+                return true;
+            }
+            if (text.Trim() == "")
+            {
+                Hint("the body is empty");
+                return true;
+            }
+
+            OZ_NewsAdminAsk ask = new OZ_NewsAdminAsk();
+            ask.Who   = PickedVoice();
+            ask.Title = title;
+            ask.Body  = text;
+
+            string letter;
+            string lerr;
+            if (!JsonFileLoader<OZ_NewsAdminAsk>.MakeData(ask, letter, lerr, false))
+            {
+                Hint("cannot build the post: " + lerr);
+                return true;
+            }
+
+            Hint("posting...");
+            Ask(OZ_AdminSect.NEWS, OZ_NewsOp.POST, letter);
             return true;
         }
 

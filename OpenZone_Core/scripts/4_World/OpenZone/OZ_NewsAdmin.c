@@ -94,7 +94,7 @@ class OZ_NewsAdminReply : OZ_BridgeReply
             return;
         }
 
-        if (m_Op == "news_post")
+        if (m_Op == OZ_NewsOp.POST)
             OZ_Log.Info("news: posted as \"" + a.Who + "\"");
 
         OZ_Rpc.AdminRespond(to, OZ_AdminSect.NEWS, m_Op, true, json, "");
@@ -127,10 +127,10 @@ class OZ_NewsSection : OZ_AdminSection
             return "";
         }
 
-        if (op == "news_voices")
+        if (op == OZ_NewsOp.VOICES)
             return Ask("v1/news/voices", sender, op, "", error);
 
-        if (op == "news_post")
+        if (op == OZ_NewsOp.POST)
             return Ask("v1/news/post", sender, op, json, error);
 
         return "";

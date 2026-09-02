@@ -966,5 +966,312 @@ FrameWidgetClass OZ_VppRoot {
    }
    }
   }
+  FrameWidgetClass PaneNews {
+   visible 0
+   position 0 96
+   size 1000 524
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 2
+   {
+   PanelWidgetClass SecNwBar {
+    visible 1
+    ignorepointer 1
+    color 1 0.478 0.102 1
+    position 20 4
+    size 3 16
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    priority 3
+    style rover_sim_colorable
+   }
+   TextWidgetClass SecNwLbl {
+    visible 1
+    ignorepointer 1
+    position 32 3
+    size 948 18
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.85 0.85 0.87 1
+    text "NEWS (ADMIN)"
+    font "gui/fonts/sdf_MetronBook24"
+    "exact text" 1
+    "exact text size" 13
+    "text halign" left
+    "text valign" center
+    priority 3
+   }
+   PanelWidgetClass SecNwRule {
+    visible 1
+    ignorepointer 1
+    color 0.22 0.24 0.28 1
+    position 20 28
+    size 960 1
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    priority 3
+    style rover_sim_colorable
+   }
+   TextWidgetClass NwHelp1 {
+    visible 1
+    ignorepointer 1
+    position 20 36
+    size 960 18
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.541 0.541 0.565 1
+    text "A post goes to the bridge and from there to Discord and every PDA. Title, body, and whose name signs it."
+    font "gui/fonts/sdf_MetronBook24"
+    "exact text" 1
+    "exact text size" 12
+    "text halign" left
+    "text valign" center
+    priority 3
+   }
+   TextWidgetClass NwTitleLbl {
+    visible 1
+    ignorepointer 1
+    position 20 62
+    size 80 18
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.541 0.541 0.565 1
+    text "TITLE"
+    font "gui/fonts/sdf_MetronBook24"
+    "exact text" 1
+    "exact text size" 12
+    "text halign" left
+    "text valign" center
+    priority 3
+   }
+   EditBoxWidgetClass NwTitle {
+    visible 1
+    position 100 58
+    size 880 26
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.788 0.788 0.816 1
+    text ""
+    font "gui/fonts/MetronBook14"
+    "exact text" 1
+    priority 4
+   }
+   TextWidgetClass NwBodyLbl {
+    visible 1
+    ignorepointer 1
+    position 20 96
+    size 80 18
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.541 0.541 0.565 1
+    text "BODY"
+    font "gui/fonts/sdf_MetronBook24"
+    "exact text" 1
+    "exact text size" 12
+    "text halign" left
+    "text valign" center
+    priority 3
+   }
+   MultilineEditBoxWidgetClass NwBody {
+    visible 1
+    position 100 92
+    size 880 260
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    lines 14
+    color 0.788 0.788 0.816 1
+    text ""
+    font "gui/fonts/MetronBook14"
+    "exact text" 1
+    priority 4
+   }
+   TextWidgetClass NwWhoLbl {
+    visible 1
+    ignorepointer 1
+    position 20 372
+    size 80 18
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.541 0.541 0.565 1
+    text "SIGNED BY"
+    font "gui/fonts/sdf_MetronBook24"
+    "exact text" 1
+    "exact text size" 12
+    "text halign" left
+    "text valign" center
+    priority 3
+   }
+   ButtonWidgetClass BtnNwWho {
+    visible 1
+    position 100 368
+    size 360 28
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    text ""
+    priority 4
+    {
+     PanelWidgetClass BtnNwWhoEdge {
+      visible 1
+      ignorepointer 1
+      color 0.31 0.31 0.35 1
+      position -1 -1
+      size 362 30
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      priority 0
+      style rover_sim_colorable
+     }
+     PanelWidgetClass BtnNwWhoBg {
+      visible 1
+      ignorepointer 1
+      color 0.145 0.145 0.161 1
+      position 0 0
+      size 360 28
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      priority 1
+      style rover_sim_colorable
+     }
+     TextWidgetClass BtnNwWhoText {
+      visible 1
+      ignorepointer 1
+      position 0 0
+      size 360 28
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      color 1 0.478 0.102 1
+      text "myself"
+      font "gui/fonts/sdf_MetronBook24"
+      "exact text" 1
+      "exact text size" 12
+      "text halign" center
+      "text valign" center
+      priority 2
+     }
+    }
+   }
+   TextWidgetClass NwHelp2 {
+    visible 1
+    ignorepointer 1
+    position 480 372
+    size 500 18
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.541 0.541 0.565 1
+    text "Click to cycle: your own name, then every persona the bridge lists for you."
+    font "gui/fonts/sdf_MetronBook24"
+    "exact text" 1
+    "exact text size" 12
+    "text halign" left
+    "text valign" center
+    priority 3
+   }
+   ButtonWidgetClass BtnNwPost {
+    visible 1
+    position 830 448
+    size 150 28
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    text ""
+    priority 4
+    {
+     PanelWidgetClass BtnNwPostEdge {
+      visible 1
+      ignorepointer 1
+      color 0.2 0.35 0.24 1
+      position -1 -1
+      size 152 30
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      priority 0
+      style rover_sim_colorable
+     }
+     PanelWidgetClass BtnNwPostBg {
+      visible 1
+      ignorepointer 1
+      color 0.145 0.2 0.145 1
+      position 0 0
+      size 150 28
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      priority 1
+      style rover_sim_colorable
+     }
+     TextWidgetClass BtnNwPostText {
+      visible 1
+      ignorepointer 1
+      position 0 0
+      size 150 28
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      color 0.494 0.784 0.627 1
+      text "POST"
+      font "gui/fonts/sdf_MetronBook24"
+      "exact text" 1
+      "exact text size" 12
+      "text halign" center
+      "text valign" center
+      priority 2
+     }
+    }
+   }
+   TextWidgetClass NewsHint {
+    visible 1
+    ignorepointer 1
+    position 20 492
+    size 960 22
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.541 0.541 0.565 1
+    text ""
+    font "gui/fonts/sdf_MetronBook24"
+    "exact text" 1
+    "exact text size" 12
+    "text halign" left
+    "text valign" center
+    priority 3
+   }
+   }
+  }
  }
 }
