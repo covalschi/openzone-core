@@ -12,6 +12,14 @@ class OZ_SyncPageInfo
     string Icon;
 }
 
+// Один рядок розширення пакета: ключ і значення, обидва рядки. Не map --
+// map через RPC не їде, а масив пар їде як звичайний JSON.
+class OZ_SyncExtra
+{
+    string Key   = "";
+    string Value = "";
+}
+
 class OZ_SyncPayload
 {
     int  Schema;
@@ -41,8 +49,20 @@ class OZ_SyncPayload
     // з нього свою карту сам.
     ref array<ref OZ_SyncPageInfo> Pages;
 
+    // ТЕ, ЩО ДОКЛАДАЮТЬ МОДИ (ТЗ-5 R-C1.3, D87). Ядро цих ключів не знає й не
+    // читає: воно лише возить. Мод кладе своє в OZ_SyncExtras.OnFill() на
+    // сервері й читає через OZ_ClientState.Extra() на клієнті -- одним і тим
+    // самим конвертом, що вже їде кожному, хто зайшов, і їде ЗНОВУ, коли
+    // стан змінюється всередині сесії.
+    //
+    // Навіщо: два числа КПК (тривалість тосту, крок ведення маршрутом) їхали
+    // лише в посилці маячків -- і гравець без антени не отримував їх ніколи.
+    // Тепер вони їдуть тут, і посилка маячків для них не потрібна.
+    ref array<ref OZ_SyncExtra> Extras;
+
     void OZ_SyncPayload()
     {
-        Pages = new array<ref OZ_SyncPageInfo>();
+        Pages  = new array<ref OZ_SyncPageInfo>();
+        Extras = new array<ref OZ_SyncExtra>();
     }
 }

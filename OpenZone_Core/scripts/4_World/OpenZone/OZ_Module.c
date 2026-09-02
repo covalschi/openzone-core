@@ -511,29 +511,12 @@ class OZ_Module : CF_ModuleWorld
         SendSync(sender);
     }
 
+    // Складання й відправка -- в OZ_SyncSender: той самий пакет тепер їде не
+    // лише на вхід, а й посеред сесії (прив'язка з OZ_Link.Confirm, ТЗ-5
+    // R-C1.3), і другому відправникові потрібен той самий код, а не копія.
     private void SendSync(PlayerIdentity to)
     {
-        OZ_SyncPayload p = new OZ_SyncPayload();
-        p.Schema    = OZ_Const.SCHEMA_SETTINGS;
-        p.DebugMode = OZ_Settings.Get().DebugMode;
-
-        // Прив'язка їде тим самим конвертом. Клієнт тягне його рівно один раз,
-        // щойно з'явився у світі -- тобто це найраніша мить, коли є кому
-        // показати ворота, і вона не коштує жодного нового пакета.
-        p.Linked       = OZ_Link.IsLinked(to.GetPlainId());
-        p.LinkRequired = OZ_Link.Gated(to.GetPlainId());
-        OZ_PageRegistry.FillPayload(p);
-
-        string json;
-        string err;
-        // prettyPrint=false: у провід не треба ані відступів, ані переносів.
-        if (!JsonFileLoader<OZ_SyncPayload>.MakeData(p, json, err, false))
-        {
-            OZ_Log.Error("cannot serialise sync payload: " + err);
-            return;
-        }
-
-        OZ_Rpc.SendSync(to, json);
+        OZ_SyncSender.Send(to, "on request");
     }
 
     override void OnInvokeDisconnect(Class sender, CF_EventArgs args)

@@ -94,6 +94,23 @@ class OZ_ClientState
     static OZ_SyncPayload Get()    { return s_Payload; }
     static bool           Ready()  { return s_Payload != null; }
 
+    // Що доклав мод у пакет (OZ_SyncExtras). До першого пакета -- запасне.
+    static string Extra(string key, string fallback)
+    {
+        return OZ_SyncExtras.Of(s_Payload, key, fallback);
+    }
+
+    // Пакет приїхав -- перший чи повторний (ТЗ-5 R-C1.3). Хто тримає в себе
+    // значення з нього, перечитує тут, а не гадає, чи змінилось.
+    private static ref ScriptInvoker s_SyncWatch;
+
+    static ScriptInvoker SyncWatch()
+    {
+        if (!s_SyncWatch)
+            s_SyncWatch = new ScriptInvoker();
+        return s_SyncWatch;
+    }
+
     // IsAdmin() ТУТ БІЛЬШЕ НЕМАЄ, разом із полем, яке його живило.
     //
     // Він існував заради двох кнопок на карті КПК, які клієнт ховав від
@@ -144,7 +161,10 @@ class OZ_ClientState
         line += " debug=" + p.DebugMode;
         line += " linked=" + p.Linked;
         line += " gate=" + p.LinkRequired;
+        line += " extras=" + p.Extras.Count().ToString();
         OZ_Log.Info(line);
+
+        SyncWatch().Invoke(p);
     }
 
     // Відповідь на запит прив'язки. Веде її ВІКНО, а не цей клас: тут лише

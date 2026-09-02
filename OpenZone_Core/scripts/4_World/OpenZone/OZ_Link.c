@@ -270,7 +270,15 @@ class OZ_Link
         // Ворота чекають саме на це -- кажемо одразу, а не за секунду.
         PlayerIdentity to = Online(uid);
         if (to)
+        {
             SendState(to);
+
+            // І ПАКЕТ СИНХРОНІЗАЦІЇ ЗНОВУ (ТЗ-5 R-C1.3). Стан прив'язки в
+            // ньому інакше лишався б таким, яким був на вході: усе, що читає
+            // OZ_ClientState.Get().Linked, а не відповідь вікна прив'язки,
+            // жило б у минулому до перезаходу.
+            OZ_SyncSender.Send(to, "after link");
+        }
     }
 
     static void Forget(string uid)
