@@ -23,15 +23,30 @@ class OZ_Json
 
     // Відкладає зіпсований файл убік, а не переписує його. Причину дефекту
     // читають ПІСЛЯ падіння, і перезапис її знищує назавжди.
-    static void Quarantine(string path, string tag)
+    //
+    // ПОВЕРТАЄ, ЧИ ВИЙШЛО, і це не косметика. Викликач одразу після цього
+    // перезаписує файл дефолтами; якщо копія не вдалась (немає місця, каталог
+    // не створився, файл тримає інший процес), зіпсований оригінал зникає
+    // назавжди -- разом з єдиним свідченням того, що саме адмін зламав.
+    // Мовчазний CopyFile робив цю втрату невидимою.
+    static bool Quarantine(string path, string tag)
     {
         EnsureDir(OZ_Const.BACKUP_DIR);
         string dst = OZ_Const.BACKUP_DIR + "\\" + tag + ".bad.json";
-        CopyFile(path, dst);
+
+        if (!CopyFile(path, dst))
+        {
+            string bad = "corrupt config " + path;
+            bad += " could NOT be copied to " + dst;
+            bad += " -- the file is left untouched so nothing is lost";
+            OZ_Log.Error(bad);
+            return false;
+        }
 
         string msg = "corrupt config " + path;
         msg += " kept at " + dst;
         OZ_Log.Error(msg);
+        return true;
     }
 
     static void Backup(string path, string tag)

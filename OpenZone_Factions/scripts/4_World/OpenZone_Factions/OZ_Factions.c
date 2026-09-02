@@ -374,16 +374,20 @@ class OZ_FactionStand
     static const string HOSTILE  = "hostile";
 }
 
-// Договір для чужого мода. Успадковуєш, перекриваєш FactionOf, прив'язуєш
-// одним рядком зі свого OnMissionStart:
+// Договір для чужого мода. Успадковуєш, перекриваєш OrgOf, прив'язуєш одним
+// рядком зі свого OnMissionStart:
 //
 //     OZ_Factions.Bind(new MyFactionProvider());
 //
-// Повертати треба id із Factions.json. Незнайоме id ми покажемо ЯК Є -- краще
+// Повертати треба id із OZ_Core_Factions.json. Незнайоме id ми покажемо ЯК Є -- краще
 // чуже слово на екрані, ніж мовчазна підміна на «одинак».
+//
+// САМЕ УГРУПОВАННЯ, А НЕ БАЗОВА ФРАКЦІЯ. Чужі постачальники (Expansion) знають
+// рівно про організації -- у них немає поняття «всі в Зоні сталкери». Базову
+// вісь веде гра сама (ТЗ-1 §7), і постачальник її не перебиває.
 class OZ_FactionProvider
 {
-    string FactionOf(PlayerBase player)
+    string OrgOf(PlayerBase player)
     {
         return "";
     }
@@ -394,9 +398,16 @@ class OZ_Factions
     private static ref OZ_FactionsConfig s_Cfg;
     private static ref OZ_FactionProvider s_Provider;
 
-    // Ролі Discord: uid -> id фракції. Наповнює міст через прив'язку акаунта;
-    // порожня мапа означає «синхронізації немає», а не «усі без фракції».
+    // Ролі Discord: uid -> id УГРУПОВАННЯ. Наповнює міст через прив'язку
+    // акаунта; порожня мапа означає «синхронізації немає», а не «усі без
+    // фракції».
     private static ref map<string, string> s_ByRole;
+
+    // Те саме для БАЗОВОЇ осі. Окрема мапа, а не друге поле в одному записі,
+    // рівно з тієї ж причини, з якої осей дві: вони приходять із різних
+    // джерел і застарівають нарізно. Проекція може обнулити угруповання й не
+    // сказати ані слова про базову -- і це нормальний стан, а не втрата.
+    private static ref map<string, string> s_BaseByRole;
 
     // Хто хоче знати про зміни, не опитуючи. Параметр -- Steam64 гравця,
     // чия фракція змінилась.
@@ -501,17 +512,39 @@ class OZ_Factions
         return f.BaseFaction;
     }
 
-    // Фракцiя ЯК ОРГАНIЗАЦIЯ: те саме, що OfUid, але базова вважається
-    // вiдсутнiстю. Один виклик замiсть пари «взяв i перевiрив», щоб
-    // правило жило в одному мiсцi.
+    // Угруповання гравця, або порожньо. Вiднiмання «базова = вiдсутнiсть»
+    // тут БІЛЬШЕ НЕМАЄ: осей тепер двi, i кожна приходить своїм шляхом
+    // (ТЗ-1 §3). Лишилась тiльки сторожа нижче, в OrgOf.
     static string OrgOfUid(string uid)
     {
-        string slug = OfUid(uid);
-        if (slug == "")
+        return OrgOf(null, uid);
+    }
+
+    // Базова фракцiя гравця. Є в кожного, хто хоч раз заходив; порожньо
+    // означає рiвно «ще не заходив», i саме на це дивиться перший вхід.
+    //
+    // Постачальника тут немає навмисно: його контракт вiддає органiзацiю.
+    static string BaseOfUid(string uid)
+    {
+        if (uid == "")
             return "";
-        if (IsBase(slug))
+
+        if (s_BaseByRole)
+        {
+            string byRole;
+            if (s_BaseByRole.Find(uid, byRole))
+            {
+                // Порожнiй рядок вiд моста базову НЕ знiмає (ТЗ-1 R5.4):
+                // базову призначила гра, i Discord про неї не вирiшує.
+                if (byRole != "")
+                    return byRole;
+            }
+        }
+
+        OZ_PlayerData d = OZ_PlayerStore.Load(uid);
+        if (!d)
             return "";
-        return slug;
+        return d.BaseFaction;
     }
 
     // Людська назва. Незнайоме id повертаємо ЯК Є: чуже слово на екрані
@@ -591,16 +624,16 @@ class OZ_Factions
 
     // ---------------------------------------------------------- членство
 
-    // Чия фракція. Старшинство описане в шапці файлу.
-    static string Of(PlayerBase player, string uid)
+    // Чиє УГРУПОВАННЯ. Старшинство описане в шапці файлу.
+    static string OrgOf(PlayerBase player, string uid)
     {
         if (s_Provider)
         {
             if (player)
             {
-                string fromMod = s_Provider.FactionOf(player);
+                string fromMod = s_Provider.OrgOf(player);
                 if (fromMod != "")
-                    return fromMod;
+                    return Guarded(fromMod);
             }
         }
 
@@ -623,26 +656,44 @@ class OZ_Factions
             // порожнім рядком. Запису НЕМАЄ -- ми не знаємо, і лише тоді
             // працює файл акаунта. Прибрати запис може тільки ForgetRole.
             if (s_ByRole.Find(uid, byRole))
-                return byRole;
+                return Guarded(byRole);
         }
 
         OZ_PlayerData d = OZ_PlayerStore.Load(uid);
-        return d.Faction;
+        if (!d)
+            return "";
+        return Guarded(d.OrgFaction);
     }
 
-    // Коли гравця під рукою немає -- офлайновий друг, запис у розмові.
-    static string OfUid(string uid)
+    // СТОРОЖА ОДНІЄЇ ІНВАРІАНТИ: базова фракція не буває угрупованням.
+    //
+    // Осі роз'їхались, але джерела лишились чужі -- гільдія, файл акаунта,
+    // постачальник, -- і будь-яке з них може прислати слаг, позначений у
+    // OZ_Core_Factions.json як BaseFaction. Пропустити його означало б, що всі
+    // «сталкери» раптом стали одним угрупованням і бачать одне одного
+    // своїми: рівно те, що ТЗ-1 R3.2 забороняє про базову вісь.
+    //
+    // Мовчки, бо це стан налаштування, а не подія гри: місце, де про це
+    // кажуть уголос, -- шапка адмінського розділу FACTIONS.
+    private static string Guarded(string slug)
     {
-        return Of(null, uid);
+        if (slug == "")
+            return "";
+        if (IsBase(slug))
+            return "";
+        return slug;
     }
 
-    // Поставити фракцію в файл акаунта. Тільки сервер.
+    // Поставити УГРУПОВАННЯ у файл акаунта. Тільки сервер.
     //
     // Постачальник і роль Discord цим НЕ перебиваються -- вони старші, і
-    // мовчазна незгода тут була б найгіршим виходом. Хто ставить фракцію
+    // мовчазна незгода тут була б найгіршим виходом. Хто ставить угруповання
     // руками при живому постачальнику, той міняє запасний шлях, і це його
     // право.
-    static void SetOf(string uid, string factionId)
+    //
+    // Викликаючих сьогодні НУЛЬ, і це записано як факт, а не як задача
+    // (ТЗ-1 R5.3): угруповання роздає бот, гра його тільки показує.
+    static void SetOrgOf(string uid, string factionId)
     {
         if (!GetGame().IsServer())
             return;
@@ -650,12 +701,56 @@ class OZ_Factions
             return;
 
         OZ_PlayerData d = OZ_PlayerStore.Load(uid);
-        if (d.Faction == factionId)
+        if (!d)
+            return;
+        if (d.OrgFaction == factionId)
             return;
 
-        d.Faction = factionId;
+        d.OrgFaction = factionId;
         OZ_PlayerStore.MarkDirty(uid);
         OnChanged.Invoke(uid);
+    }
+
+    // Поставити БАЗОВУ фракцію. Кличе перший вхід, і більше ніхто.
+    //
+    // Вона не з Discord і не від постачальника: її призначила гра, і зняти
+    // її може тільки заводський скид персонажа (ТЗ-1 R5.4). Тому тут немає
+    // ані сторожі Guarded (навпаки: слаг МУСИТЬ бути базовим), ані оглядки
+    // на старші джерела -- старших у цієї осі немає.
+    static void SetBaseOf(string uid, string factionId)
+    {
+        if (!GetGame().IsServer())
+            return;
+        if (uid == "")
+            return;
+
+        OZ_PlayerData d = OZ_PlayerStore.Load(uid);
+        if (!d)
+            return;
+        if (d.BaseFaction == factionId)
+            return;
+
+        d.BaseFaction = factionId;
+        OZ_PlayerStore.MarkDirty(uid);
+        OnChanged.Invoke(uid);
+    }
+
+    // Перша фракція з BaseFaction: true в порядку файлу, або порожньо.
+    // Порядок файлу -- це і є відповідь «яку саме»: перевпорядкувати
+    // OZ_Core_Factions.json адмін уміє, а вигадувати йому ще одне поле «головна
+    // базова» означало б два джерела правди про одне.
+    static string FirstBaseId()
+    {
+        if (!s_Cfg || !s_Cfg.Factions)
+            return "";
+
+        for (int i = 0; i < s_Cfg.Factions.Count(); i++)
+        {
+            OZ_Faction f = s_Cfg.Factions[i];
+            if (f && f.BaseFaction)
+                return f.Id;
+        }
+        return "";
     }
 
     // Міст приніс ролі. Порожній id фракції = «ролі, що відповідає фракції,
@@ -679,18 +774,55 @@ class OZ_Factions
         OnChanged.Invoke(uid);
     }
 
+    // Базова вісь із проекції. Порожній рядок тут НЕ знімає базову: запис
+    // усе одно кладеться (щоб «міст про нього знає» лишалось правдою), але
+    // читач у BaseOfUid порожній пропускає й іде до файла акаунта. Різниця
+    // з угрупованням навмисна й записана в R5.4.
+    static void SetBaseFromRole(string uid, string factionId)
+    {
+        if (!GetGame().IsServer())
+            return;
+        if (uid == "")
+            return;
+
+        if (!s_BaseByRole)
+            s_BaseByRole = new map<string, string>();
+
+        string had;
+        s_BaseByRole.Find(uid, had);
+        if (had == factionId)
+            return;
+
+        s_BaseByRole.Set(uid, factionId);
+        OnChanged.Invoke(uid);
+    }
+
     // Синхронізація ролей зникла (міст ліг, гравець відв'язав акаунт).
     // Прибрати ЗАПИС, а не поставити порожній рядок: порожній рядок означав
     // би «ролі немає», а нам треба «ми не знаємо».
+    // Міст більше нічого про цього гравця не каже -- забуваємо ОБИДВІ осі.
+    //
+    // Для угруповання це важливо: запис зникає, і читач падає у файл акаунта
+    // замість того, щоб вічно вірити останній почутій ролі. Для базової це
+    // просто прибирання: її дім і так файл акаунта, а не проекція.
     static void ForgetRole(string uid)
     {
-        if (!s_ByRole)
-            return;
-        if (!s_ByRole.Contains(uid))
-            return;
+        bool had = false;
 
-        s_ByRole.Remove(uid);
-        OnChanged.Invoke(uid);
+        if (s_ByRole && s_ByRole.Contains(uid))
+        {
+            s_ByRole.Remove(uid);
+            had = true;
+        }
+
+        if (s_BaseByRole && s_BaseByRole.Contains(uid))
+        {
+            s_BaseByRole.Remove(uid);
+            had = true;
+        }
+
+        if (had)
+            OnChanged.Invoke(uid);
     }
 
     // --------------------------------------------------------- ставлення

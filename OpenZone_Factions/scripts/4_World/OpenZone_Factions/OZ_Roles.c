@@ -16,21 +16,27 @@
 class OZ_RoleView
 {
     string Uid          = "";
-    string Faction      = "";
+    // ДВІ ОСІ НАЛЕЖНОСТІ, і вони незалежні (ТЗ-1 §2). Base -- «сталкер», є в
+    // кожного; Org -- угруповання, не більше одного, порожньо в одинака.
+    // Вступ до Org не чіпає Base, вихід із Org не чіпає ані Base, ані Rank.
+    string Base         = "";
+    string Org          = "";
     string Rank         = "";
     // ВНУТРIФРАКЦIЙНЕ звання -- окрема вiсь вiд сталкерського Rank
-    // (рiшення власника 2026-08-30): живе всерединi фракцiї, вмирає разом
-    // iз членством, роздає лiдер. Слаг ГОЛИЙ, без префiкса фракцiї -- чиє
-    // це звання, каже Faction поруч.
+    // (рiшення власника 2026-08-30): живе всерединi угруповання, вмирає
+    // разом iз членством, роздає лiдер. Слаг ГОЛИЙ, без префiкса фракцiї --
+    // чиє це звання, каже Org поруч.
     string FRank        = "";
     // Видиме iм'я Discord: тiльки для адмiнських екранiв, гравцям не їде.
     string DName        = "";
     ref array<string> Posts;
     ref array<string> Traits;
 
-    // Дві фракції разом -- це помилка налаштування гільдії, а не стан
-    // гравця. Міст відмовляється вгадувати й перелічує обидві; ми показуємо
-    // «без фракції» і даємо адмінові побачити, що він накоїв.
+    // Два УГРУПОВАННЯ разом -- це помилка налаштування гільдії, а не стан
+    // гравця. Міст відмовляється вгадувати й перелічує обидва; ми лишаємо
+    // Org порожнім і даємо адмінові побачити, що він накоїв. Base при цьому
+    // заповнена як звичайно: конфлікт угруповань не робить людину не
+    // сталкером (ТЗ-1 R1.5).
     ref array<string> Conflict;
 
     void OZ_RoleView()
@@ -105,7 +111,8 @@ class OZ_Roles
         if (changed)
         {
             string m = "roles: " + v.Uid;
-            m += " faction=\"" + v.Faction;
+            m += " base=\"" + v.Base;
+            m += "\" org=\"" + v.Org;
             m += "\" rank=\"" + v.Rank;
             m += "\" frank=\"" + v.FRank;
             m += "\" posts=" + v.Posts.Count().ToString();
@@ -113,10 +120,15 @@ class OZ_Roles
             OZ_Log.Info(m);
         }
 
-        // Фракцію веде ЇЇ служба -- одна правда, одне місце. Порожній рядок
-        // тут значущий: він означає «Discord каже, що фракції немає», і
-        // OZ_Factions саме так його й читає.
-        OZ_Factions.SetFromRole(v.Uid, v.Faction);
+        // Належність веде ЇЇ служба -- одна правда, одне місце. Для
+        // УГРУПОВАННЯ порожній рядок значущий: він означає «Discord каже, що
+        // угруповання немає», і OZ_Factions саме так його й читає.
+        //
+        // Для БАЗОВОЇ -- ні: її призначила гра, і порожнє поле в проекції
+        // означає лише «міст про неї не сказав» (R5.4). Правило живе в
+        // OZ_Factions.BaseOfUid, тут ми просто чесно кладемо, що приїхало.
+        OZ_Factions.SetFromRole(v.Uid, v.Org);
+        OZ_Factions.SetBaseFromRole(v.Uid, v.Base);
 
         if (changed)
         {
@@ -135,14 +147,15 @@ class OZ_Roles
     }
 
     // Знімок для показу офлайнових. Пишемо ЛИШЕ у власні поля Seen*, ніколи
-    // не в Faction: див. довгу причину в OZ_PlayerData.
+    // не в BaseFaction/OrgFaction: див. довгу причину в OZ_PlayerData.
     private static void Remember(OZ_RoleView v)
     {
         OZ_PlayerData d = OZ_PlayerStore.Load(v.Uid);
         if (!d)
             return;
 
-        d.SeenFaction = v.Faction;
+        d.SeenBase    = v.Base;
+        d.SeenOrg     = v.Org;
         d.SeenRank    = v.Rank;
         d.SeenFRank   = v.FRank;
 
@@ -173,14 +186,15 @@ class OZ_Roles
         OZ_PlayerData d = OZ_PlayerStore.Load(uid);
         if (!d)
             return null;
-        if (d.SeenFaction == "" && d.SeenRank == "")
+        if (d.SeenBase == "" && d.SeenOrg == "" && d.SeenRank == "")
             return null;
 
         OZ_RoleView v = new OZ_RoleView();
-        v.Uid     = uid;
-        v.Faction = d.SeenFaction;
-        v.Rank    = d.SeenRank;
-        v.FRank   = d.SeenFRank;
+        v.Uid   = uid;
+        v.Base  = d.SeenBase;
+        v.Org   = d.SeenOrg;
+        v.Rank  = d.SeenRank;
+        v.FRank = d.SeenFRank;
 
         if (d.SeenPosts)
         {
@@ -199,18 +213,22 @@ class OZ_Roles
     // Про цього гравця нічого не відомо: не прив'язаний, або міст його не
     // бачить. Прибираємо ЗАПИС, а не ставимо порожній -- «немає ролі» й «ми
     // не знаємо» різні відповіді.
-    // Усі, про кого сервер ЗНАЄ, що вони в цій фракції. Це кеш проекцій
-    // за цей запуск -- офлайн, про якого ніхто не питав, сюди не потрапить,
-    // і чесніше показати менше, ніж вигадати повний список.
-    static void FactionMembers(string faction, array<string> outUids)
+    // Усі, про кого сервер ЗНАЄ, що вони в цьому УГРУПОВАННІ. Це кеш
+    // проекцій за цей запуск -- офлайн, про якого ніхто не питав, сюди не
+    // потрапить, і чесніше показати менше, ніж вигадати повний список.
+    //
+    // Саме угруповання, і це не дрібниця: по базовій осі «склад» -- це весь
+    // сервер, і екран, який колись питав тут «сталкерів», віддавав справжні
+    // імена всіх гравців кожному новачкові (ТЗ-1 §6).
+    static void OrgMembers(string org, array<string> outUids)
     {
-        if (!s_By || faction == "")
+        if (!s_By || org == "")
             return;
 
         for (int i = 0; i < s_By.Count(); i++)
         {
             OZ_RoleView v = s_By.GetElement(i);
-            if (v && v.Faction == faction && outUids.Find(v.Uid) == -1)
+            if (v && v.Org == org && outUids.Find(v.Uid) == -1)
                 outUids.Insert(v.Uid);
         }
     }
@@ -227,7 +245,9 @@ class OZ_Roles
     // щойно розібрали з JSON.
     private static bool Same(OZ_RoleView a, OZ_RoleView b)
     {
-        if (a.Faction != b.Faction)
+        if (a.Base != b.Base)
+            return false;
+        if (a.Org != b.Org)
             return false;
         if (a.Rank != b.Rank)
             return false;
@@ -589,118 +609,3 @@ class OZ_RoleNames
     }
 }
 
-// Одне місце, щоб спитати все. Фасад, а не служба: він нічим не володіє й
-// нічого не вирішує -- лише збирає відповідь із трьох, які володіють.
-//
-// Існує з двох причин, і обидві практичні: сторінка контактів хоче ОДИН
-// виклик на гравця замість трьох, а Stale -- це один факт про міст, не три.
-class OZ_Identity
-{
-    static string Faction(string uid)  { return OZ_Factions.OfUid(uid); }
-    static string Rank(string uid)     { return OZ_Roles.RankOf(uid); }
-    static bool   Leader(string uid)   { return OZ_Roles.IsLeader(uid); }
-    static bool   Stale()              { return OZ_Roles.Stale(); }
-
-    static bool HasTrait(string uid, string trait)
-    {
-        return OZ_Roles.HasTrait(uid, trait);
-    }
-
-    // --- останнє відоме, для офлайнових ---
-    //
-    // Ті самі три осі, але з знімка: гравця немає на сервері, питати міст про
-    // нього нема сенсу, а показати «Іванов» без фракції й звання -- це збрехати
-    // рівно там, де лідер вирішує, свій це чи ні.
-    //
-    // Окремі назви, а не прапорець у тих самих функціях: хто питає Seen*, той
-    // СВІДОМО бере застаріле й мусить це показати.
-    static string SeenFactionId(string uid)
-    {
-        // Файл акаунта старший: його ставили руками, і воно не застаріле.
-        string byFile = OZ_Factions.OfUid(uid);
-        if (byFile != "")
-            return byFile;
-
-        OZ_RoleView v = OZ_Roles.Seen(uid);
-        if (!v)
-            return "";
-        return v.Faction;
-    }
-
-    static string SeenRankName(string uid)
-    {
-        OZ_RoleView v = OZ_Roles.Seen(uid);
-        if (!v)
-            return "";
-        return OZ_RoleNames.Of(v.Rank);
-    }
-
-    static void SeenPostNames(string uid, out array<string> into)
-    {
-        if (!into)
-            return;
-
-        OZ_RoleView v = OZ_Roles.Seen(uid);
-        if (!v)
-            return;
-
-        string faction = SeenFactionId(uid);
-        if (faction == "")
-            return;
-
-        for (int i = 0; i < v.Posts.Count(); i++)
-            into.Insert(OZ_RoleNames.Of(faction + ":" + v.Posts[i]));
-    }
-
-    static void SeenTraitNames(string uid, out array<string> into)
-    {
-        if (!into)
-            return;
-
-        OZ_RoleView v = OZ_Roles.Seen(uid);
-        if (!v)
-            return;
-
-        for (int i = 0; i < v.Traits.Count(); i++)
-            into.Insert(OZ_RoleNames.Of(v.Traits[i]));
-    }
-
-    // Звання людською назвою, готове до показу.
-    static string RankName(string uid)
-    {
-        return OZ_RoleNames.Of(OZ_Roles.RankOf(uid));
-    }
-
-    // Посади людськими назвами. Слаг посади в реєстрі має вигляд
-    // "duty:leader", а в проекції лежить сам "leader" -- тому фракцію
-    // додаємо тут, а не змушуємо кожного, хто малює, пам'ятати про це.
-    static void PostNames(string uid, out array<string> into)
-    {
-        if (!into)
-            return;
-
-        OZ_RoleView v = OZ_Roles.Of(uid);
-        if (!v)
-            return;
-
-        string faction = OZ_Factions.OfUid(uid);
-        if (faction == "")
-            return;
-
-        for (int i = 0; i < v.Posts.Count(); i++)
-            into.Insert(OZ_RoleNames.Of(faction + ":" + v.Posts[i]));
-    }
-
-    static void TraitNames(string uid, out array<string> into)
-    {
-        if (!into)
-            return;
-
-        OZ_RoleView v = OZ_Roles.Of(uid);
-        if (!v)
-            return;
-
-        for (int i = 0; i < v.Traits.Count(); i++)
-            into.Insert(OZ_RoleNames.Of(v.Traits[i]));
-    }
-}

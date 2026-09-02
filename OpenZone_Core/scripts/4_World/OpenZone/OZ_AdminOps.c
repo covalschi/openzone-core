@@ -1,10 +1,15 @@
 // Адмiнська консоль: серверна половина, з якою говорить будь-який
 // адмiнський UI (першою -- вкладка VPP).
 //
-// Одна сторiнка ("admin"), жменька операцiй, i ворота -- OZ_Perm.IsAdmin
-// на КОЖНIЙ. Пристрiй тут нi до чого: адмiну не потрiбен КПК у руках, щоб
-// правити конфiг, тому гейт доступу КПК пропускає цю сторiнку наскрiзь, а
-// справжня межа безпеки стоїть тут.
+// РОЗДІЛИ, А НЕ СТОРІНКИ (рішення власника 2026-09-01, ТЗ-5 §C2-C3). Досi це
+// була сторiнка "admin" у спiльному реєстрi, i щоб її пропустити, гейт КПК
+// тримав виняток першим рядком -- тобто в межi безпеки були дверi збоку.
+// Тепер розділи живуть у власному реєстрi (OZ_AdminRegistry), їдуть власним
+// конвертом (OZ_AdminReq/OZ_AdminRes), а ворота однi й без винятків:
+// OZ_Perm.IsAdmin, на сервері, першим рядком диспетчера в OZ_Module.
+//
+// Ядро приносить два роздiли: "config" (редактор зареєстрованих конфiгiв) i
+// "spawns" (зони, стейджинґ, особистi точки). Мод фракцiй доклада свiй.
 
 // Один редагований конфiг: як його звати, де лежить файл i хто вмiє
 // ПЕРЕВIРИТИ й ЗАСТОСУВАТИ новий текст. Реєструє власник конфiгу -- ядро
@@ -77,71 +82,6 @@ class OZ_AdminAsk
     string Json = "";
 }
 
-class OZ_AdminWipeAsk
-{
-    string Uid = "";
-
-    // «Ігрову половину вже зроблено». Ставить ГРА, коли пермадес почався в
-    // нiй: тодi мiст робить лише своє й не шле поштовх назад. Порожнє (з
-    // команди бота) означає протилежне -- мiст мусить розбудити гру.
-    bool FromGame = false;
-}
-
-// Вiдповiдь моста на команду: вдалося чи нi, i чому.
-class OZ_BridgeAck
-{
-    bool   Ok  = false;
-    string Why = "";
-}
-
-// Мiст вiдповiв на вайп -- доносимо вiдповiдь адмiновi. Iгрова половина
-// на цю мить УЖЕ зроблена: якщо мiст вiдмовив, адмiн бачить причину й
-// повторює команду -- iгрова половина iдемпотентна (епоха просто пiде ще
-// на крок уперед, порожнi списки лишаться порожнiми).
-class OZ_AdminWipeReply : OZ_BridgeReply
-{
-    protected string m_AdminUid;
-    protected string m_Op;
-
-    void OZ_AdminWipeReply(string adminUid, string op)
-    {
-        m_AdminUid = adminUid;
-        m_Op       = op;
-    }
-
-    override void OnBody(string json)
-    {
-        PlayerIdentity to = OZ_Link.Online(m_AdminUid);
-        if (!to)
-            return;
-
-        OZ_BridgeAck ack;
-        string err;
-        if (!JsonFileLoader<OZ_BridgeAck>.LoadData(json, ack, err) || !ack)
-        {
-            OZ_Rpc.Respond(to, OZ_Const.PAGE_ADMIN, m_Op, false, "", "STR_OZ_ERR_INTERNAL");
-            return;
-        }
-
-        if (!ack.Ok)
-        {
-            OZ_Log.Warn("admin: bridge refused the wipe: " + ack.Why);
-            OZ_Rpc.Respond(to, OZ_Const.PAGE_ADMIN, m_Op, false, "", ack.Why);
-            return;
-        }
-
-        OZ_Rpc.Respond(to, OZ_Const.PAGE_ADMIN, m_Op, true, "{}", "");
-    }
-
-    override void OnFail(int code)
-    {
-        PlayerIdentity to = OZ_Link.Online(m_AdminUid);
-        if (!to)
-            return;
-        OZ_Rpc.Respond(to, OZ_Const.PAGE_ADMIN, m_Op, false, "", "STR_OZ_ERR_NO_BRIDGE");
-    }
-}
-
 class OZ_AdminCfgList
 {
     ref array<string> Names;
@@ -154,52 +94,16 @@ class OZ_AdminCfgList
     }
 }
 
-class OZ_AdminRosterRow
-{
-    string Name    = "";
-    string Uid     = "";
-    string Faction = "";
-    string DName   = "";
-    string Traits  = "";
-    string Rank    = "";
-    string FRank   = "";
-    bool   Leader  = false;
-}
-
-class OZ_AdminRoster
-{
-    ref array<ref OZ_AdminRosterRow> Rows;
-    ref array<string> Factions;
-
-    // Каталоги з реєстру бота: адмiну треба з чого вибирати. FRanks --
-    // внутрiфракцiйнi звання, id вигляду "duty:sergeant".
-    ref array<string> Traits;
-    ref array<string> Ranks;
-    ref array<string> FRanks;
-
-    void OZ_AdminRoster()
-    {
-        Rows     = new array<ref OZ_AdminRosterRow>();
-        Factions = new array<string>();
-        Traits   = new array<string>();
-        Ranks    = new array<string>();
-        FRanks   = new array<string>();
-    }
-}
-
-class OZ_AdminPage : OZ_PageHandler
+class OZ_ConfigSection : OZ_AdminSection
 {
     override string Handle(string op, string json, PlayerIdentity sender, out bool ok, out string error)
     {
         ok = false;
 
-        // МЕЖА БЕЗПЕКИ. Сторiнка зареєстрована в загальному реєстрi, i будь-який
-        // клiєнт може назвати її iм'я -- вiдповiдає ця перевiрка, i тiльки вона.
-        if (!sender || !OZ_Perm.IsAdmin(sender))
-        {
-            error = "STR_OZ_ERR_ADMIN_ONLY";
-            return "";
-        }
+        // Прав тут БІЛЬШЕ НЕ ПЕРЕВІРЯЄМО: їх перевірив диспетчер, до розбору
+        // операції. Друга перевірка в кожному розділі виглядала б обережною,
+        // але робила б межу безпеки розсипаною по модах -- а її треба вміти
+        // прочитати в одному місці.
 
         if (op == "cfg_list")
             return CfgList(ok, error);
@@ -214,67 +118,7 @@ class OZ_AdminPage : OZ_PageHandler
         if (op.IndexOf("cfg_set:") == 0)
             return CfgSet(op.Substring(8, op.Length() - 8), json, sender, ok, error);
 
-        if (op == "roster")
-            return Roster(ok, error);
-
-        // Пермадес. Iм'я живе в операцiї з тiєї ж причини, що й у cfg_*:
-        // uid короткий, але правило одне на всi адмiнськi операцiї.
-        if (op.IndexOf("player_wipe:") == 0)
-            return PlayerWipe(op.Substring(12, op.Length() - 12), op, sender, ok, error);
-
         error = "STR_OZ_ERR_UNKNOWN_OP";
-        return "";
-    }
-
-    // «Чистий аркуш»: персонаж помер назавжди, ГРАВЕЦЬ лишається.
-    //
-    // Ігрова половина -- тут i одразу: епоха сесiй +1 (всi його КПК
-    // замерзають назавжди -- сесiю вiдкриває лише безхазяйний пристрiй,
-    // а цi назавжди лишаються зайнятими мертвою сесiєю), друзi, запити,
-    // групи, транспондер, особиста точка спавну -- геть. Прив'язка Discord
-    // ЛИШАЄТЬСЯ: гравець той самий, це персонаж новий.
-    //
-    // Половина моста (вихiд iз приватних тредiв, скидання ролей до
-    // новачка) їде викликом v1/player/wipe, i вiдповiдь клiєнтовi -- ТIЛЬКИ
-    // пiсля неї: адмiн мусить знати, що вайп пройшов ЦIЛКОМ, а не наполовину.
-    private string PlayerWipe(string uid, string op, PlayerIdentity sender, out bool ok, out string error)
-    {
-        if (uid == "")
-        {
-            error = "STR_OZ_ERR_NO_TARGET";
-            return "";
-        }
-
-        // Мiст питаємо ПЕРШИМ: якщо його немає, не робимо НIЧОГО. Половина
-        // вайпу гiрша за жодного -- замерзлi КПК при живих тредах виглядали
-        // б як баг, а не як смерть.
-        if (!OZ_BridgeClient.Alive())
-        {
-            error = "STR_OZ_ERR_NO_BRIDGE";
-            return "";
-        }
-
-        OZ_PlayerWipe.Local(uid);
-        OZ_Log.Info("admin: player " + uid + " wiped by " + sender.GetPlainId());
-
-        OZ_AdminWipeAsk a = new OZ_AdminWipeAsk();
-        a.Uid = uid;
-        // Гру ми вже вiдпрацювали самi -- хай мiст не шле нам поштовх назад.
-        a.FromGame = true;
-
-        string letter;
-        string jerr;
-        if (!JsonFileLoader<OZ_AdminWipeAsk>.MakeData(a, letter, jerr, false))
-        {
-            error = "STR_OZ_ERR_INTERNAL";
-            return "";
-        }
-
-        OZ_BridgeClient.Call("v1/player/wipe", letter, new OZ_AdminWipeReply(sender.GetPlainId(), op));
-
-        // Вiдповiдь пiде з OZ_AdminWipeReply, коли мiст вiдпишеться.
-        ok    = false;
-        error = OZ_Const.DEFER;
         return "";
     }
 
@@ -301,6 +145,18 @@ class OZ_AdminPage : OZ_PageHandler
         if (!e)
         {
             error = "STR_OZ_ERR_NO_SUCH_CFG";
+            return "";
+        }
+
+        // ФАЙЛА НЕМАЄ -- ЦЕ ВІДМОВА, а не порожній конфіг.
+        //
+        // Раніше сюди приїздив ok=true з порожнім тілом: редактор показував
+        // чисте поле, і APPLY поверх нього записував порожній рядок як увесь
+        // конфіг. Конфіг, зареєстрований, але ще не створений на диску, --
+        // звичайний стан першого запуску, і мовчати про нього не можна.
+        if (!FileExist(e.Path))
+        {
+            error = "STR_OZ_ERR_CFG_MISSING";
             return "";
         }
 
@@ -331,49 +187,6 @@ class OZ_AdminPage : OZ_PageHandler
 
         ok = true;
         return "{}";
-    }
-
-    private string Roster(out bool ok, out string error)
-    {
-        OZ_AdminRoster r = new OZ_AdminRoster();
-        OZ_Factions.Ids(r.Factions);
-        OZ_Roles.TraitIds(r.Traits);
-        OZ_Roles.RankIds(r.Ranks);
-        OZ_Roles.FRankIds(r.FRanks);
-
-        array<Man> players = new array<Man>();
-        GetGame().GetPlayers(players);
-
-        for (int i = 0; i < players.Count(); i++)
-        {
-            if (!players[i])
-                continue;
-            PlayerIdentity id = players[i].GetIdentity();
-            if (!id)
-                continue;
-
-            OZ_AdminRosterRow row = new OZ_AdminRosterRow();
-            row.Name    = id.GetName();
-            row.Uid     = id.GetPlainId();
-            row.Faction = OZ_Factions.OfUid(row.Uid);
-            row.DName   = OZ_Roles.DiscordNameOf(row.Uid);
-            row.Traits  = OZ_Roles.TraitsLineOf(row.Uid);
-            row.Rank    = OZ_Roles.RankOf(row.Uid);
-            row.FRank   = OZ_Roles.FRankOf(row.Uid);
-            row.Leader  = OZ_Roles.IsLeader(row.Uid);
-            r.Rows.Insert(row);
-        }
-
-        string outJson;
-        string err;
-        if (!JsonFileLoader<OZ_AdminRoster>.MakeData(r, outJson, err, false))
-        {
-            error = "STR_OZ_ERR_INTERNAL";
-            return "";
-        }
-
-        ok = true;
-        return outJson;
     }
 
     // Прочитати файл як текст. FGets рiже переноси -- склеюємо назад.
@@ -424,91 +237,243 @@ class OZ_SpawnsCfgApplier : OZ_AdminCfgApplier
     }
 }
 
-
-// ІГРОВА ПОЛОВИНА ПЕРМАДЕСУ, окремо від того, хто її попросив.
+// ---------------------------------------------------------------- спавни
 //
-// Просять двоє: адмінська консоль у грі (і тоді вона ж кличе міст) і сам
-// МІСТ -- коли пермадес запустили командою бота, а не з гри. Без цього
-// класу друга дорога робила лише половину справи: ролі в Discord
-// скидались, а КПК небіжчика лишались живими, бо гра про смерть не чула.
-class OZ_PlayerWipe
+// РОЗДІЛ ЯДРА, а не мода фракцій (рішення власника, ТЗ-5 §C1 R6). Досi цей
+// обробник жив у @OpenZone_Factions i їздив конвертом ролей -- тобто на
+// сервері без мода фракцій адмiн не мiг завести ЖОДНОЇ зони, хоч зони й
+// файл зон лежать у ядрi, i хоч панель SPAWNS у вкладцi VPP -- теж ядрова.
+// Правило серiї каже протилежне: будь-який мод працює, маючи одне лише ядро.
+//
+// Аргумент операцiї їде ТIЛОМ запиту рядком, а не JSON-об'єктом: він
+// коротенький ("duty 30", "76561198... 25"), i конверт зi строковим полем
+// різався б на 1023 байтах при серверному розборi -- та сама пастка, що й у
+// cfg_get.
+class OZ_SpawnSection : OZ_AdminSection
 {
-    static void Local(string uid)
+    override string Handle(string op, string json, PlayerIdentity sender, out bool ok, out string error)
     {
-        if (!GetGame().IsServer())
-            return;
-        if (uid == "")
-            return;
+        ok = false;
 
-        // СПЕРШУ ЗАМОРОЗКА, потiм чистка. Старе життя лягає в окремий файл
-        // цiлим -- з контактами, нотатками й усiм, що в ньому було, -- i
-        // лише пiсля цього живий запис стає новим персонажем.
-        OZ_PlayerStore.Freeze(uid);
+        if (op == OZ_SpawnOp.UID_HERE || op == OZ_SpawnOp.UID_CLEAR)
+            return Personal(op, json, sender, ok, error);
 
-        OZ_PlayerData d = OZ_PlayerStore.Load(uid);
-        d.SessionEpoch = d.SessionEpoch + 1;
+        if (op == OZ_SpawnOp.HERE || op == OZ_SpawnOp.CLEAR)
+            return Zone(op, json, sender, ok, error);
 
-        if (d.Friends)
-            d.Friends.Clear();
-        if (d.FriendReq)
-            d.FriendReq.Clear();
-        if (d.NpcContacts)
-            d.NpcContacts.Clear();
-        if (d.Chats)
-            d.Chats.Clear();
-        if (d.TransponderTo)
-            d.TransponderTo.Clear();
-
-        d.TransponderMode = "off";
-        d.PresenceHidden  = false;
-        d.Faction         = "";
-        d.SeenFaction     = "";
-        d.SeenRank        = "";
-        d.SeenFRank       = "";
-        if (d.SeenPosts)
-            d.SeenPosts.Clear();
-        if (d.SeenTraits)
-            d.SeenTraits.Clear();
-
-        OZ_PlayerStore.Flush(uid);
-
-        // Точки спавну: одноразова й особиста. ClearPersonal чесно скаже
-        // «не було» -- нам однаково, головне, що пiсля вайпу її немає.
-        OZ_Spawns.ClearNextSpawn(uid);
-        OZ_Spawns.ClearPersonal(uid);
-
-        // ЧУЖІ ЗАПИСНИКИ НЕ ЧІПАЄМО, і це рішення власника 2026-08-30.
-        //
-        // Викреслити небiжчика з чужих контактiв означало б РОЗПОВIСТИ про
-        // його смерть: рядок, який зник, читається однозначно. КПК не
-        // повiдомляє про смерть -- нiколи. Запис лишається на мiсцi
-        // замороженим, з датою останньої появи в Зонi, i чи людина загинула,
-        // чи просто не заходить, з нього не видно.
-        //
-        // Нове життя того самого акаунта -- ОКРЕМИЙ запис (uid#покоління),
-        // якого нi в кого ще немає: знайомитись доведеться наново.
-
-        // Проекцiю ролей забуваємо: мiст пришле нову, вже новачкову.
-        OZ_Roles.Forget(uid);
-
-        OZ_Log.Info("player " + uid + " wiped: generation frozen, devices sealed");
+        error = "STR_OZ_ERR_UNKNOWN_OP";
+        return "";
     }
-}
 
-// Поштовх «цього гравця стерли» -- від моста. Приходить, коли пермадес
-// запустили командою бота: гра робить свою половину тут.
-class OZ_WipeSink : OZ_BridgeSink
-{
-    override void Deliver(string json)
+    // arg -- "слаг" або "слаг радіус". Радіус необов'язковий: без нього
+    // двадцять метрів, бо зона в одну точку -- це купа тіл, а не табір.
+    private string Zone(string op, string arg, PlayerIdentity sender, out bool ok, out string error)
     {
-        OZ_AdminWipeAsk a;
+        string role;
+        float radius;
+        if (!Split(arg, role, radius, error))
+            return "";
+
+        // ПРОБІЛ -- НЕ СЛАГ.
+        //
+        // Слаг із пробілом попереду (« duty») різався на порожній слаг і
+        // хвіст, а порожній слаг означає ЗАПАСНУ зону -- ту, куди потрапляють
+        // усі, в кого нічого не збіглося. Один зайвий пробіл у команді
+        // переносив спавн усього сервера, і відповідь була «готово».
+        //
+        // Порожній слаг писати в поле незручно, тож домовляємось: "-" означає
+        // порожній, "*" -- стейджинґ (його розбирає сам OZ_Spawns).
+        if (role == "-")
+            role = "";
+
         string err;
-        if (!JsonFileLoader<OZ_AdminWipeAsk>.LoadData(json, a, err) || !a)
+
+        if (op == OZ_SpawnOp.CLEAR)
         {
-            OZ_Log.Warn("wipe: unreadable push from the bridge: " + err);
-            return;
+            err = OZ_Spawns.ClearZone(role);
+        }
+        else
+        {
+            // Позицію беремо з ЙОГО тіла на сервері, а не з чогось, що прислав
+            // клієнт: інакше зону можна було б поставити куди завгодно, не
+            // сходячи з місця.
+            vector here = BodyOf(sender);
+            if (here == vector.Zero)
+            {
+                error = "STR_OZ_ERR_INTERNAL";
+                return "";
+            }
+
+            err = OZ_Spawns.SetZoneHere(role, here, radius);
         }
 
-        OZ_PlayerWipe.Local(a.Uid);
+        if (err != "")
+        {
+            error = err;
+            return "";
+        }
+
+        ok = true;
+        return "{}";
+    }
+
+    // Особиста точка гравця. Позиція -- тіло АДМІНА на сервері, як і в
+    // зоні: «стань там, де його дім, і натисни».
+    private string Personal(string op, string arg, PlayerIdentity sender, out bool ok, out string error)
+    {
+        string uid;
+        float radius;
+        if (!Split(arg, uid, radius, error))
+            return "";
+
+        if (uid == "")
+        {
+            error = "STR_OZ_ERR_NO_TARGET";
+            return "";
+        }
+
+        string err;
+
+        if (op == OZ_SpawnOp.UID_CLEAR)
+        {
+            err = OZ_Spawns.ClearPersonal(uid);
+        }
+        else
+        {
+            vector here = BodyOf(sender);
+            if (here == vector.Zero)
+            {
+                error = "STR_OZ_ERR_INTERNAL";
+                return "";
+            }
+
+            err = OZ_Spawns.SetPersonalHere(uid, here, radius);
+        }
+
+        if (err != "")
+        {
+            error = err;
+            return "";
+        }
+
+        ok = true;
+        return "{}";
+    }
+
+    // «слово» або «слово число». Радіус за замовчуванням -- двадцять метрів.
+    private bool Split(string arg, out string head, out float radius, out string error)
+    {
+        string rest = Trimmed(arg);
+        head   = rest;
+        radius = 20;
+
+        int sp = rest.IndexOf(" ");
+        if (sp == -1)
+        {
+            head = Trimmed(head);
+            return true;
+        }
+
+        head = Trimmed(rest.Substring(0, sp));
+
+        // РАДІУС МУСИТЬ БУТИ ЧИСЛОМ.
+        //
+        // ToFloat() на будь-якому смітті чесно повертає нуль, і зона ставала
+        // точкою: усі спавняться в одному пікселі, один в одному. Помилку
+        // набору не видно ніде -- команда відповідала «готово».
+        string tail = Trimmed(rest.Substring(sp + 1, rest.Length() - sp - 1));
+        if (!Number(tail))
+        {
+            error = "STR_OZ_ERR_BAD_RADIUS";
+            return false;
+        }
+
+        radius = tail.ToFloat();
+
+        // НУЛЬ -- ТЕЖ ВІДМОВА, і це та сама причина, від якої захищає перевірка
+        // вище. Зона нульового радіуса -- точка, у якій усі спавняться один в
+        // одному; саме її обіцяв не пустити коментар про «купу тіл, а не
+        // табір», а число `0` крізь Number() проходило й давало рівно це.
+        if (radius <= 0)
+        {
+            error = "STR_OZ_ERR_BAD_RADIUS";
+            return false;
+        }
+
+        return true;
+    }
+
+    // Тіло гравця НА СЕРВЕРІ -- не координата, яку прислав клієнт.
+    private vector BodyOf(PlayerIdentity who)
+    {
+        if (!who)
+            return vector.Zero;
+
+        array<Man> players = new array<Man>();
+        GetGame().GetPlayers(players);
+        for (int i = 0; i < players.Count(); i++)
+        {
+            if (!players[i])
+                continue;
+            PlayerIdentity id = players[i].GetIdentity();
+            if (!id)
+                continue;
+            if (id.GetPlainId() != who.GetPlainId())
+                continue;
+            return players[i].GetPosition();
+        }
+        return vector.Zero;
+    }
+
+    // Пробіли з обох боків. У Enforce немає Trim(), а рядок приходить із
+    // поля вводу -- там вони будуть.
+    private string Trimmed(string s)
+    {
+        int from = 0;
+        int to   = s.Length();
+
+        while (from < to && s.Substring(from, 1) == " ")
+            from++;
+        while (to > from && s.Substring(to - 1, 1) == " ")
+            to--;
+
+        return s.Substring(from, to - from);
+    }
+
+    // Чи це взагалі число. ToFloat() не вміє сказати «ні», тож питаємо самі.
+    //
+    // ХОЧА Б ОДНА ЦИФРА обов'язкова. Без цієї умови рядок "." проходив як
+    // число: крапка дозволена, інших символів немає, цикл закінчується
+    // успіхом -- а ToFloat(".") дає нуль, тобто рівно ту точкову зону, яку ця
+    // перевірка й мала не пустити.
+    private bool Number(string s)
+    {
+        if (s == "")
+            return false;
+
+        bool dot = false;
+        bool digit = false;
+
+        for (int i = 0; i < s.Length(); i++)
+        {
+            string c = s.Substring(i, 1);
+
+            if (c == ".")
+            {
+                if (dot)
+                    return false;
+                dot = true;
+                continue;
+            }
+
+            // Через набір, а не через порівняння рядків: у Enforce «менше»
+            // для string не визначене, і покластись на нього не можна.
+            if ("0123456789".IndexOf(c) == -1)
+                return false;
+
+            digit = true;
+        }
+
+        return digit;
     }
 }

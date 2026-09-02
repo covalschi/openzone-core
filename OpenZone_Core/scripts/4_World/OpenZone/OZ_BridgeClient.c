@@ -208,11 +208,119 @@ class OZ_BridgeClient
     // першої пачки означала б, що ту пачку ніхто не почув.
     static void Subscribe(string kind, OZ_BridgeSink sink)
     {
+        // АДМІН ВИРІШУЄ, ЩО СИНХРОНІЗУВАТИ. Мод просить -- сервер дозволяє
+        // або ні, і відмова тут не помилка мода, а налаштування сервера.
+        // Тому Dbg, а не Warn: у лозі має бути видно, що рід свідомо
+        // вимкнений, і не має бути схоже на поломку.
+        if (!KindAllowed(kind))
+        {
+            OZ_Log.Dbg("bridge: kind \"" + kind + "\" is off in settings, not subscribed");
+            return;
+        }
+
         if (!s_Sinks)
             s_Sinks = new map<string, ref OZ_BridgeSink>();
 
         s_Sinks.Set(kind, sink);
         OZ_Log.Dbg("bridge: sink for \"" + kind + "\"");
+    }
+
+    // Порожній список у налаштуваннях -- «все, що попросять»: саме так міст
+    // поводився до появи цього поля, і мовчки змінити це наявним серверам
+    // не можна.
+    static bool KindAllowed(string kind)
+    {
+        OZ_Settings s = OZ_Settings.Get();
+        if (!s || !s.Bridge)
+            return true;
+
+        array<string> want = s.Bridge.Kinds;
+        if (!want || want.Count() == 0)
+            return true;
+
+        return want.Find(kind) != -1;
+    }
+
+    // ЧИ ВИДНО ЦЕЙ РІД У ГІЛЬДІЇ. Перше спрацьоване правило вирішує
+    // (ТЗ-2 R3.2).
+    //
+    // Питання НЕ про те, де дані живуть: чат живе в боті хоч із дзеркалом,
+    // хоч без. Це питання про поверхню -- чи виносити рід у треди Discord.
+    //
+    //   1. міст вимкнений цілком          -> off усім
+    //   2. списку немає або він порожній  -> off усім
+    //   3. є запис про цей рід            -> його Mirror
+    //   4. інакше                         -> off
+    //
+    // Правило 2 раніше означало протилежне -- «дзеркалити все», -- і тримало
+    // зворотну сумісність із живими серверами. Знято рішенням власника
+    // 2026-09-01: мод тільки на дев-стенді. Умовчання «тихо» правильніше й
+    // саме собою: сервер, який ще нічого не налаштував, не має починати з
+    // того, що виливає переписку гравців у чужу гільдію.
+    static bool Mirrored(string kind)
+    {
+        OZ_Settings s = OZ_Settings.Get();
+        if (!s || !s.Bridge)
+            return false;
+        if (!s.Bridge.Enabled)
+            return false;
+
+        array<ref OZ_KindMirror> list = s.Bridge.Mirrors;
+        if (!list || list.Count() == 0)
+            return false;
+
+        for (int i = 0; i < list.Count(); i++)
+        {
+            OZ_KindMirror m = list[i];
+            if (m && m.Kind == kind)
+                return m.Mirror;
+        }
+        return false;
+    }
+
+    // Імена ввімкнених родів -- для мосту. Той сам вирішує, що з ними
+    // робити; наша справа -- чесно сказати, що дозволено показувати.
+    static void FillMirrors(array<string> outKinds)
+    {
+        if (!outKinds)
+            return;
+        outKinds.Clear();
+
+        OZ_Settings s = OZ_Settings.Get();
+        if (!s || !s.Bridge || !s.Bridge.Enabled)
+            return;
+
+        array<ref OZ_KindMirror> list = s.Bridge.Mirrors;
+        if (!list)
+            return;
+
+        for (int i = 0; i < list.Count(); i++)
+        {
+            OZ_KindMirror m = list[i];
+            if (m && m.Mirror && m.Kind != "")
+                outKinds.Insert(m.Kind);
+        }
+    }
+
+    // Скільки родів справді дзеркаляться. Потрібно рівно там, де різниця
+    // видима: «у гільдії тихо» -- це стан, про який треба сказати вголос.
+    static int MirrorCount()
+    {
+        OZ_Settings s = OZ_Settings.Get();
+        if (!s || !s.Bridge || !s.Bridge.Enabled)
+            return 0;
+
+        array<ref OZ_KindMirror> list = s.Bridge.Mirrors;
+        if (!list)
+            return 0;
+
+        int n = 0;
+        for (int i = 0; i < list.Count(); i++)
+        {
+            if (list[i] && list[i].Mirror)
+                n++;
+        }
+        return n;
     }
 
     static void Start()
@@ -224,6 +332,32 @@ class OZ_BridgeClient
             OZ_Log.Info("bridge: disabled");
             return;
         }
+
+        // НІКОМУ ВОЗИТИ -- НЕ ЇДЕМО ВЗАГАЛІ (ТЗ-2 R2.3).
+        //
+        // Роди з домом «бот» оголошують МОДИ, підписуючись сюди: чат і новини
+        // приносить КПК, ролі й ростер -- фракції. Жодної підписки означає
+        // сервер, на якому нічого з бота не живе, -- і тоді опит раз на вісім
+        // секунд возить порожнечу вічно, а в лозі копичаться v1/poll failed
+        // про сервіс, якого нікому й не треба.
+        //
+        // Питаємо ПІСЛЯ Enabled, а не замість: адмін, який лишив Enabled: true
+        // на сервері без відповідних модів, має прочитати саме це, а не
+        // «disabled», якого він не писав.
+        if (!s_Sinks || s_Sinks.Count() == 0)
+        {
+            OZ_Log.Info("bridge: nothing on this server lives in the bot - not polling at all");
+            return;
+        }
+
+        // «У гільдії тихо» -- це СТАН, і його кажуть уголос один раз.
+        //
+        // Міст працює, база працює, гра працює, а Discord мовчить -- рівно те,
+        // що означає «Discord опціональний» (ТЗ-2 §3). Мовчазна конфігурація
+        // тут гірша за будь-яку іншу: адмін, який чекає тредів і не бачить їх,
+        // піде шукати поламане замість того, щоб увімкнути дзеркало.
+        if (MirrorCount() == 0)
+            OZ_Log.Info("bridge: every mirror is off - the bot works, the guild stays quiet");
 
         // Ставимо обидва таймаути -- і одразу кажемо, що рушій на них не
         // зважає. Це найдорожча знахідка всього моста.
@@ -355,6 +489,7 @@ class OZ_BridgeClient
         p.ServerId = b.ServerId;
         p.Cursor   = s_Cursor;
         p.Fresh    = s_Fresh;
+        FillMirrors(p.Mirrors);
         FillOnline(p.Uids);
 
         s_LastPollAt = GetGame().GetTime();

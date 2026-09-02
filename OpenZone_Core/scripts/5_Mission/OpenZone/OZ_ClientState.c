@@ -1,8 +1,8 @@
 // Клієнтська половина: те, що сервер сам вирішив надіслати.
 //
-// Тут НЕМАЄ жодного рішення -- лише пам'ять про відповідь сервера. IsAdmin()
-// служить рівно для того, щоб не малювати кнопку, якої гравець усе одно не
-// зможе натиснути; на сервері та сама перевірка робиться заново й по-справжньому.
+// Тут НЕМАЄ жодного рішення -- лише пам'ять про відповідь сервера. Прапорця
+// прав тут теж немає: клієнт КПК більше не знає, адмін гравець чи ні (ТЗ-5
+// §C2), бо не лишилось жодного екрана, який би це питав.
 
 // Слухач відповідей. Ядро не знає, хто саме відкритий на екрані, і знати не
 // повинне: воно доставляє конверт і кличе того, хто підписався.
@@ -16,8 +16,8 @@ class OZ_ResponseListener
 class OZ_ClientState
 {
     // Забути все при кінці місії. Статики переживають перепідключення, і
-    // без цього наступний сервер успадковував би ЧУЖИЙ знімок: прапорець
-    // адміна, перелік сторінок, рівень налагодження -- усе з минулого
+    // без цього наступний сервер успадковував би ЧУЖИЙ знімок: перелік
+    // сторінок, стан прив'язки, рівень налагодження -- усе з минулого
     // сервера, поки новий не пришле свій OZ_Sync. А сервер без OpenZone не
     // пришле його ніколи.
     static void Forget()
@@ -32,6 +32,7 @@ class OZ_ClientState
         // минулої місії не мають права приклеїтись до відповіді наступної.
         s_Listener = null;
         s_Watch = null;
+        s_AdminWatch = null;
         if (s_Inst)
             s_Inst.m_ResParts.Clear();
 
@@ -57,12 +58,31 @@ class OZ_ClientState
         s_Listener = l;
     }
 
+    // Відповіді АДМІНСЬКОЇ консолі -- окремий інвокер, а не гілка в
+    // сторінковому. Розділи більше не сторінки (ТЗ-5 §C2), і слухачі в них
+    // інші: сторінки слухає екран КПК, розділи -- вікно VPP. Спільний інвокер
+    // означав би, що кожен слухач фільтрує чужі конверти на око -- рівно та
+    // помилка, через яку панель фракцій адресувала свої запити на "admin".
+    private static ref ScriptInvoker s_AdminWatch;
+
+    static ScriptInvoker AdminWatch()
+    {
+        if (!s_AdminWatch)
+            s_AdminWatch = new ScriptInvoker();
+        return s_AdminWatch;
+    }
+
     private static ref OZ_SyncPayload  s_Payload;
     private static ref OZ_ClientState  s_Inst;
 
-    // Частини довгих відповідей, що ще їдуть: ключ -- сторінка|операція.
-    // Фінальний OZ_Res забирає й чистить; порядок гарантує канал.
-    private ref map<string, string> m_ResParts = new map<string, string>();
+    // Частини довгих відповідей, що ще їдуть: ключ -- НОМЕР ПОВІДОМЛЕННЯ,
+    // який роздає відправник (див. OZ_Rpc). Фінальний конверт забирає й
+    // чистить; порядок гарантує канал.
+    //
+    // Ключем була пара «сторінка + операція»: два пуші однієї операції --
+    // скажімо, дві довгі новини підряд -- перепліталися шматками, і гинули
+    // обидва. Номер робить кожну посилку окремою незалежно від того, що в ній.
+    private ref map<int, string> m_ResParts = new map<int, string>();
 
     static OZ_ClientState Instance()
     {
@@ -74,12 +94,12 @@ class OZ_ClientState
     static OZ_SyncPayload Get()    { return s_Payload; }
     static bool           Ready()  { return s_Payload != null; }
 
-    static bool IsAdmin()
-    {
-        if (!s_Payload)
-            return false;
-        return s_Payload.IsAdmin;
-    }
+    // IsAdmin() ТУТ БІЛЬШЕ НЕМАЄ, разом із полем, яке його живило.
+    //
+    // Він існував заради двох кнопок на карті КПК, які клієнт ховав від
+    // неадміна; кнопки поїхали у вкладку VPP (ТЗ-5 §C4), і викликачів не
+    // лишилось жодного. Права адміна тепер живуть лише на сервері, де вони
+    // й вирішуються.
 
     static OZ_SyncPageInfo PageInfo(string pageId)
     {
@@ -121,7 +141,6 @@ class OZ_ClientState
         OZ_LinkGate.FromSync(p.Linked, p.LinkRequired);
 
         string line = "sync received: pages=" + p.Pages.Count().ToString();
-        line += " admin=" + p.IsAdmin;
         line += " debug=" + p.DebugMode;
         line += " linked=" + p.Linked;
         line += " gate=" + p.LinkRequired;
@@ -180,14 +199,13 @@ class OZ_ClientState
         if (type != CallType.Client)
             return;
 
-        Param3<string, string, string> part;
+        Param2<int, string> part;
         if (!ctx.Read(part))
             return;
 
-        string key = part.param1 + "|" + part.param2;
         string sofar = "";
-        m_ResParts.Find(key, sofar);
-        m_ResParts.Set(key, sofar + part.param3);
+        m_ResParts.Find(part.param1, sofar);
+        m_ResParts.Set(part.param1, sofar + part.param2);
     }
 
     void OZ_Res(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
@@ -195,30 +213,75 @@ class OZ_ClientState
         if (type != CallType.Client)
             return;
 
-        Param5<string, string, bool, string, string> data;
+        Param6<int, string, string, bool, string, string> data;
         if (!ctx.Read(data))
             return;
 
         // Довге тіло приїхало частинами поперед конверта -- приклеїти.
-        string pkey = data.param1 + "|" + data.param2;
+        string body = data.param5;
         string parts = "";
-        if (m_ResParts.Find(pkey, parts))
+        if (m_ResParts.Find(data.param1, parts))
         {
-            data.param4 = parts + data.param4;
-            m_ResParts.Remove(pkey);
+            body = parts + body;
+            m_ResParts.Remove(data.param1);
         }
 
-        string line = "response page=" + data.param1;
-        line += " op=" + data.param2;
-        line += " ok=" + data.param3;
-        if (!data.param3)
-            line += " error=" + data.param5;
+        string line = "response page=" + data.param2;
+        line += " op=" + data.param3;
+        line += " ok=" + data.param4;
+        if (!data.param4)
+            line += " error=" + data.param6;
         OZ_Log.Dbg(line);
 
         if (s_Listener)
-            s_Listener.OnResponse(data.param1, data.param2, data.param3, data.param4, data.param5);
+            s_Listener.OnResponse(data.param2, data.param3, data.param4, body, data.param6);
 
         if (s_Watch)
-            s_Watch.Invoke(data.param1, data.param2, data.param3, data.param4, data.param5);
+            s_Watch.Invoke(data.param2, data.param3, data.param4, body, data.param6);
+    }
+
+    // Частина довгої АДМІНСЬКОЇ відповіді. Ключ той самий, що й у сторінок --
+    // номер повідомлення, роздає відправник, -- тому окремої мапи не треба:
+    // номери не перетинаються, бо роздає їх один лічильник.
+    void OZ_AdminResPart(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Client)
+            return;
+
+        Param2<int, string> part;
+        if (!ctx.Read(part))
+            return;
+
+        string sofar = "";
+        m_ResParts.Find(part.param1, sofar);
+        m_ResParts.Set(part.param1, sofar + part.param2);
+    }
+
+    void OZ_AdminRes(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Client)
+            return;
+
+        Param6<int, string, string, bool, string, string> data;
+        if (!ctx.Read(data))
+            return;
+
+        string body = data.param5;
+        string parts = "";
+        if (m_ResParts.Find(data.param1, parts))
+        {
+            body = parts + body;
+            m_ResParts.Remove(data.param1);
+        }
+
+        string line = "admin response section=" + data.param2;
+        line += " op=" + data.param3;
+        line += " ok=" + data.param4;
+        if (!data.param4)
+            line += " error=" + data.param6;
+        OZ_Log.Dbg(line);
+
+        if (s_AdminWatch)
+            s_AdminWatch.Invoke(data.param2, data.param3, data.param4, body, data.param6);
     }
 }

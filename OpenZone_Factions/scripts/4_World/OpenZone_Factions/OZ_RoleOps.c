@@ -278,7 +278,7 @@ class OZ_RoleOps
         }
 
         // Решта -- тільки над своїми.
-        if (OZ_Factions.OfUid(targetUid) != mine)
+        if (OZ_Factions.OrgOfUid(targetUid) != mine)
         {
             OZ_Rpc.RoleRespond(tell, op, false, "STR_OZ_ERR_NOT_YOURS");
             return false;
@@ -324,241 +324,6 @@ class OZ_RoleOps
     }
 }
 
-// Зони спавна -- адмінські операції.
-//
-// Живуть поруч із рольовими, бо приходять тим самим RPC і тією ж перевіркою
-// прав. Але на МІСТ вони не йдуть узагалі: координати належать карті, а не
-// Discord, і бот про них нічого не знає й знати не мусить.
-class OZ_SpawnOps
-{
-    static void Handle(PlayerIdentity who, string op, string arg)
-    {
-        if (!GetGame().IsServer())
-            return;
-        if (!who)
-            return;
-
-        if (!OZ_Perm.IsAdmin(who))
-        {
-            OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_ADMIN_ONLY");
-            return;
-        }
-
-        // Особиста точка: arg -- "uid" або "uid радіус". Гілка окрема, бо
-        // uid -- не слаг ролі й перевіряти його по таблиці фракцій не можна.
-        if (op == OZ_RoleOp.SPAWN_UID_HERE || op == OZ_RoleOp.SPAWN_UID_CLEAR)
-        {
-            HandlePersonal(who, op, arg);
-            return;
-        }
-
-        // arg -- "слаг" або "слаг радіус". Радіус необов'язковий: без нього
-        // двадцять метрів, бо зона в одну точку -- це купа тіл, а не табір.
-        string rest = Trimmed(arg);
-        string role = rest;
-        float radius = 20;
-
-        int sp = rest.IndexOf(" ");
-        if (sp != -1)
-        {
-            role = rest.Substring(0, sp);
-
-            // РАДІУС МУСИТЬ БУТИ ЧИСЛОМ.
-            //
-            // ToFloat() на будь-якому смітті чесно повертає нуль, і зона
-            // ставала точкою: усі спавняться в одному пікселі, один в одному.
-            // Помилку набору не видно ніде -- команда відповідала «готово».
-            string tail = Trimmed(rest.Substring(sp + 1, rest.Length() - sp - 1));
-            if (!Number(tail))
-            {
-                OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_BAD_RADIUS");
-                return;
-            }
-
-            radius = tail.ToFloat();
-        }
-
-        // ПРОБІЛ -- НЕ СЛАГ.
-        //
-        // Слаг із пробілом попереду (« duty») різався на порожній слаг і
-        // хвіст, а порожній слаг означає ЗАПАСНУ зону -- ту, куди потрапляють
-        // усі, в кого нічого не збіглося. Один зайвий пробіл у команді
-        // переносив спавн усього сервера, і відповідь була «готово».
-        role = Trimmed(role);
-
-        // Порожній слаг -- це ЗАПАСНА зона, і писати його як "" у команді
-        // незручно. Домовляємось: "-" означає порожній.
-        if (role == "-")
-            role = "";
-
-        string err;
-
-        if (op == OZ_RoleOp.SPAWN_CLEAR)
-        {
-            err = OZ_Spawns.ClearZone(role);
-        }
-        else
-        {
-            PlayerBase p = PlayerBase.Cast(GetGame().GetPlayer());
-            vector here = vector.Zero;
-
-            // Позицію беремо з ЙОГО тіла на сервері, а не з чогось, що прислав
-            // клієнт: інакше зону можна було б поставити куди завгодно, не
-            // сходячи з місця.
-            array<Man> players = new array<Man>();
-            GetGame().GetPlayers(players);
-            for (int i = 0; i < players.Count(); i++)
-            {
-                if (!players[i])
-                    continue;
-                PlayerIdentity id = players[i].GetIdentity();
-                if (!id)
-                    continue;
-                if (id.GetPlainId() != who.GetPlainId())
-                    continue;
-                here = players[i].GetPosition();
-                break;
-            }
-
-            if (here == vector.Zero)
-            {
-                OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_INTERNAL");
-                return;
-            }
-
-            err = OZ_Spawns.SetZoneHere(role, here, radius);
-        }
-
-        if (err != "")
-        {
-            OZ_Rpc.RoleRespond(who, op, false, err);
-            return;
-        }
-
-        OZ_Rpc.RoleRespond(who, op, true, "");
-    }
-
-    // Особиста точка гравця. Позиція -- тіло АДМІНА на сервері, як і в
-    // зоні: «стань там, де його дім, і натисни».
-    private static void HandlePersonal(PlayerIdentity who, string op, string arg)
-    {
-        string rest = Trimmed(arg);
-        string uid  = rest;
-        float radius = 20;
-
-        int sp = rest.IndexOf(" ");
-        if (sp != -1)
-        {
-            uid = rest.Substring(0, sp);
-
-            string tail = Trimmed(rest.Substring(sp + 1, rest.Length() - sp - 1));
-            if (!Number(tail))
-            {
-                OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_BAD_RADIUS");
-                return;
-            }
-            radius = tail.ToFloat();
-        }
-
-        uid = Trimmed(uid);
-        if (uid == "")
-        {
-            OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_NO_TARGET");
-            return;
-        }
-
-        string err;
-
-        if (op == OZ_RoleOp.SPAWN_UID_CLEAR)
-        {
-            err = OZ_Spawns.ClearPersonal(uid);
-        }
-        else
-        {
-            vector here = BodyOf(who);
-            if (here == vector.Zero)
-            {
-                OZ_Rpc.RoleRespond(who, op, false, "STR_OZ_ERR_INTERNAL");
-                return;
-            }
-
-            err = OZ_Spawns.SetPersonalHere(uid, here, radius);
-        }
-
-        if (err != "")
-        {
-            OZ_Rpc.RoleRespond(who, op, false, err);
-            return;
-        }
-
-        OZ_Rpc.RoleRespond(who, op, true, "");
-    }
-
-    // Тіло гравця НА СЕРВЕРІ -- не координата, яку прислав клієнт: інакше
-    // точку можна було б поставити куди завгодно, не сходячи з місця.
-    private static vector BodyOf(PlayerIdentity who)
-    {
-        array<Man> players = new array<Man>();
-        GetGame().GetPlayers(players);
-        for (int i = 0; i < players.Count(); i++)
-        {
-            if (!players[i])
-                continue;
-            PlayerIdentity id = players[i].GetIdentity();
-            if (!id)
-                continue;
-            if (id.GetPlainId() != who.GetPlainId())
-                continue;
-            return players[i].GetPosition();
-        }
-        return vector.Zero;
-    }
-
-    // Пробіли з обох боків. У Enforce немає Trim(), а рядок приходить із
-    // чату -- там вони будуть.
-    private static string Trimmed(string s)
-    {
-        int from = 0;
-        int to   = s.Length();
-
-        while (from < to && s.Substring(from, 1) == " ")
-            from++;
-        while (to > from && s.Substring(to - 1, 1) == " ")
-            to--;
-
-        return s.Substring(from, to - from);
-    }
-
-    // Чи це взагалі число. ToFloat() не вміє сказати «ні», тож питаємо самі.
-    private static bool Number(string s)
-    {
-        if (s == "")
-            return false;
-
-        bool dot = false;
-
-        for (int i = 0; i < s.Length(); i++)
-        {
-            string c = s.Substring(i, 1);
-
-            if (c == ".")
-            {
-                if (dot)
-                    return false;
-                dot = true;
-                continue;
-            }
-
-            // Через набір, а не через порівняння рядків: у Enforce «менше»
-            // для string не визначене, і покластись на нього не можна.
-            if ("0123456789".IndexOf(c) == -1)
-                return false;
-        }
-
-        return true;
-    }
-}
-
 // Назви операцій. Рядки збігаються з тими, що читає міст, ПОСИМВОЛЬНО.
 class OZ_RoleOp
 {
@@ -581,12 +346,13 @@ class OZ_RoleOp
     // set -- акт консолi, i leaderMay на мостi його не пропускає нiкому.
     static const string LEADER_SET      = "leader.set";
 
-    // Ці до моста не доходять: карта -- не його справа. Пара uid-варіантів
-    // -- особиста точка ОДНОГО гравця, поверх фракційних зон.
-    static const string SPAWN_HERE      = "spawn.here";
-    static const string SPAWN_CLEAR     = "spawn.clear";
-    static const string SPAWN_UID_HERE  = "spawn.uidhere";
-    static const string SPAWN_UID_CLEAR = "spawn.uidclear";
+    // Спавнових операцій тут БІЛЬШЕ НЕМАЄ -- ані імен, ані обробника.
+    //
+    // Імена поїхали в ядро 2026-08-31 (OZ_SpawnOp), бо карта КПК і вкладка
+    // VPP, які про фракції не знають, без цього мода не компілювались зовсім.
+    // Обробник поїхав слідом 2026-09-01 (OZ_SpawnSection, ТЗ-5 §C1 R6): поки
+    // він стояв тут, сервер без мода фракцій не міг завести жодної зони, хоч
+    // і зони, і їхній файл, і панель SPAWNS -- ядрові.
 }
 
 // Запрошення до фракції.
@@ -645,7 +411,7 @@ class OZ_FactionInvites
             return;
         }
 
-        if (OZ_Factions.OfUid(targetUid) == mine)
+        if (OZ_Factions.OrgOfUid(targetUid) == mine)
         {
             OZ_Rpc.RoleRespond(from, "invite", false, "STR_OZ_ERR_ALREADY_IN");
             return;
@@ -767,7 +533,7 @@ class OZ_FactionInvites
             return true;
 
         array<string> members = new array<string>();
-        OZ_Roles.FactionMembers(faction, members);
+        OZ_Roles.OrgMembers(faction, members);
         return members.Count() < f.MaxMembers;
     }
 

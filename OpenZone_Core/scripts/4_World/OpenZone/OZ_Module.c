@@ -15,10 +15,27 @@ class OZ_Module : CF_ModuleWorld
     // що позначене брудним.
     private ref Timer m_FlushTimer;
 
-    // Частини довгих запитів, що ще їдуть: ключ -- гравець|сторінка|операція.
-    // Фінальний OZ_Req забирає й чистить. Гарантований канал зберігає
+    // Відкладений старт моста -- див. OnMissionStart. Секунда: підписки
+    // трапляються в OnMissionStart чужих модулів, а не пізніше.
+    private ref Timer m_BridgeTimer;
+    private static const float BRIDGE_START_DELAY = 1.0;
+
+    // Частини довгих запитів, що ще їдуть: ключ -- ГРАВЕЦЬ|НОМЕР ПОВІДОМЛЕННЯ.
+    // Фінальний конверт забирає й чистить. Гарантований канал зберігає
     // порядок, тому «частини, потім конверт» -- інваріант, а не сподівання.
+    //
+    // Ключем була пара «сторінка + операція», і два одночасні запити на ту
+    // саму пару склеювали свої шматки в одну кашу -- див. OZ_Rpc про номер.
     private ref map<string, string> m_ReqParts = new map<string, string>();
+
+    // Ключі, чий потік ми ВИКИНУЛИ, не дочекавшись конверта: тіло переросло
+    // стелю або в польоті стало забагато ключів. Конверт по такому ключу
+    // мусить бути відхилений ЦІЛКОМ.
+    //
+    // Без цього списку виходило гірше за втрату: накопичене викидалось, а
+    // конверт приїздив і оброблявся зі своїм власним хвостом -- тобто обрізок
+    // чужого тіла проходив як цілий документ.
+    private ref array<string> m_ReqPoison = new array<string>();
     private static const float FLUSH_INTERVAL = 30.0;
 
     // Стелі проти зловмисних/обірваних частин. Легальний chunked-запит --
@@ -60,21 +77,23 @@ class OZ_Module : CF_ModuleWorld
         // моді це знайшли емпірично на восьмому доданку.
         OZ_Perm.ServerInit();
 
-        // Фракції -- служба ядра, бо їх питає не лише екран: квести,
-        // торгівля, ІІ, рація. Ідемпотентна, тож КПК і далі кличе її в себе
-        // -- порядок CF-модулів не гарантований, і на цьому стенді він уже
-        // підводив.
-        OZ_Factions.ServerLoad();
         OZ_Spawns.ServerLoad();
 
-        // Адмiнська консоль: сторiнка з власними воротами (OZ_Perm.IsAdmin)
-        // i реєстр редагованих конфiгiв. КПК допише сюди свої.
+        // Адмiнська консоль: РОЗДIЛИ у власному реєстрi, не сторiнки в
+        // спiльному (рiшення власника 2026-09-01, ТЗ-5 §C2-C3). Ворота однi
+        // й без винятків -- OZ_Perm.IsAdmin у OZ_AdminReq нижче.
         //
-        // Factions.json тут НЕМАЄ навмисно: фракцiї народжуються й вмирають
-        // тiльки через бота (рiшення власника 2026-08-30) -- iнакше в
-        // фракцiї не було б ролi в Discord. Редактор, який дозволяє дописати
-        // фракцiю в файл, був би обхiдною стежкою повз це правило.
-        OZ_PageRegistry.Register(OZ_Const.PAGE_ADMIN, "", "", new OZ_AdminPage());
+        // Factions.json у редакторi конфiгiв НЕМАЄ навмисно: фракцiї
+        // народжуються й вмирають тiльки через бота (рiшення власника
+        // 2026-08-30) -- iнакше в фракцiї не було б ролi в Discord. Редактор,
+        // який дозволяє дописати фракцiю в файл, був би обхiдною стежкою повз
+        // це правило.
+        OZ_AdminRegistry.Register(OZ_AdminSect.CONFIG, new OZ_ConfigSection());
+        OZ_AdminRegistry.Register(OZ_AdminSect.SPAWNS, new OZ_SpawnSection());
+
+        // NEWS -- у ядрі, а не в моді КПК, і це навмисно: писати новину не
+        // потрібен ані прилад, ані фракції. Потрібен лише міст, а він ядровий.
+        OZ_AdminRegistry.Register(OZ_AdminSect.NEWS, new OZ_NewsSection());
         OZ_AdminCfg.Register("Spawns", OZ_Const.PROFILE_DIR + "\\OZ_Core_Spawns.json", new OZ_SpawnsCfgApplier());
 
         OZ_Rpc.RegisterServer(this);
@@ -82,23 +101,24 @@ class OZ_Module : CF_ModuleWorld
         m_FlushTimer = new Timer(CALL_CATEGORY_SYSTEM);
         m_FlushTimer.Run(FLUSH_INTERVAL, this, "FlushTick", NULL, true);
 
-        // Рід "roles" -- другий у проєкті після "chat", і механізм родів
-        // нарешті везе більше за один. Підписка ДО Start(): перша ж пачка
-        // може приїхати раніше, ніж наступний рядок виконається.
-        OZ_BridgeClient.Subscribe("roles", new OZ_RolesSink());
-        OZ_BridgeClient.Subscribe("roster", new OZ_RosterSink());
-
-        // Пермадес, запущений НЕ з гри: команда бота робить свою половину й
-        // штовхає сюди, щоб гра зробила свою. Без цієї підписки «стерти»
-        // з Discord скидало ролі й лишало КПК небіжчика живими.
-        OZ_BridgeClient.Subscribe("wipe", new OZ_WipeSink());
-
-        OZ_BridgeClient.Start();
+        // МІСТ СТАРТУЄ НЕ ТУТ, А ТІКОМ ПІЗНІШЕ, і це не косметика.
+        //
+        // Роди оголошують МОДИ, кожен свій: чат і новини -- КПК, ролі й
+        // ростер -- фракції. Порядок CF-модулів не гарантований (перевірено
+        // на цьому стенді), тож частина підписок неминуче трапляється ПІСЛЯ
+        // OnMissionStart ядра. Стартувати опит тут означало б програти гонку
+        // тим, хто підписався пізніше, -- і втратити їхню першу пачку.
+        //
+        // Один тік затримки гарантує, що OnMissionStart відпрацював у всіх.
+        m_BridgeTimer = new Timer(CALL_CATEGORY_SYSTEM);
+        m_BridgeTimer.Run(BRIDGE_START_DELAY, this, "StartBridge", NULL, false);
 
         string summary = "core loaded: admins=" + s.AdminIds.Count();
         summary += " perms=" + OZ_Perm.Describe();
         summary += " pages=" + OZ_PageRegistry.Count().ToString();
-        summary += " factions=" + OZ_Factions.Count().ToString();
+        // Розділи консолі -- ІМЕНАМИ, а не числом: «три» не каже, чи серед них
+        // той, якого адмін шукає, а «config,spawns,factions» каже.
+        summary += " admin=" + OZ_AdminRegistry.Describe();
         summary += " spawnzones=" + OZ_Spawns.Count().ToString();
 
         // Стейджинґ окремим словом, а не в лічильнику зон: він або є, або
@@ -107,6 +127,10 @@ class OZ_Module : CF_ModuleWorld
             summary += " staging=on";
         else
             summary += " staging=off";
+
+        // ДЗЕРКАЛА -- ЧИСЛОМ У РЯДКУ ГОТОВНОСТІ. Нуль тут означає «у гільдії
+        // тихо», і це найчастіше питання адміна після «чому нічого немає».
+        summary += " mirrors=" + OZ_BridgeClient.MirrorCount().ToString();
 
         summary += " debug=" + dbg;
         OZ_Log.Info(summary);
@@ -147,102 +171,6 @@ class OZ_Module : CF_ModuleWorld
         OZ_Rpc.LinkRespond(sender, op, false, "", "STR_OZ_ERR_UNKNOWN_OP");
     }
 
-    // Зміна ролей із гри. Особа -- ЗАВЖДИ з sender: клієнт не називає, від
-    // чийого імені просить, і не може -- у конверті немає такого поля.
-    void OZ_RoleReq(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
-    {
-        if (type != CallType.Server)
-            return;
-
-        Param3<string, string, string> data;
-        if (!ctx.Read(data))
-            return;
-
-        if (!sender)
-            return;
-
-        string op         = data.param1;
-        string targetName = data.param2;
-        string arg        = data.param3;
-
-        // Ім'я -> особа, і тільки серед тих, хто В ЗОНІ. Клієнт назвав рядок;
-        // кому він належить, вирішуємо ми.
-        //
-        // АДМІНСЬКИЙ ВИНЯТОК: адреса "uid:<steam64>" називає особу точно.
-        // Приймається ЛИШЕ від адміна -- консоль і так бачить uid-и в
-        // ростері, а лідерські операції лишаються іменними: межа «клієнт не
-        // оперує чужими Steam64» стоїть для гравців, не для адмінки.
-        string targetUid = "";
-        if (targetName.IndexOf("uid:") == 0)
-        {
-            if (!OZ_Perm.IsAdmin(sender))
-            {
-                OZ_Rpc.RoleRespond(sender, op, false, "STR_OZ_ERR_ADMIN_ONLY");
-                return;
-            }
-            targetUid = targetName.Substring(4, targetName.Length() - 4);
-        }
-        else if (targetName != "")
-        {
-            targetUid = OZ_RoleOps.UidByName(targetName, sender.GetPlainId());
-
-            // СЕБЕ ЗА ІМЕНЕМ ТЕЖ МОЖНА. UidByName виключає відправника,
-            // щоб тезка не пiдставився пiд чужу операцiю, -- але той, хто
-            // називає ВЛАСНЕ iм'я, не двозначний (змiряно 2026-08-30:
-            // єдиний гравець на стендi не мiг призначити фракцiю нiкому).
-            if (targetUid == "" && sender.GetName() == targetName)
-                targetUid = sender.GetPlainId();
-        }
-
-        // Запрошення -- НЕ операція над ролями, тому й не йде в OZ_RoleOps:
-        // до згоди воно взагалі нічого не міняє в Discord.
-        if (op == "invite")
-        {
-            OZ_FactionInvites.Offer(sender, targetUid);
-            return;
-        }
-
-        if (op == "accept")
-        {
-            OZ_FactionInvites.Accept(sender);
-            return;
-        }
-
-        if (op == "decline")
-        {
-            OZ_FactionInvites.Decline(sender);
-            return;
-        }
-
-        // ПІТИ САМОМУ. Ціль -- завжди сам відправник, і саме тому це окрема
-        // операція, а не faction.clear з власним ім'ям у полі: ім'я треба
-        // спершу знайти серед присутніх, а піти з фракції людина має право
-        // незалежно від того, чи є в Зоні хтось із таким самим ім'ям.
-        if (op == "leave")
-        {
-            OZ_RoleOps.Request(sender, sender.GetPlainId(), OZ_RoleOp.FACTION_CLEAR, "");
-            return;
-        }
-
-        // Зони спавна -- не про гравця й не про Discord, тому окремою гілкою
-        // й без цілі: адмін ставить зону ТАМ, ДЕ СТОЇТЬ САМ. uid-варіанти --
-        // особиста точка одного гравця, теж від місця, де стоїть адмін.
-        //
-        // Умова НЕ переноситься на другий рядок: парсер Enforce падає на
-        // багаторядковому if iз хвостовим || (змiряно 2026-08-30, диаг-збiрка
-        // назвала саме цей рядок).
-        bool spawnOp = op == OZ_RoleOp.SPAWN_HERE || op == OZ_RoleOp.SPAWN_CLEAR;
-        if (!spawnOp)
-            spawnOp = op == OZ_RoleOp.SPAWN_UID_HERE || op == OZ_RoleOp.SPAWN_UID_CLEAR;
-        if (spawnOp)
-        {
-            OZ_SpawnOps.Handle(sender, op, arg);
-            return;
-        }
-
-        OZ_RoleOps.Request(sender, targetUid, op, arg);
-    }
-
     // Частина довгого запиту. Тільки накопичити: перевірки доступу зроблені
     // ОДИН раз у фінальному OZ_Req -- частини без конверта нікуди не ведуть.
     void OZ_ReqPart(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
@@ -250,11 +178,31 @@ class OZ_Module : CF_ModuleWorld
         if (type != CallType.Server || !sender)
             return;
 
-        Param3<string, string, string> data;
+        Param2<int, string> data;
         if (!ctx.Read(data))
             return;
 
-        string key = sender.GetPlainId() + "|" + data.param1 + "|" + data.param2;
+        TakePart(PartKey(sender, data.param1), data.param2, sender);
+    }
+
+    // Ключ потоку: гравець і номер повідомлення. Сторінки й операції в ньому
+    // більше немає -- див. OZ_Rpc про те, чому пара «сторінка + операція»
+    // ключем бути не може.
+    private string PartKey(PlayerIdentity who, int msgId)
+    {
+        return who.GetPlainId() + "|" + msgId.ToString();
+    }
+
+    // Накопичити один шматок під ключем. Спільне для сторінок і для консолі:
+    // стелі проти обірваного потоку мусять бути ОДНІ, інакше другий канал
+    // тихо лишається без них.
+    private void TakePart(string key, string chunk, PlayerIdentity sender)
+    {
+        // Потік уже отруєний -- більше нічого не накопичуємо. Чекаємо конверт,
+        // щоб відповісти відмовою й прибрати позначку.
+        if (m_ReqPoison.Find(key) != -1)
+            return;
+
         string sofar = "";
         bool known = m_ReqParts.Find(key, sofar);
 
@@ -263,23 +211,142 @@ class OZ_Module : CF_ModuleWorld
         if (!known && m_ReqParts.Count() >= REQPART_MAX_KEYS)
         {
             OZ_Log.Warn("reqpart: too many in-flight keys, dropping from " + sender.GetPlainId());
+            Poison(key);
             return;
         }
 
         // Тіло понад стелю -- або баг, або атака: викидаємо накопичене, щоб
         // не тримати чужий мегабайт до кінця сеансу.
-        if (sofar.Length() + data.param3.Length() > REQPART_MAX_BYTES)
+        if (sofar.Length() + chunk.Length() > REQPART_MAX_BYTES)
         {
             m_ReqParts.Remove(key);
             OZ_Log.Warn("reqpart: body over cap, dropped key from " + sender.GetPlainId());
+            Poison(key);
             return;
         }
 
-        m_ReqParts.Set(key, sofar + data.param3);
+        m_ReqParts.Set(key, sofar + chunk);
+    }
+
+    private void Poison(string key)
+    {
+        if (m_ReqPoison.Find(key) == -1)
+            m_ReqPoison.Insert(key);
+    }
+
+    // Забрати накопичене під ключем. Повертає false, коли потік був отруєний:
+    // тоді тіла немає й бути не може, і конверт мусить піти у відмову.
+    private bool TakeBody(string key, inout string json)
+    {
+        int bad = m_ReqPoison.Find(key);
+        if (bad != -1)
+        {
+            m_ReqPoison.Remove(bad);
+            m_ReqParts.Remove(key);
+            return false;
+        }
+
+        string parts = "";
+        if (m_ReqParts.Find(key, parts))
+        {
+            json = parts + json;
+            m_ReqParts.Remove(key);
+        }
+        return true;
+    }
+
+    // Частина довгого АДМІНСЬКОГО запиту. Накопичується в тій самій мапі, що
+    // й частини сторінок: ключ несе слово "admin" між особою й розділом, тож
+    // розділ і сторінка з однаковим іменем не склеять свої тіла в одне.
+    //
+    // Прав тут не питаємо -- рівно як і в OZ_ReqPart: частини без конверта
+    // нікуди не ведуть, а стеля на об'єм і на кількість ключів нижче захищає
+    // від того, хто шле їх і не шле конверта.
+    void OZ_AdminReqPart(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Server || !sender)
+            return;
+
+        Param2<int, string> data;
+        if (!ctx.Read(data))
+            return;
+
+        TakePart(PartKey(sender, data.param1), data.param2, sender);
+    }
+
+    // Адмінська консоль. Порядок нижче -- і є вся межа безпеки, і він
+    // коротший за сторінковий рівно тому, що тут немає пристрою: ані профілю,
+    // ані сторінки, ані замка. Одні ворота, першим рядком.
+    void OZ_AdminReq(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    {
+        if (type != CallType.Server)
+            return;
+
+        Param4<int, string, string, string> data;
+        if (!ctx.Read(data))
+            return;
+
+        // 1. Особа -- ЗАВЖДИ з sender. Ніколи з корисного навантаження.
+        if (!sender)
+            return;
+
+        string sectionId = data.param2;
+        string op        = data.param3;
+        string json      = data.param4;
+
+        // Довге тіло приїхало частинами поперед конверта -- приклеїти. До
+        // перевірки прав, бо накопичене треба прибрати НАВІТЬ у відмові:
+        // інакше чужі частини лежали б у мапі до кінця сеансу.
+        if (!TakeBody(PartKey(sender, data.param1), json))
+        {
+            OZ_Log.Warn("admin: dropped an over-cap body from " + sender.GetPlainId());
+            OZ_Rpc.AdminRespond(sender, sectionId, op, false, "", "STR_OZ_ERR_TOO_LONG");
+            return;
+        }
+
+        // 2. МЕЖА БЕЗПЕКИ, і вона одна. Розділи не мають власних перевірок:
+        //    друга перевірка в кожному моді -- це друге місце, де правило
+        //    можна забути.
+        if (!OZ_Perm.IsAdmin(sender))
+        {
+            string w0 = "rejected admin section \"" + sectionId;
+            w0 += "\" from " + sender.GetPlainId();
+            w0 += ": not an admin";
+            OZ_Log.Warn(w0);
+            OZ_Rpc.AdminRespond(sender, sectionId, op, false, "", "STR_OZ_ERR_ADMIN_ONLY");
+            return;
+        }
+
+        // 3. Розділ мусить існувати. Warn, а не Dbg: на відміну від сторінок,
+        //    які клієнт питає раз на секунду, сюди приходять лише за
+        //    натисканням, і невідоме ім'я означає розсинхрон збірок.
+        if (!OZ_AdminRegistry.Has(sectionId))
+        {
+            string w1 = "rejected admin section \"" + sectionId;
+            w1 += "\" from " + sender.GetPlainId();
+            w1 += ": no such section, have " + OZ_AdminRegistry.Describe();
+            OZ_Log.Warn(w1);
+            OZ_Rpc.AdminRespond(sender, sectionId, op, false, "", "STR_OZ_ERR_NO_SECTION");
+            return;
+        }
+
+        bool ok;
+        string err;
+
+        string res = OZ_AdminRegistry.Get(sectionId).Handle(op, json, sender, ok, err);
+
+        // Розділ міг піти по відповідь за межі сервера -- у міст, у Discord.
+        // Тоді він відповість сам, коли та приїде.
+        if (!ok && err == OZ_Const.DEFER)
+            return;
+
+        OZ_Rpc.AdminRespond(sender, sectionId, op, ok, res, err);
     }
 
     // Викинути всі недособрані частини гравця. Кличеться на дисконекті:
-    // без конверта вони нікуди не ведуть, а тримати їх нема кому.
+    // без конверта вони нікуди не ведуть, а тримати їх нема кому. Разом із
+    // ними йдуть і отруєні ключі: конверта, який мав би їх забрати, вже
+    // не буде.
     private void ForgetReqParts(string uid)
     {
         string prefix = uid + "|";
@@ -292,6 +359,12 @@ class OZ_Module : CF_ModuleWorld
         }
         for (int j = 0; j < doomed.Count(); j++)
             m_ReqParts.Remove(doomed[j]);
+
+        for (int p = m_ReqPoison.Count() - 1; p >= 0; p--)
+        {
+            if (m_ReqPoison[p].IndexOf(prefix) == 0)
+                m_ReqPoison.Remove(p);
+        }
     }
 
     // Порядок перевірок нижче -- і є межа безпеки. Міняти його не можна.
@@ -300,30 +373,29 @@ class OZ_Module : CF_ModuleWorld
         if (type != CallType.Server)
             return;
 
-        Param3<string, string, string> data;
+        Param4<int, string, string, string> data;
         if (!ctx.Read(data))
             return;
 
-        string pageId = data.param1;
-        string op     = data.param2;
-        string json   = data.param3;
-
-        // Довге тіло приїхало частинами поперед конверта -- приклеїти.
-        if (sender)
-        {
-            string pkey = sender.GetPlainId() + "|" + pageId + "|" + op;
-            string parts = "";
-            if (m_ReqParts.Find(pkey, parts))
-            {
-                json = parts + json;
-                m_ReqParts.Remove(pkey);
-            }
-        }
-
         // 1. Особа -- ЗАВЖДИ з sender. Ніколи з корисного навантаження:
-        //    туди клієнт напише що завгодно.
+        //    туди клієнт напише що завгодно. Перевірка стоїть ПЕРЕД склейкою
+        //    тіла, бо без особи немає й ключа, під яким те тіло лежить.
         if (!sender)
             return;
+
+        string pageId = data.param2;
+        string op     = data.param3;
+        string json   = data.param4;
+
+        // Довге тіло приїхало частинами поперед конверта -- приклеїти. Потік,
+        // який ми викинули по стелі, сюди не доходить: конверт по такому
+        // ключу відхиляється цілком, а не обробляється зі своїм хвостом.
+        if (!TakeBody(PartKey(sender, data.param1), json))
+        {
+            OZ_Log.Warn("page: dropped an over-cap body from " + sender.GetPlainId());
+            OZ_Rpc.Respond(sender, pageId, op, false, "", "STR_OZ_ERR_TOO_LONG");
+            return;
+        }
 
         // 2. Сторінка мусить існувати.
         if (!OZ_PageRegistry.Has(pageId))
@@ -351,9 +423,17 @@ class OZ_Module : CF_ModuleWorld
             // відмовляє. Один сеанс дав 1423 такі рядки при max_warnings = 0
             // у профілі стенду, тобто нормальна робота мода читалась як
             // аварія і топила в собі справжні попередження.
+            // ПРИЧИНУ ПИШЕМО ТУ, ЯКУ НАЗВАВ ГЕЙТ.
+            //
+            // Тут стояло глухе «not on this device» на ВСІ його відмови --
+            // а їх п'ять: сторінки немає в профілі, прилад вимкнено, прилад
+            // замкнено, прилад не ініційовано, прилад -- капсула. Рядок брехав
+            // у чотирьох випадках із п'яти, і 2026-09-01 на цьому згаяли
+            // півгодини: у лозі стояло «не на цьому пристрої», а насправді в
+            // приладу сіла батарея.
             string w2 = "rejected page \"" + pageId;
             w2 += "\" from " + sender.GetPlainId();
-            w2 += ": not on this device";
+            w2 += ": " + why;
             OZ_Log.Dbg(w2);
             OZ_Rpc.Respond(sender, pageId, op, false, "", why);
             return;
@@ -361,6 +441,7 @@ class OZ_Module : CF_ModuleWorld
 
         bool ok;
         string err;
+
         string res = OZ_PageRegistry.Get(pageId).Handler.Handle(op, json, sender, ok, err);
 
         // Сторінка могла піти по відповідь за межі сервера -- у міст, у
@@ -394,6 +475,11 @@ class OZ_Module : CF_ModuleWorld
         d.Name = pArgs.Identity.GetName();
         OZ_PlayerStore.MarkDirty(pArgs.Identity.GetPlainId());
 
+        // Базова фракція -- на вході, і саме тут, а не окремим хуком (ТЗ-1
+        // R5.5): місце, де вже прочитано файл гравця, одне, і другий хук
+        // означав би друге читання й друге місце, де про це можна забути.
+        OZ_Identity.Get().EnsureBase(pArgs.Identity.GetPlainId());
+
         string line = "connect " + pArgs.Identity.GetName();
         line += " (" + pArgs.Identity.GetPlainId();
         line += ") admin=" + admin;
@@ -422,14 +508,13 @@ class OZ_Module : CF_ModuleWorld
             OZ_Log.Warn(mism);
         }
 
-        SendSync(sender, OZ_Perm.IsAdmin(sender));
+        SendSync(sender);
     }
 
-    private void SendSync(PlayerIdentity to, bool admin)
+    private void SendSync(PlayerIdentity to)
     {
         OZ_SyncPayload p = new OZ_SyncPayload();
         p.Schema    = OZ_Const.SCHEMA_SETTINGS;
-        p.IsAdmin   = admin;
         p.DebugMode = OZ_Settings.Get().DebugMode;
 
         // Прив'язка їде тим самим конвертом. Клієнт тягне його рівно один раз,
@@ -469,31 +554,30 @@ class OZ_Module : CF_ModuleWorld
         OZ_PlayerStore.MarkDirty(dArgs.UID);
         OZ_PlayerStore.Unload(dArgs.UID);
 
-        // Запрошення до того, хто вийшов, показувати більше нікому.
-        OZ_FactionInvites.Forget(dArgs.UID);
-
-        // І ПРОЕКЦІЮ РОЛЕЙ теж забуваємо.
+        // ЗАПРОШЕННЯ Й ПРОЕКЦІЮ РОЛЕЙ ЧИСТИТЬ МОД ФРАКЦІЙ, а не ядро.
         //
-        // Вона -- відповідь моста на «зараз», а не властивість гравця. Поки
-        // він у Зоні, міст присилає її щоразу, як вона змінюється; щойно
-        // вийшов -- присилати перестає, і те, що лишилось у пам'яті, з
-        // кожною хвилиною все менше схоже на правду. Гравець міг відв'язати
-        // акаунт, вийти з гільдії, втратити фракцію -- ми про це вже не
-        // почуємо.
+        // Тут стояв виклик OZ_FactionInvites.Forget, і він пережив винесення
+        // фракцій. Ціна виявилась не косметичною: імені з незавантаженого
+        // мода в Enforce не існує навіть у мертвій гілці, тож набір без
+        // OpenZone_Factions не компілював УЗАГАЛІ -- «Can't compile "World"
+        // script module! ... Can't find variable 'OZ_FactionInvites'». Тобто
+        // правило серії «будь-який мод запускається, маючи одне лише ядро»
+        // ламав один рядок у самому ядрі.
         //
-        // Прибираємо ЗАПИС, а не ставимо порожній: «ролі немає» і «ми не
-        // знаємо» -- різні відповіді, і саме на цій різниці тримається
-        // запасний шлях через файл акаунта.
-        //
-        // До цієї правки OZ_Roles.Forget не кликав ніхто, а разом із ним був
-        // недосяжний і OZ_Factions.ForgetRole -- тобто розрізнення, яке вони
-        // боронять, не працювало ЖОДНОГО разу.
-        OZ_Roles.Forget(dArgs.UID);
+        // OZF_Module уже має свій OnInvokeDisconnect і чистить там OZ_Roles;
+        // запрошення прибираються поруч, бо належать тому ж модові.
 
         // Недособрані частини довгих запитів цього гравця -- геть.
         ForgetReqParts(dArgs.UID);
 
         OZ_Log.Dbg("disconnect " + dArgs.UID);
+    }
+
+    // Кличеться таймером, а не напряму: див. OnMissionStart про гонку
+    // підписок. Метод мусить бути НЕ приватним -- Timer шукає його по імені.
+    void StartBridge()
+    {
+        OZ_BridgeClient.Start();
     }
 
     override void OnMissionFinish(Class sender, CF_EventArgs args)

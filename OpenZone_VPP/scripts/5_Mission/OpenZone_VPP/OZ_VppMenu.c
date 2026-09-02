@@ -3,9 +3,15 @@
 // особистий спавн i пермадес. Субмод КПК доклада свою вкладку через
 // modded class -- точки розширення позначенi словом protected.
 //
-// Клiєнтський UI i НIЧОГО бiльше: кожна дiя їде на сервер каналами ядра
-// (OZ_Rpc.Request на сторiнку "admin", OZ_Rpc.RoleRequest на ролi та
-// спавни), i кожну сервер перевiряє САМ (OZ_Perm.IsAdmin).
+// Клiєнтський UI i НIЧОГО бiльше: кожна дiя їде на сервер АДМIНСЬКИМ
+// конвертом ядра (OZ_Rpc.AdminRequest у роздiл "config" чи "spawns"), i
+// кожну сервер перевiряє САМ -- OZ_Perm.IsAdmin першим рядком диспетчера.
+//
+// Досi це був конверт СТОРIНОК на сторiнку "admin", i звiдти ж росли три з
+// чотирьох поломок вкладки: панель фракцiй адресувала свiй ростер на
+// "admin", де про нього не чули; за цим стояв гейт КПК, який пропускав саме
+// й тiльки "admin"; а роль-конверт, яким їхали спавни, обробляв мод фракцiй,
+// тобто без нього панель SPAWNS говорила в порожнечу.
 //
 // Пастки VPP (змiряно в zp-research, повторено i доповнено тут):
 //  - обидва гарди обов'язковi (NO_GUI валить сервер, AVPPAdminTools -- то
@@ -21,6 +27,45 @@
 
 #ifdef AVPPAdminTools
 #ifndef NO_GUI
+
+// Слаги фракцiй ДЛЯ ПАНЕЛI СПАВНiВ -- маленький шов, а не знання.
+//
+// Зона спавну може належати фракцiї, тож циклер мусить показати перелiк. Але
+// звiдки той перелiк узявся -- справа мода фракцiй, якого може й не бути:
+// тодi список порожнiй, циклер показує саму лише запасну зону "-", i панель
+// працює далi -- слаг набирається в полi поруч.
+//
+// Заповнює його склейка @OpenZone_Factions_VPP, коли отримує ростер. До
+// 2026-09-01 Set() не кликав НIХТО в усьому деревi, тож циклер вiчно стояв
+// на "-", i завести фракцiйну зону з вкладки не можна було взагалi.
+class OZ_VppFactionSlugs
+{
+    private static ref array<string> s_Slugs;
+
+    static void Set(array<string> slugs)
+    {
+        s_Slugs = new array<string>();
+        if (!slugs)
+            return;
+
+        for (int i = 0; i < slugs.Count(); i++)
+            s_Slugs.Insert(slugs[i]);
+    }
+
+    static int Count()
+    {
+        if (!s_Slugs)
+            return 0;
+        return s_Slugs.Count();
+    }
+
+    static string At(int i)
+    {
+        if (!s_Slugs || i < 0 || i >= s_Slugs.Count())
+            return "";
+        return s_Slugs[i];
+    }
+}
 
 modded class VPPAdminHud
 {
@@ -40,53 +85,28 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     protected ref array<Widget> m_TabBtns;
     protected ref map<string, Widget> m_Panes;
 
+    // Ім'я віджета підказки для кожної панелі -- називає сама панель.
+    protected ref map<string, string> m_PaneHints;
+
     // Перелiк редагованих конфiгiв з сервера: iм'я + власник (core/pda).
     protected ref array<string> m_CfgNames;
     protected ref array<string> m_CfgOwners;
 
-    // ЧЕРГА cfg_get: рiвно один запит у польотi. Довгi вiдповiдi їдуть
-    // частинами з ключем «сторiнка|операцiя», i два одночасних cfg_get
-    // склеюють свої частини в одну кашу (змiряно 2026-08-30: Factions на
-    // три чанки не розбирався, поки поруч летiв другий запит).
+    // ЧЕРГА cfg_get: рiвно один запит у польотi.
+    //
+    // Причина, з якої вона з'явилась, ЗНЯТА 2026-09-01: частини склеювались
+    // за ключем «сторiнка|операцiя», i два одночасних cfg_get змiшували свої
+    // шматки в одну кашу (змiряно 2026-08-30: Factions на три чанки не
+    // розбирався, поки поруч летiв другий запит). Тепер ключ -- номер
+    // повiдомлення, i змiшатись вони не можуть.
+    //
+    // Черга ЛИШАЄТЬСЯ, i це не забутий код: конфiги -- десятки кiлобайт, а
+    // черга рiвняє навантаження й тримає вiдповiдi в передбачуваному порядку.
+    // Тепер це вибiр, а не обхiд дефекту.
     protected ref array<string> m_CfgQ;
     protected bool m_CfgBusy = false;
 
     protected bool m_Ears = false;
-
-    // ------------------------------------------------- фракцiї i гравцi
-    //
-    // Джерело фракцiй -- РОСТЕР, а не Factions.json: файла в реєстрi
-    // конфiгiв бiльше немає (фракцiї народжує лише бот), а для призначення
-    // досить слагiв.
-    protected ref array<string> m_Factions;
-    protected ref array<int> m_FacRowIdx;   // рядок списку -> iндекс у m_Factions
-    protected int m_FacPicked = -1;
-
-    // Ростер цiлком: картцi гравця треба все, а не лише iм'я з uid-ом.
-    protected ref array<string> m_RosterNames;
-    protected ref array<string> m_RosterUids;
-    protected ref array<string> m_RosterDNames;
-    protected ref array<string> m_RosterFactions;
-    protected ref array<string> m_RosterRanks;
-    protected ref array<string> m_RosterFRanks;
-    protected ref array<string> m_RosterTraits;
-    protected ref array<bool>   m_RosterLeads;
-    protected int m_RosterPicked = -1;
-
-    // Каталоги з реєстру бота, i що зараз пiд курсором циклерiв. FRanks --
-    // повнi id "duty:sergeant"; циклер показує лише драбину фракцiї
-    // ВИБРАНОГО гравця, тому iндекс живе окремо й скидається з вибором.
-    protected ref array<string> m_Traits;
-    protected int m_TraitAt = 0;
-    protected ref array<string> m_Ranks;
-    protected int m_RankAt = 0;
-    protected ref array<string> m_FRanks;
-    protected int m_FRankAt = 0;
-
-    // Пермадес: пiдтвердження другим натисканням, як i всюди у вкладцi
-    // (модальнi вiкна у VPP -- пастка).
-    protected bool m_WipeArmed = false;
-    protected string m_WipeUid = "";
 
     // Перемальовування списку кличе SelectRow, а якщо рушiй вiдповiсть на
     // нього OnItemSelected -- вийде рекурсiя. Прапорець рве це коло.
@@ -95,6 +115,11 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     // ------------------------------------------------- спавни
     protected ref OZ_SpawnsConfig m_SpawnsCfg;
     protected int m_SpFacAt = 0;
+
+    // Рядок списку -> що це таке i чим воно зветься. Без цього рядки були
+    // iнертнi: показану особисту точку з цього екрана не було чим торкнути.
+    protected ref array<string> m_SpawnRowKind;
+    protected ref array<string> m_SpawnRowKey;
 
     // ------------------------------------------------- raw
     protected string m_RawPicked = "";
@@ -122,33 +147,21 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         m_TabIds  = new array<string>();
         m_TabBtns = new array<Widget>();
         m_Panes   = new map<string, Widget>();
+        m_PaneHints = new map<string, string>();
         m_CfgNames  = new array<string>();
         m_CfgOwners = new array<string>();
         m_CfgQ      = new array<string>();
-        m_Factions  = new array<string>();
-        m_FacRowIdx = new array<int>();
-        m_RosterNames    = new array<string>();
-        m_RosterUids     = new array<string>();
-        m_RosterDNames   = new array<string>();
-        m_RosterFactions = new array<string>();
-        m_RosterRanks    = new array<string>();
-        m_RosterFRanks   = new array<string>();
-        m_RosterTraits   = new array<string>();
-        m_RosterLeads    = new array<bool>();
-        m_Traits  = new array<string>();
-        m_Ranks   = new array<string>();
-        m_FRanks  = new array<string>();
         m_RawRows = new array<string>();
+        m_SpawnRowKind = new array<string>();
+        m_SpawnRowKey  = new array<string>();
 
-        RegisterPane("factions", "FACTIONS", M_SUB_WIDGET.FindAnyWidget("PaneFactions"));
-        RegisterPane("spawns",   "SPAWNS",   M_SUB_WIDGET.FindAnyWidget("PaneSpawns"));
-        RegisterPane("raw",      "RAW JSON", M_SUB_WIDGET.FindAnyWidget("PaneRaw"));
+        RegisterPane("spawns",   "SPAWNS",   M_SUB_WIDGET.FindAnyWidget("PaneSpawns"), "SpawnHint");
+        RegisterPane("raw",      "RAW JSON", M_SUB_WIDGET.FindAnyWidget("PaneRaw"),    "RawHint");
 
         if (!m_Ears)
         {
             m_Ears = true;
-            OZ_ClientState.ResponseWatch().Insert(this.OnAdminResponse);
-            OZ_RoleNotice.OnAnswer.Insert(this.OnRoleAnswer);
+            OZ_ClientState.AdminWatch().Insert(this.OnAdminResponse);
         }
 
         // Панель покаже OnMenuShow: ShowSubMenu приходить одразу пiсля
@@ -162,8 +175,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         if (m_Ears)
         {
-            OZ_ClientState.ResponseWatch().Remove(this.OnAdminResponse);
-            OZ_RoleNotice.OnAnswer.Remove(this.OnRoleAnswer);
+            OZ_ClientState.AdminWatch().Remove(this.OnAdminResponse);
         }
 
         if (M_SUB_WIDGET)
@@ -172,10 +184,12 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
     // Вкладка: кнопка з окремої розмiтки, панель -- вiд того, хто реєструє.
     // Субмод КПК кличе це саме з modded OnCreate.
-    protected void RegisterPane(string id, string label, Widget pane)
+    protected void RegisterPane(string id, string label, Widget pane, string hintName = "")
     {
         if (!pane)
             return;
+
+        m_PaneHints.Set(id, hintName);
 
         Widget btn = GetGame().GetWorkspace().CreateWidgets("OpenZone_VPP/gui/layouts/oz_vpp_tab.layout", M_SUB_WIDGET);
         if (!btn)
@@ -215,19 +229,16 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     }
 
     // Панель показано -- свiжi данi. Субмод КПК довантажує своє тут.
+    //
+    // Гiлки "factions" тут БIЛЬШЕ НЕМАЄ: ростер просить та панель, яка його
+    // малює, i ядро про неї не знає. Поки цей рядок стояв тут, ядро питало
+    // ростер у розділу, якого без мода фракцiй не iснує.
     protected void OnPaneShown(string id)
     {
-        if (id == "factions")
-            Ask("roster", "{}");
         if (id == "spawns")
-        {
             AskCfg("Spawns");
-            // Циклеру фракцiй потрiбен ростер -- вiн i джерело слагiв.
-            if (m_Factions.Count() == 0)
-                Ask("roster", "{}");
-        }
         if (id == "raw")
-            Ask("cfg_list", "{}");
+            Ask(OZ_AdminSect.CONFIG, "cfg_list", "{}");
     }
 
     override void OnMenuShow()
@@ -235,8 +246,16 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         super.OnMenuShow();
         if (M_SUB_WIDGET)
             M_SUB_WIDGET.SetSort(1000);
-        Ask("cfg_list", "{}");
-        ShowPane("factions");
+        Ask(OZ_AdminSect.CONFIG, "cfg_list", "{}");
+
+        // ПЕРША ЗАРЕЄСТРОВАНА, а не названа рядком.
+        //
+        // Тут стояло ShowPane("factions") -- панель, яку ядро не реєструє. Без
+        // @OpenZone_Factions_VPP вiкно вiдкривалось ПОРОЖНIМ: жодна панель не
+        // показана, CurrentPane() повертає порожнiй рядок, i всi
+        // повiдомлення -- включно з рядком помилки -- летiли в нiкуди.
+        if (m_TabIds.Count() > 0)
+            ShowPane(m_TabIds[0]);
     }
 
     override void HideBrokenWidgets(bool state)
@@ -265,9 +284,13 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
     // ---------------------------------------------------------- транспорт
 
-    protected void Ask(string op, string json)
+    // Один розділ на виклик, і розділ називає ВИКЛИКАЧ. Панель фракцій просить
+    // свій "factions", ядрова половина -- "config" і "spawns". Поки адреса
+    // була захована тут і завжди дорівнювала "admin", склейка фракцій слала
+    // ростер туди, де про нього не чули, і мовчала про це.
+    protected void Ask(string sectionId, string op, string json)
     {
-        OZ_Rpc.Request(OZ_Const.PAGE_ADMIN, op, json);
+        OZ_Rpc.AdminRequest(sectionId, op, json);
     }
 
     protected void AskCfg(string name)
@@ -284,7 +307,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             return;
 
         m_CfgBusy = true;
-        Ask("cfg_get:" + m_CfgQ[0], "{}");
+        Ask(OZ_AdminSect.CONFIG, "cfg_get:" + m_CfgQ[0], "{}");
     }
 
     protected void CfgDone(string name)
@@ -299,23 +322,40 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     {
         // Тiло їде СИРИМ: конверт зi строковим полем рiзався б на 1023
         // байтах при серверному розборi (та сама пастка, що й у cfg_get).
-        Ask("cfg_set:" + name, body);
+        Ask(OZ_AdminSect.CONFIG, "cfg_set:" + name, body);
     }
 
+    // Пiдказка -- у рядок ТIЄЇ панелi, що на екранi.
+    //
+    // Iм'я вiджета називає САМА панель у RegisterPane. Перебiр вiдомих iмен
+    // лишився запасним ходом для панелей, зареєстрованих старим викликом, i
+    // саме через нього панель рацiї (RadHint) викидала всi свої пiдказки: її
+    // iм'я в перелiку ядра нiколи не значилось, а ядро й не мусить знати
+    // iмена вiджетiв чужих модiв.
     protected void Hint(string t)
     {
+        string id = CurrentPane();
+        Widget p = m_Panes.Get(id);
+        if (!p)
+            return;
+
         TextWidget h;
-        Widget p = m_Panes.Get(CurrentPane());
-        if (p)
-        {
+
+        string named = "";
+        if (m_PaneHints.Find(id, named) && named != "")
+            h = TextWidget.Cast(p.FindAnyWidget(named));
+
+        if (!h)
+            h = TextWidget.Cast(p.FindAnyWidget("SpawnHint"));
+        if (!h)
+            h = TextWidget.Cast(p.FindAnyWidget("RawHint"));
+        if (!h)
             h = TextWidget.Cast(p.FindAnyWidget("FacHint"));
-            if (!h)
-                h = TextWidget.Cast(p.FindAnyWidget("SpawnHint"));
-            if (!h)
-                h = TextWidget.Cast(p.FindAnyWidget("RawHint"));
-            if (!h)
-                h = TextWidget.Cast(p.FindAnyWidget("PdaHint"));
-        }
+        if (!h)
+            h = TextWidget.Cast(p.FindAnyWidget("PdaHint"));
+        if (!h)
+            h = TextWidget.Cast(p.FindAnyWidget("RadHint"));
+
         if (h)
             h.SetText(t);
     }
@@ -333,9 +373,21 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
     // ---------------------------------------------------------- вiдповiдi
 
-    void OnAdminResponse(string pageId, string op, bool ok, string json, string error)
+    void OnAdminResponse(string sectionId, string op, bool ok, string json, string error)
     {
-        if (pageId != OZ_Const.PAGE_ADMIN)
+        // Спавни -- ТЕЖ НАШI, i це нове.
+        //
+        // Ранiше вiдповiдь на SPAWN HERE приходила рольовим конвертом, i
+        // пiдписаний на неї був лише pbo фракцiй. Без нього натискання не
+        // давало нi пiдказки, нi помилки, нi оновлення списку: успiх був
+        // невiдрiзненний вiд мовчазної вiдмови.
+        if (sectionId == OZ_AdminSect.SPAWNS)
+        {
+            OnSpawnAnswer(op, ok, error);
+            return;
+        }
+
+        if (sectionId != OZ_AdminSect.CONFIG)
             return;
 
         if (!ok)
@@ -343,8 +395,6 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             // Вiдмова на cfg_get мусить звiльнити чергу, iнакше вона стане.
             if (op.IndexOf("cfg_get:") == 0)
                 CfgDone(op.Substring(8, op.Length() - 8));
-            if (op.IndexOf("player_wipe:") == 0)
-                m_WipeArmed = false;
             Hint("#" + error);
             return;
         }
@@ -385,28 +435,42 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             return;
         }
 
-        if (op == "roster")
+    }
+
+    // Вiдповiдь на спавнову операцiю: сказати, що вийшло, i перечитати список.
+    protected void OnSpawnAnswer(string op, bool ok, string error)
+    {
+        if (!IsOpen())
+            return;
+
+        if (!ok)
         {
-            OZ_AdminRoster r;
-            string rerr;
-            if (JsonFileLoader<OZ_AdminRoster>.LoadData(json, r, rerr) && r)
-                BuildRoster(r);
+            // ВІДМОВУ ЛИШАЄМО НА ЕКРАНІ й списку не чіпаємо.
+            //
+            // Тут стояло перечитування «в обох випадках, щоб адмін бачив, що
+            // нічого не змінилось». Ціною була сама причина: відповідь на той
+            // cfg_get приходила за мить і писала в той самий рядок своє
+            // «Spawns loaded», а рядок один. Змiряно на стендi: слаг "zzz"
+            // мовчки не додався, i єдиним слiдом операцiї було слово
+            // «loaded». Відмова нічого не змінила -- отже й перечитувати
+            // нічого.
+            Hint(op + ": " + Widget.TranslateString("#" + error));
             return;
         }
 
-        if (op.IndexOf("player_wipe:") == 0)
-        {
-            m_WipeArmed = false;
-            Hint("wiped: the character starts over as a novice stalker");
-            // Ролi їдуть через Discord -- ростер оновлюємо з запасом.
-            GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.AskRoster, 2500, false);
-            return;
-        }
+        Hint(op + ": done");
+        AskCfg("Spawns");
     }
 
     // Текст конфiгу приїхав. Субмод КПК перехоплює свої iмена через super.
     protected void OnCfgText(string name, string body)
     {
+        // НЕ return: той самий Spawns може бути потрiбен ОБОМ панелям --
+        // списку зон i сирому редактору, якщо в ньому вибрано саме його.
+        // Ранiше тут стояв ранній вихiд, i через нього єдиний рядок списку
+        // RAW JSON (а «Spawns» -- єдиний ядровий конфiг у ньому) не мiг
+        // наповнити поле редактора НIКОЛИ: клiк перемальовував список зон,
+        // поле лишалось порожнiм, а APPLY слав порожнiй рядок як cfg_set.
         if (name == "Spawns")
         {
             OZ_SpawnsConfig sc;
@@ -416,16 +480,20 @@ class OZ_VppAdminMenu : AdminHudSubMenu
                 m_SpawnsCfg = sc;
                 RebuildSpawnList();
             }
-            return;
         }
 
-        // Iнакше -- сирий редактор.
+        // Сирий редактор -- окремим питанням, а не «iнакше».
         if (name == m_RawPicked)
         {
             MultilineEditBoxWidget ed = MultilineEditBoxWidget.Cast(M_SUB_WIDGET.FindAnyWidget("RawEdit"));
             if (ed)
                 ed.SetText(body);
-            Hint(name + " loaded");
+
+            // Пiдказку -- ЛИШЕ коли редактор на екранi. Рядок пiдказки в
+            // панелi один, i «Spawns loaded», написане поверх повiдомлення
+            // сусiдньої панелi, стирає саме те, заради чого воно писалось.
+            if (CurrentPane() == "raw")
+                Hint(name + " loaded");
         }
     }
 
@@ -441,347 +509,6 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         RebuildRawList();
     }
 
-    void OnRoleAnswer(string op, bool ok, string why)
-    {
-        if (!IsOpen())
-            return;
-
-        string line = op;
-        if (ok)
-            line += ": done";
-        else
-            line += ": " + Widget.TranslateString("#" + why);
-        Hint(line);
-
-        // Умова не переноситься: парсер Enforce падає на багаторядковому
-        // if iз хвостовим || (змiряно 2026-08-30).
-        bool spawnOp = op == OZ_RoleOp.SPAWN_HERE || op == OZ_RoleOp.SPAWN_CLEAR;
-        if (!spawnOp)
-            spawnOp = op == OZ_RoleOp.SPAWN_UID_HERE || op == OZ_RoleOp.SPAWN_UID_CLEAR;
-        if (spawnOp)
-        {
-            AskCfg("Spawns");
-            return;
-        }
-
-        // Ролi їдуть через Discord: перепитуємо ростер трохи згодом, i ще
-        // раз пiзнiше -- проекцiя вертається не миттєво.
-        GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.AskRoster, 1500, false);
-        GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.AskRoster, 6000, false);
-    }
-
-    protected void AskRoster()
-    {
-        if (IsOpen())
-            Ask("roster", "{}");
-    }
-
-    // ---------------------------------------------------------- фракцiї
-
-    protected void BuildRoster(OZ_AdminRoster r)
-    {
-        m_Repaint = true;
-
-        // Слаги фракцiй i каталоги -- з того самого конверта.
-        m_Factions.Clear();
-        if (r.Factions)
-        {
-            for (int fi = 0; fi < r.Factions.Count(); fi++)
-                m_Factions.Insert(r.Factions[fi]);
-        }
-
-        m_Traits.Clear();
-        if (r.Traits)
-        {
-            for (int ti = 0; ti < r.Traits.Count(); ti++)
-                m_Traits.Insert(r.Traits[ti]);
-        }
-        if (m_TraitAt >= m_Traits.Count())
-            m_TraitAt = 0;
-
-        m_Ranks.Clear();
-        if (r.Ranks)
-        {
-            for (int ri = 0; ri < r.Ranks.Count(); ri++)
-                m_Ranks.Insert(r.Ranks[ri]);
-        }
-        if (m_RankAt >= m_Ranks.Count())
-            m_RankAt = 0;
-
-        m_FRanks.Clear();
-        if (r.FRanks)
-        {
-            for (int qi = 0; qi < r.FRanks.Count(); qi++)
-                m_FRanks.Insert(r.FRanks[qi]);
-        }
-
-        RebuildFacList();
-        PaintSpawnCycler();
-        PaintTraitCycler();
-        PaintRankCycler();
-
-        // Вибiр переживає оновлення: ростер перечитується сам пiсля кожної
-        // операцiї, i губити вiд цього видiлення -- значить клацати гравця
-        // заново пiсля кожної кнопки.
-        string keepUid = "";
-        if (m_RosterPicked >= 0 && m_RosterPicked < m_RosterUids.Count())
-            keepUid = m_RosterUids[m_RosterPicked];
-
-        m_RosterNames.Clear();
-        m_RosterUids.Clear();
-        m_RosterDNames.Clear();
-        m_RosterFactions.Clear();
-        m_RosterRanks.Clear();
-        m_RosterFRanks.Clear();
-        m_RosterTraits.Clear();
-        m_RosterLeads.Clear();
-        m_RosterPicked = -1;
-        m_WipeArmed = false;
-
-        for (int i = 0; i < r.Rows.Count(); i++)
-        {
-            OZ_AdminRosterRow row = r.Rows[i];
-
-            m_RosterNames.Insert(row.Name);
-            m_RosterUids.Insert(row.Uid);
-            m_RosterDNames.Insert(row.DName);
-            m_RosterFactions.Insert(row.Faction);
-            m_RosterRanks.Insert(row.Rank);
-            m_RosterFRanks.Insert(row.FRank);
-            m_RosterTraits.Insert(row.Traits);
-            m_RosterLeads.Insert(row.Leader);
-
-            if (keepUid != "" && row.Uid == keepUid)
-                m_RosterPicked = i;
-        }
-
-        RepaintRoster();
-        m_Repaint = false;
-        FillPlayerCard();
-        PaintFRankCycler();
-    }
-
-    // Список гравцiв: компактний рядок, видiлений позначено стрiлкою --
-    // пiдсвiтка рядка листбокса непомiтна, i це вже коштувало плутанини.
-    protected void RepaintRoster()
-    {
-        TextListboxWidget lb = TextListboxWidget.Cast(M_SUB_WIDGET.FindAnyWidget("FacRoster"));
-        if (!lb)
-            return;
-
-        lb.ClearItems();
-
-        for (int i = 0; i < m_RosterNames.Count(); i++)
-        {
-            string line = "";
-            if (i == m_RosterPicked)
-                line = "> ";
-
-            line += m_RosterNames[i];
-            if (m_RosterFactions[i] != "")
-            {
-                line += "  --  " + m_RosterFactions[i];
-                if (m_RosterLeads[i])
-                    line += " [L]";
-            }
-
-            lb.AddItem(line, NULL, 0);
-
-            if (i == m_RosterPicked)
-                lb.SelectRow(i);
-        }
-    }
-
-    // Картка гравця: кожен факт своїм рядком, бо в один вони не влазять.
-    protected void FillPlayerCard()
-    {
-        TextWidget nameT    = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("InfoName"));
-        TextWidget discordT = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("InfoDiscord"));
-        TextWidget steamT   = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("InfoSteam"));
-        TextWidget facT     = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("InfoFaction"));
-        TextWidget rankT    = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("InfoRank"));
-        TextWidget traitsT  = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("InfoTraits"));
-
-        if (m_RosterPicked < 0 || m_RosterPicked >= m_RosterNames.Count())
-        {
-            if (nameT)
-                nameT.SetText("pick a player on the right");
-            if (discordT)
-                discordT.SetText("");
-            if (steamT)
-                steamT.SetText("");
-            if (facT)
-                facT.SetText("");
-            if (rankT)
-                rankT.SetText("");
-            if (traitsT)
-                traitsT.SetText("");
-            return;
-        }
-
-        int i = m_RosterPicked;
-
-        if (nameT)
-            nameT.SetText(m_RosterNames[i]);
-
-        if (discordT)
-        {
-            string dn = m_RosterDNames[i];
-            if (dn == "")
-                dn = "-";
-            discordT.SetText("discord: " + dn);
-        }
-
-        if (steamT)
-            steamT.SetText("steam: " + m_RosterUids[i]);
-
-        if (facT)
-        {
-            string fac = m_RosterFactions[i];
-            if (fac == "")
-                fac = "-";
-            if (m_RosterFRanks[i] != "")
-                fac += "  ^" + m_RosterFRanks[i];
-            if (m_RosterLeads[i])
-                fac += "  [leader]";
-            facT.SetText("faction: " + fac);
-        }
-
-        if (rankT)
-        {
-            string rk = m_RosterRanks[i];
-            if (rk == "")
-                rk = "-";
-            rankT.SetText("stalker rank: " + rk);
-        }
-
-        if (traitsT)
-        {
-            string tr = m_RosterTraits[i];
-            if (tr == "")
-                tr = "-";
-            traitsT.SetText("traits: " + tr);
-        }
-    }
-
-    protected void RebuildFacList()
-    {
-        TextListboxWidget lb = TextListboxWidget.Cast(M_SUB_WIDGET.FindAnyWidget("FacCfgList"));
-        if (!lb)
-            return;
-
-        string filter = "";
-        EditBoxWidget se = EditBoxWidget.Cast(M_SUB_WIDGET.FindAnyWidget("FacSearch"));
-        if (se)
-        {
-            filter = se.GetText();
-            filter.ToLower();
-        }
-
-        lb.ClearItems();
-        m_FacRowIdx.Clear();
-
-        for (int i = 0; i < m_Factions.Count(); i++)
-        {
-            string line = m_Factions[i];
-
-            if (filter != "")
-            {
-                string probe = line;
-                probe.ToLower();
-                if (probe.IndexOf(filter) == -1)
-                    continue;
-            }
-
-            // Видiлення позначаємо стрiлкою: пiдсвiтка рядка листбокса
-            // непомiтна, i хто видiлений -- було не зрозумiло.
-            if (i == m_FacPicked)
-                line = "> " + line;
-
-            int row = lb.AddItem(line, NULL, 0);
-            m_FacRowIdx.Insert(i);
-
-            if (i == m_FacPicked)
-                lb.SelectRow(row);
-        }
-    }
-
-    // Цiль дiй з гравцем: точна адреса uid з ростера. Сервер приймає таку
-    // форму лише вiд адмiна -- тезки й самопризначення перестають бути
-    // проблемою.
-    protected string PickedPlayer()
-    {
-        if (m_RosterPicked < 0 || m_RosterPicked >= m_RosterUids.Count())
-            return "";
-        return m_RosterUids[m_RosterPicked];
-    }
-
-    protected void PaintTraitCycler()
-    {
-        TextWidget t = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnTraitText"));
-        if (!t)
-            return;
-
-        if (m_Traits.Count() == 0)
-        {
-            t.SetText("trait: none known yet");
-            return;
-        }
-        t.SetText("trait: " + m_Traits[m_TraitAt]);
-    }
-
-    protected void PaintRankCycler()
-    {
-        TextWidget t = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnRankText"));
-        if (!t)
-            return;
-
-        if (m_Ranks.Count() == 0)
-        {
-            t.SetText("rank: none known yet");
-            return;
-        }
-        t.SetText("rank: " + m_Ranks[m_RankAt]);
-    }
-
-    // Драбина фракцiї ВИБРАНОГО гравця, голими слагами. Порожньо -- гравець
-    // не вибраний, поза фракцiєю, або в його фракцiї звань не завели.
-    protected void FRankOptions(array<string> outBare)
-    {
-        if (m_RosterPicked < 0 || m_RosterPicked >= m_RosterFactions.Count())
-            return;
-
-        string prefix = m_RosterFactions[m_RosterPicked] + ":";
-        if (prefix == ":")
-            return;
-
-        for (int i = 0; i < m_FRanks.Count(); i++)
-        {
-            if (m_FRanks[i].IndexOf(prefix) == 0)
-                outBare.Insert(m_FRanks[i].Substring(prefix.Length(), m_FRanks[i].Length() - prefix.Length()));
-        }
-    }
-
-    protected void PaintFRankCycler()
-    {
-        TextWidget t = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnFRankText"));
-        if (!t)
-            return;
-
-        array<string> opts = new array<string>();
-        FRankOptions(opts);
-
-        if (opts.Count() == 0)
-        {
-            t.SetText("faction rank: none here");
-            return;
-        }
-
-        if (m_FRankAt >= opts.Count())
-            m_FRankAt = 0;
-        t.SetText("faction rank: " + opts[m_FRankAt]);
-    }
-
     // ---------------------------------------------------------- спавни
 
     protected void RebuildSpawnList()
@@ -790,7 +517,24 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         if (!lb || !m_SpawnsCfg)
             return;
 
+        m_Repaint = true;
+
         lb.ClearItems();
+        m_SpawnRowKind.Clear();
+        m_SpawnRowKey.Clear();
+
+        // СТЕЙДЖИНҐ -- ПЕРШИМ РЯДКОМ, i навiть коли його немає.
+        //
+        // Це точка найпершої появи персонажа, i досi її не було видно у
+        // вкладцi зовсiм: задати чи зняти її можна було лише з карти КПК.
+        // Рядок «staging   (not set)» вiдповiдає на питання, яке iнакше
+        // вимагало б читати файл руками.
+        string stg = "staging   (not set)";
+        if (m_SpawnsCfg.Staging && m_SpawnsCfg.Staging.Center != "")
+            stg = "staging   " + m_SpawnsCfg.Staging.Center + "   r=" + m_SpawnsCfg.Staging.Radius.ToString();
+        lb.AddItem(stg, NULL, 0);
+        m_SpawnRowKind.Insert("zone");
+        m_SpawnRowKey.Insert("*");
 
         if (m_SpawnsCfg.Zones)
         {
@@ -798,10 +542,17 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             {
                 OZ_SpawnZone z = m_SpawnsCfg.Zones[i];
                 string slug = z.Role;
-                if (slug == "")
-                    slug = "- (fallback)";
-                string line = slug + "   " + z.Center + "   r=" + z.Radius.ToString();
+                string shown = slug;
+                if (shown == "")
+                    shown = "- (fallback)";
+                string line = shown + "   " + z.Center + "   r=" + z.Radius.ToString();
                 lb.AddItem(line, NULL, 0);
+                m_SpawnRowKind.Insert("zone");
+                // Порожнiй слаг у полi -- це «нiчого не набрано», тобто
+                // циклер. Пишемо "-", який сервер розумiє як порожнiй.
+                if (slug == "")
+                    slug = "-";
+                m_SpawnRowKey.Insert(slug);
             }
         }
 
@@ -814,11 +565,12 @@ class OZ_VppAdminMenu : AdminHudSubMenu
                 OZ_SpawnPersonal p = m_SpawnsCfg.Personal[k];
                 string pline = "player " + p.Uid + "   " + p.Center + "   r=" + p.Radius.ToString();
                 lb.AddItem(pline, NULL, 0);
+                m_SpawnRowKind.Insert("uid");
+                m_SpawnRowKey.Insert(p.Uid);
             }
         }
 
-        if (lb.GetNumItems() == 0)
-            lb.AddItem("no zones yet - stand somewhere and press SPAWN HERE", NULL, 0);
+        m_Repaint = false;
     }
 
     protected void PaintSpawnCycler()
@@ -826,21 +578,46 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         TextWidget t = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnSpFacText"));
         if (!t)
             return;
-        t.SetText("faction: " + SpawnSlugAt(m_SpFacAt));
+        t.SetText("cycler: " + SpawnSlugAt(m_SpFacAt));
+    }
+
+    // ЩО САМЕ поїде в операцiю: поле сильнiше за циклер.
+    //
+    // Циклер перелiчує вiдоме -- органiзацiї й базовi фракцiї з ростера. Поле
+    // приймає те, чого в перелiку немає й бути не може: "*" (стейджинґ), "-"
+    // (запасна зона) i будь-який слаг, про який ця збiрка ще не чула. Рiвно
+    // той самий договiр, що був на картi КПК, де полем слага служило поле
+    // iменi мiтки, -- лише тепер вiн живе там, де решта спавнiв.
+    protected string PickedSlug()
+    {
+        string typed = GetEdit("SpSlug");
+
+        // Пробiли з країв: людина набирає в полi, i « duty» рiзалось би на
+        // порожнiй слаг -- тобто мовчки переносило б ЗАПАСНУ зону.
+        while (typed.Length() > 0 && typed.Substring(0, 1) == " ")
+            typed = typed.Substring(1, typed.Length() - 1);
+        while (typed.Length() > 0 && typed.Substring(typed.Length() - 1, 1) == " ")
+            typed = typed.Substring(0, typed.Length() - 1);
+
+        if (typed != "")
+            return typed;
+
+        return SpawnSlugAt(m_SpFacAt);
     }
 
     protected string SpawnSlugAt(int at)
     {
-        // Останнiй пункт циклу -- запасна зона "-".
-        int n = m_Factions.Count();
+        // Останнiй пункт циклу -- запасна зона "-". Без мода фракцiй перелiк
+        // порожнiй, i вона лишається єдиним варiантом.
+        int n = OZ_VppFactionSlugs.Count();
         if (n == 0 || at >= n)
             return "-";
-        return m_Factions[at];
+        return OZ_VppFactionSlugs.At(at);
     }
 
     protected void CycleSpawnFaction()
     {
-        int n = m_Factions.Count();
+        int n = OZ_VppFactionSlugs.Count();
         m_SpFacAt = (m_SpFacAt + 1) % (n + 1);
         PaintSpawnCycler();
     }
@@ -877,35 +654,6 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         string nm = w.GetName();
 
-        if (nm == "FacCfgList")
-        {
-            if (row >= 0 && row < m_FacRowIdx.Count())
-            {
-                m_FacPicked = m_FacRowIdx[row];
-                m_Repaint = true;
-                RebuildFacList();
-                m_Repaint = false;
-                Hint("faction: " + m_Factions[m_FacPicked]);
-            }
-            return true;
-        }
-
-        if (nm == "FacRoster")
-        {
-            if (row >= 0 && row < m_RosterNames.Count())
-            {
-                m_RosterPicked = row;
-                m_WipeArmed = false;
-                m_FRankAt = 0;
-                m_Repaint = true;
-                RepaintRoster();
-                m_Repaint = false;
-                FillPlayerCard();
-                PaintFRankCycler();
-            }
-            return true;
-        }
-
         if (nm == "RawList")
         {
             if (row >= 0 && row < m_RawRows.Count())
@@ -916,16 +664,35 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             return true;
         }
 
+        // Рядок списку спавнiв КЛАДЕ СЕБЕ В ПОЛЕ, а не робить нiчого.
+        //
+        // Обробника в цього списку не було жодного, тож єдиний спосiб зняти
+        // показану особисту точку був -- набрати Steam64 з екрана руками.
+        // Тепер клiк заповнює те поле, якого стосується рядок, i друга дiя
+        // (CLEAR) б'є саме туди, куди дивиться адмiн.
+        if (nm == "SpawnList")
+        {
+            if (row >= 0 && row < m_SpawnRowKind.Count())
+            {
+                if (m_SpawnRowKind[row] == "uid")
+                {
+                    SetEdit("SpUid", m_SpawnRowKey[row]);
+                    Hint("player " + m_SpawnRowKey[row] + " picked");
+                }
+                else
+                {
+                    SetEdit("SpSlug", m_SpawnRowKey[row]);
+                    Hint("zone \"" + m_SpawnRowKey[row] + "\" picked");
+                }
+            }
+            return true;
+        }
+
         return super.OnItemSelected(w, x, y, row, column, oldRow, oldColumn);
     }
 
     override bool OnChange(Widget w, int x, int y, bool finished)
     {
-        if (w && w.GetName() == "FacSearch")
-        {
-            RebuildFacList();
-            return true;
-        }
         return super.OnChange(w, x, y, finished);
     }
 
@@ -945,198 +712,6 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             return true;
         }
 
-        if (nm == "BtnAssign" || nm == "BtnClearFac" || nm == "BtnLead")
-        {
-            string uid = PickedPlayer();
-            if (uid == "")
-            {
-                Hint("pick a player on the list first");
-                return true;
-            }
-            string player = "uid:" + uid;
-
-            if (nm == "BtnAssign")
-            {
-                if (m_FacPicked < 0 || m_FacPicked >= m_Factions.Count())
-                {
-                    Hint("pick a faction on the left first");
-                    return true;
-                }
-                OZ_Rpc.RoleRequest(OZ_RoleOp.FACTION_SET, player, m_Factions[m_FacPicked]);
-            }
-            else if (nm == "BtnClearFac")
-            {
-                OZ_Rpc.RoleRequest(OZ_RoleOp.FACTION_CLEAR, player, "");
-            }
-            else
-            {
-                // Консоль ставить лiдера НАПРЯМУ. leader.transfer тут не
-                // годиться: вiн -- акт лiдера й вимагає, щоб актор сам
-                // тримав пост (змiряно: nobody to hand it over from).
-                OZ_Rpc.RoleRequest(OZ_RoleOp.LEADER_SET, player, "");
-            }
-            return true;
-        }
-
-        if (nm == "BtnRank")
-        {
-            if (m_Ranks.Count() > 0)
-                m_RankAt = (m_RankAt + 1) % m_Ranks.Count();
-            PaintRankCycler();
-            return true;
-        }
-
-        if (nm == "BtnFRank")
-        {
-            array<string> copts = new array<string>();
-            FRankOptions(copts);
-            if (copts.Count() > 0)
-                m_FRankAt = (m_FRankAt + 1) % copts.Count();
-            PaintFRankCycler();
-            return true;
-        }
-
-        if (nm == "BtnFRankSet" || nm == "BtnFRankClear")
-        {
-            string fuid = PickedPlayer();
-            if (fuid == "")
-            {
-                Hint("pick a player on the list first");
-                return true;
-            }
-
-            if (nm == "BtnFRankSet")
-            {
-                array<string> fopts = new array<string>();
-                FRankOptions(fopts);
-                if (fopts.Count() == 0)
-                {
-                    Hint("his faction has no ranks - add them via the bot");
-                    return true;
-                }
-                if (m_FRankAt >= fopts.Count())
-                    m_FRankAt = 0;
-                OZ_Rpc.RoleRequest(OZ_RoleOp.FRANK_SET, "uid:" + fuid, fopts[m_FRankAt]);
-            }
-            else
-            {
-                OZ_Rpc.RoleRequest(OZ_RoleOp.FRANK_SET, "uid:" + fuid, "");
-            }
-            return true;
-        }
-
-        if (nm == "BtnRankSet" || nm == "BtnRankClear")
-        {
-            string ruid = PickedPlayer();
-            if (ruid == "")
-            {
-                Hint("pick a player on the list first");
-                return true;
-            }
-
-            if (nm == "BtnRankSet")
-            {
-                if (m_Ranks.Count() == 0)
-                {
-                    Hint("no ranks in the bot registry yet");
-                    return true;
-                }
-                OZ_Rpc.RoleRequest(OZ_RoleOp.RANK_SET, "uid:" + ruid, m_Ranks[m_RankAt]);
-            }
-            else
-            {
-                // Порожнiй аргумент -- зняти звання зовсiм: так читає його
-                // мiст (rank.set без arg знiмає всi).
-                OZ_Rpc.RoleRequest(OZ_RoleOp.RANK_SET, "uid:" + ruid, "");
-            }
-            return true;
-        }
-
-        if (nm == "BtnTrait")
-        {
-            if (m_Traits.Count() > 0)
-                m_TraitAt = (m_TraitAt + 1) % m_Traits.Count();
-            PaintTraitCycler();
-            return true;
-        }
-
-        if (nm == "BtnTraitAdd" || nm == "BtnTraitDel")
-        {
-            string tuid = PickedPlayer();
-            if (tuid == "")
-            {
-                Hint("pick a player on the list first");
-                return true;
-            }
-            if (m_Traits.Count() == 0)
-            {
-                Hint("no traits in the bot registry yet");
-                return true;
-            }
-
-            if (nm == "BtnTraitAdd")
-                OZ_Rpc.RoleRequest(OZ_RoleOp.TRAIT_ADD, "uid:" + tuid, m_Traits[m_TraitAt]);
-            else
-                OZ_Rpc.RoleRequest(OZ_RoleOp.TRAIT_REMOVE, "uid:" + tuid, m_Traits[m_TraitAt]);
-            return true;
-        }
-
-        if (nm == "BtnPSpawn" || nm == "BtnPSpawnClear")
-        {
-            string suid = PickedPlayer();
-            if (suid == "")
-            {
-                Hint("pick a player on the list first");
-                return true;
-            }
-
-            if (nm == "BtnPSpawn")
-            {
-                string arg = suid;
-                string rad = GetEdit("PSpRadius");
-                if (rad != "")
-                    arg += " " + rad;
-                OZ_Rpc.RoleRequest(OZ_RoleOp.SPAWN_UID_HERE, "", arg);
-            }
-            else
-            {
-                OZ_Rpc.RoleRequest(OZ_RoleOp.SPAWN_UID_CLEAR, "", suid);
-            }
-            return true;
-        }
-
-        if (nm == "BtnWipe")
-        {
-            string wuid = PickedPlayer();
-            if (wuid == "")
-            {
-                Hint("pick a player on the list first");
-                return true;
-            }
-
-            // Пiдтвердження другим натисканням ПО ТОМУ Ж гравцевi: змiна
-            // вибору скидає зброю, iнакше пiдтвердженням для одного стало
-            // б натискання, зроблене для iншого.
-            if (!m_WipeArmed || m_WipeUid != wuid)
-            {
-                m_WipeArmed = true;
-                m_WipeUid = wuid;
-                Hint("press WIPE again to erase " + m_RosterNames[m_RosterPicked] + " forever");
-                return true;
-            }
-
-            m_WipeArmed = false;
-            Ask("player_wipe:" + wuid, "{}");
-            Hint("wiping...");
-            return true;
-        }
-
-        if (nm == "BtnRoster")
-        {
-            Ask("roster", "{}");
-            return true;
-        }
-
         if (nm == "BtnSpFac")
         {
             CycleSpawnFaction();
@@ -1145,7 +720,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         if (nm == "BtnSpHere" || nm == "BtnSpClear")
         {
-            string slug = SpawnSlugAt(m_SpFacAt);
+            string slug = PickedSlug();
             string zarg = slug;
 
             if (nm == "BtnSpHere")
@@ -1153,11 +728,40 @@ class OZ_VppAdminMenu : AdminHudSubMenu
                 string zrad = GetEdit("SpRadius");
                 if (zrad != "")
                     zarg += " " + zrad;
-                OZ_Rpc.RoleRequest(OZ_RoleOp.SPAWN_HERE, "", zarg);
+                Ask(OZ_AdminSect.SPAWNS, OZ_SpawnOp.HERE, zarg);
             }
             else
             {
-                OZ_Rpc.RoleRequest(OZ_RoleOp.SPAWN_CLEAR, "", slug);
+                Ask(OZ_AdminSect.SPAWNS, OZ_SpawnOp.CLEAR, slug);
+            }
+            return true;
+        }
+
+        // ОСОБИСТА ТОЧКА -- звiдси, а не з панелi фракцiй.
+        //
+        // Вона про спавн, а не про фракцiю, i мусить бути там, де решта
+        // спавнiв: на серверi без мода фракцiй її не було де поставити
+        // взагалi, хоч сам механiзм -- ядровий.
+        if (nm == "BtnSpUidHere" || nm == "BtnSpUidClear")
+        {
+            string uid = GetEdit("SpUid");
+            if (uid == "")
+            {
+                Hint("type a Steam64 first");
+                return true;
+            }
+
+            if (nm == "BtnSpUidHere")
+            {
+                string urad = GetEdit("SpRadius");
+                string uarg = uid;
+                if (urad != "")
+                    uarg += " " + urad;
+                Ask(OZ_AdminSect.SPAWNS, OZ_SpawnOp.UID_HERE, uarg);
+            }
+            else
+            {
+                Ask(OZ_AdminSect.SPAWNS, OZ_SpawnOp.UID_CLEAR, uid);
             }
             return true;
         }

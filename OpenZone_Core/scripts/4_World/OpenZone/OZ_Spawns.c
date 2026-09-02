@@ -138,18 +138,36 @@ class OZ_SpawnsConfig : OZ_ConfigBase
             }
         }
 
+        // РОЗБІРНІСТЬ КООРДИНАТИ ПЕРЕВІРЯЄМО В УСІХ ТРЬОХ МІСЦЯХ.
+        //
+        // Тут перевірявся лише стейджинґ, хоч комусь із трьох ця перевірка
+        // потрібна найменше: стейджинґ адмін ставить одного разу й одразу
+        // бачить. Зони й особисті точки, навпаки, живуть роками, правляться
+        // руками в файлі, і нерозбірна координата в них дає рівно те, чого
+        // комент вище обіцяв не допустити: "0 0 0", тобто ріг карти, і жодної
+        // підказки, чому людина з'явилась у морі.
         for (int i = 0; i < Zones.Count(); i++)
         {
             if (Zones[i].Radius < 0)
                 Zones[i].Radius = 0;
 
-            if (Zones[i].Center != "")
+            if (Zones[i].Center == "")
+            {
+                string w = "spawn zone #" + i.ToString();
+                w += " has no Center - it will never be used";
+                OZ_Log.Warn(w);
+                warnings++;
                 continue;
+            }
 
-            string w = "spawn zone #" + i.ToString();
-            w += " has no Center - it will never be used";
-            OZ_Log.Warn(w);
-            warnings++;
+            if (Zones[i].Center.ToVector() == vector.Zero)
+            {
+                string wv = "spawn zone \"" + Zones[i].Role;
+                wv += "\": Center is not a readable position - the zone is dropped";
+                OZ_Log.Warn(wv);
+                Zones[i].Center = "";
+                warnings++;
+            }
         }
 
         for (int k = 0; k < Personal.Count(); k++)
@@ -157,13 +175,23 @@ class OZ_SpawnsConfig : OZ_ConfigBase
             if (Personal[k].Radius < 0)
                 Personal[k].Radius = 0;
 
-            if (Personal[k].Uid != "" && Personal[k].Center != "")
+            if (Personal[k].Uid == "" || Personal[k].Center == "")
+            {
+                string pw = "personal spawn #" + k.ToString();
+                pw += " misses Uid or Center - it will never be used";
+                OZ_Log.Warn(pw);
+                warnings++;
                 continue;
+            }
 
-            string pw = "personal spawn #" + k.ToString();
-            pw += " misses Uid or Center - it will never be used";
-            OZ_Log.Warn(pw);
-            warnings++;
+            if (Personal[k].Center.ToVector() == vector.Zero)
+            {
+                string pv = "personal spawn for " + Personal[k].Uid;
+                pv += ": Center is not a readable position - the point is dropped";
+                OZ_Log.Warn(pv);
+                Personal[k].Center = "";
+                warnings++;
+            }
         }
     }
 }
@@ -256,8 +284,17 @@ class OZ_Spawns
         // Роль мусить існувати -- інакше зона нікому не дістанеться, а адмін
         // про це не дізнається до першої чужої смерті. Порожня ("запасна")
         // -- виняток: вона навмисно нічия.
-        if (role != "" && !OZ_Factions.Find(role))
-            return "STR_OZ_ERR_NO_FACTION";
+        //
+        // ПЕРЕВІРЯЄМО, ЛИШЕ КОЛИ Є КОМУ. Без мода фракцій ядро не знає жодного
+        // id і відхилило б будь-яку зону -- тобто зробило б спавни
+        // непридатними на сервері, який фракцій і не просив.
+        if (role != "" && OZ_Identity.Present())
+        {
+            array<string> known;
+            OZ_Identity.Get().FactionIds(known);
+            if (known.Find(role) == -1)
+                return "STR_OZ_ERR_NO_FACTION";
+        }
 
         for (int i = 0; i < s_Cfg.Zones.Count(); i++)
         {
@@ -576,9 +613,14 @@ class OZ_Spawns
         OZ_Log.Dbg(m);
     }
 
-    // Ролі за старшинством: фракція, потім стаж, потім мітки, потім зона «для
-    // всіх». Фракція перша тому, що вона -- єдина вісь, яка щось означає на
-    // карті: стаж і мітки кажуть, ХТО ти, а не де твої.
+    // Ролі за старшинством: належність, потім стаж, потім мітки, потім зона
+    // «для всіх». Належність перша тому, що вона -- єдина вісь, яка щось
+    // означає на карті: стаж і мітки кажуть, ХТО ти, а не де твої.
+    //
+    // ДВІ ОСІ, І ПОРЯДОК МІЖ НИМИ ВАЖИТЬ (ТЗ-1 §5). Спершу УГРУПОВАННЯ: у
+    // борговця є база Боргу, і саме туди він має виходити. Якщо угруповання
+    // немає -- БАЗОВА: одинак-сталкер теж людина з місцем на карті, і без
+    // цього кроку весь сервер, крім членів ГП, ходив би через стейджинґ.
     private static vector ZoneFor(string uid, out string why)
     {
         why = "";
@@ -586,7 +628,10 @@ class OZ_Spawns
         if (!s_Cfg)
             return vector.Zero;
 
-        string faction = OZ_Factions.OfUid(uid);
+        string faction = OZ_Identity.Get().OrgOf(uid);
+        if (faction == "")
+            faction = OZ_Identity.Get().BaseOf(uid);
+
         if (faction != "")
         {
             vector byFaction = PickIn(faction);
@@ -598,12 +643,13 @@ class OZ_Spawns
         }
         else
         {
-            // Фракції немає -- ні з Discord, ні з файла акаунта. Це або
-            // новачок, який ще не прив'язався, або той, кого нікуди не взяли.
-            // Обом місце одне.
+            // Немає ЖОДНОЇ з двох осей -- ні угруповання, ні базової, ні з
+            // Discord, ні з файла акаунта. Після ТЗ-1 §7 це означає рівно
+            // одне: гравець не заходив жодного разу, бо перший вхід базову
+            // призначає. Місце такому одне.
             //
-            // Саме `else`, а не окремий крок: той, чия фракція Є, але зони їй
-            // не завели, у стейджинґ потрапити не повинен. Його ловить
+            // Саме `else`, а не окремий крок: той, чия належність Є, але зони
+            // їй не завели, у стейджинґ потрапити не повинен. Його ловить
             // запасна зона нижче -- інакше повноправного борговця відносило б
             // до новачків через недогляд адміна в іншому рядку файла.
             vector staged = Staging();
@@ -717,7 +763,15 @@ class OZ_Spawns
                 break;
         }
 
-        return p;
+        // ЦЕНТР, а не остання спроба -- рівно те, що обіцяє коментар вище.
+        //
+        // Тут поверталось `p`, тобто ОСТАННЯ випадкова точка, яка щойно
+        // виявилась водою. Тобто після десяти невдач мод робив саме те, від
+        // чого захищався весь цикл: кидав людину в море. Центр теж може бути
+        // водою -- зону поставили у воду, це вибір адміна, -- але тоді всі
+        // потраплять в одне й те саме місце, і причину буде видно з першого
+        // погляду замість того, щоб гадати над розкидом.
+        return InWorld(center);
     }
 
     private static vector InWorld(vector p)
