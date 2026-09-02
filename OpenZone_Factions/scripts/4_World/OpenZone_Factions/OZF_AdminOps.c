@@ -156,6 +156,12 @@ class OZ_PlayerWipe
 
         d.TransponderMode = "off";
         d.PresenceHidden  = false;
+        // Нові поля ТЗ-4 §A теж скидаються пермадесом (R-A1.3, R-A3): нове
+        // життя не успадковує ані мовчання, ані маячка старого.
+        if (d.TransponderSet)
+            d.TransponderSet.Clear();
+        d.HiddenFromZone     = false;
+        d.HiddenFromContacts = false;
         d.BaseFaction     = "";
         d.OrgFaction      = "";
         d.SeenBase        = "";

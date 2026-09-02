@@ -101,6 +101,17 @@ class OZ_PlayerData : OZ_ConfigBase
     string TransponderMode = "off";
     ref array<string> TransponderTo;
 
+    // КАНОН З 2026-09-02 (ТЗ-4 R-A3.1, R-A3.2): НАБІР слагів, а не одне слово.
+    //   []                       -- нікому ("off")
+    //   ["public"]               -- усім у радіусі
+    //   ["contacts"]             -- контактам (записник)
+    //   ["faction"]              -- своїм по угрупованню
+    //   ["faction", "contacts"]  -- і тим, і тим
+    // TransponderMode і TransponderTo вище -- СПАДОК: читаються один раз у
+    // UpgradeFlags() і переносяться сюди. "faction" без мода фракцій не
+    // існує (R-A3.4): при завантаженні знімається з набору з WARNING.
+    ref array<string> TransponderSet;
+
     // --- присутність ---
     //
     // Чи видно тебе в списку «хто зараз у Зоні». Це ІНША річ, ніж транспондер,
@@ -114,6 +125,15 @@ class OZ_PlayerData : OZ_ConfigBase
     // решти. Замовчування тут протилежне транспондеру: у списку видно, бо
     // список і є те, заради чого КПК носять.
     bool PresenceHidden = false;
+
+    // ДВА НЕЗАЛЕЖНІ ВИМИКАЧІ (ТЗ-4 R-A1.1) замість одного PresenceHidden:
+    //   HiddenFromZone     -- мене немає серед присутніх у Зоні: у записниках
+    //                         контактів я падаю в ОФЛАЙН;
+    //   HiddenFromContacts -- мене немає в записниках узагалі, навіть офлайн.
+    // Маячок на карті сюди не належить (R-A1.2): за нього відповідає
+    // транспондер. PresenceHidden вище -- спадок, переноситься в обидва.
+    bool HiddenFromZone     = false;
+    bool HiddenFromContacts = false;
 
     // --- друзі ---
     //
@@ -211,7 +231,10 @@ class OZ_PlayerData : OZ_ConfigBase
 
         TransponderMode = "off";
         TransponderTo   = new array<string>();
+        TransponderSet  = new array<string>();
         PresenceHidden  = false;
+        HiddenFromZone     = false;
+        HiddenFromContacts = false;
 
         Name      = "";
         Friends   = new array<string>();
@@ -319,6 +342,11 @@ class OZ_PlayerStore
         // ПІСЛЯ перевірки кешу), і фіксується він тим самим: спершу зробити
         // запис відомим, потім про нього щось стверджувати.
         s_Cache.Insert(uid, d);
+
+        // Старі поля -> нові, один раз; і нормалізація набору транспондера
+        // (ТЗ-4 A1/A3). Після вставки в кеш -- інакше MarkDirty відмовить.
+        if (OZ_PlayerFlags.Upgrade(d))
+            MarkDirty(uid);
 
         if (d.FirstSeen == "")
         {
@@ -507,5 +535,59 @@ class OZ_PlayerStore
     {
         Ensure();
         return s_Cache.Count();
+    }
+}
+
+// Перенесення старих прапорців гравця в нові поля (ТЗ-4 §A, 2026-09-02).
+//
+// Окремий клас, а не гілка Migrate(): версія файлу не міняється, бо жодне
+// старе поле не стає нечитабельним -- вони лише порожніють після першого
+// завантаження. Повертає true, якщо файл треба записати.
+class OZ_PlayerFlags
+{
+    static bool Upgrade(OZ_PlayerData d)
+    {
+        bool changed = false;
+
+        if (!d.TransponderSet)
+        {
+            d.TransponderSet = new array<string>();
+            changed = true;
+        }
+
+        // Один вимикач був про присутність «від усіх» -- отже, обидва нові.
+        if (d.PresenceHidden)
+        {
+            d.HiddenFromZone     = true;
+            d.HiddenFromContacts = true;
+            d.PresenceHidden     = false;
+            changed = true;
+        }
+
+        // Слово -> набір. "friends" і давно вилучений "contacts" -- це
+        // записник, тобто "contacts" (R-A3.3).
+        string mode = d.TransponderMode;
+        if (mode != "" && mode != "off")
+        {
+            if (mode == "public")
+                d.TransponderSet.Insert("public");
+            else if (mode == "friends" || mode == "contacts")
+                d.TransponderSet.Insert("contacts");
+            else if (mode == "faction")
+                d.TransponderSet.Insert("faction");
+            d.TransponderMode = "off";
+            changed = true;
+        }
+
+        // R-A3.4: режиму "faction" без мода фракцій НЕ ІСНУЄ. Не «тихо не
+        // працює», а знімається -- і про це кажуть.
+        if (d.TransponderSet.Find("faction") != -1 && !OZ_Identity.Present())
+        {
+            d.TransponderSet.RemoveItem("faction");
+            OZ_Log.Warn("player " + d.SteamId + ": transponder mode 'faction' dropped - there is no faction mod on this server");
+            changed = true;
+        }
+
+        return changed;
     }
 }
