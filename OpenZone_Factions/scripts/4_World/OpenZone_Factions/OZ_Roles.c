@@ -624,5 +624,14 @@ class OZ_RoleNames
             return 0;
         return s_By.Count();
     }
+
+    // Does the registry know this slug at all. The admin console asks it
+    // about "<faction>:leader" to show whether a faction has a leader post.
+    static bool Known(string slug)
+    {
+        if (slug == "" || !s_By)
+            return false;
+        return s_By.Contains(slug);
+    }
 }
 

@@ -201,6 +201,13 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     protected bool m_MirrorOn    = false;
     protected bool m_MirrorArmed = false;
 
+    // Дзеркало ролей (ТЗ-2 §15): той самий перемикач у два натискання для
+    // роду "roles". Увiмкнення змушує бота переписати ролi Discord зi своїх
+    // таблиць -- дiя назовнi, як i заливка чату.
+    protected bool m_RolesKnown = false;
+    protected bool m_RolesOn    = false;
+    protected bool m_RolesArmed = false;
+
     protected ref array<string> m_NwVoices;
     protected int               m_NwPick;
     protected string            m_NwSelf;
@@ -316,6 +323,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         {
             Ask(OZ_AdminSect.CONFIG, "cfg_list", "{}");
             m_MirrorArmed = false;
+            m_RolesArmed  = false;
             PaintMirror();
             Ask(OZ_AdminSect.CONFIG, "mirror_list", "{}");
         }
@@ -486,6 +494,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             if (op.IndexOf("mirror_set:") == 0)
             {
                 m_MirrorArmed = false;
+                m_RolesArmed  = false;
                 PaintMirror();
             }
             Hint("#" + error);
@@ -500,10 +509,16 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             {
                 m_MirrorKnown = true;
                 m_MirrorOn    = false;
+                m_RolesKnown  = true;
+                m_RolesOn     = false;
                 for (int mi = 0; mi < mst.Mirrors.Count(); mi++)
                 {
-                    if (mst.Mirrors[mi] && mst.Mirrors[mi].Kind == "chat")
+                    if (!mst.Mirrors[mi])
+                        continue;
+                    if (mst.Mirrors[mi].Kind == "chat")
                         m_MirrorOn = mst.Mirrors[mi].Mirror;
+                    if (mst.Mirrors[mi].Kind == "roles")
+                        m_RolesOn = mst.Mirrors[mi].Mirror;
                 }
                 PaintMirror();
             }
@@ -515,10 +530,19 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             OZ_MirrorReport mrep;
             string rerr;
             m_MirrorArmed = false;
+            m_RolesArmed  = false;
             if (JsonFileLoader<OZ_MirrorReport>.LoadData(json, mrep, rerr) && mrep)
             {
-                m_MirrorKnown = true;
-                m_MirrorOn    = mrep.On;
+                if (mrep.Kind == "roles")
+                {
+                    m_RolesKnown = true;
+                    m_RolesOn    = mrep.On;
+                }
+                else
+                {
+                    m_MirrorKnown = true;
+                    m_MirrorOn    = mrep.On;
+                }
                 string line = mrep.Kind + " mirror ";
                 if (mrep.On)
                     line += "ON";
@@ -1051,32 +1075,13 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         if (nm == "BtnMirror")
         {
-            if (!m_MirrorKnown)
-            {
-                Hint("the mirror state has not arrived yet");
-                Ask(OZ_AdminSect.CONFIG, "mirror_list", "{}");
-                return true;
-            }
+            MirrorClick("chat");
+            return true;
+        }
 
-            // Два натискання: перше каже, що саме станеться, друге робить.
-            if (!m_MirrorArmed)
-            {
-                m_MirrorArmed = true;
-                PaintMirror();
-                if (m_MirrorOn)
-                    Hint("turning the chat mirror OFF: the bot stops writing, the Discord threads stay as an archive - press again to confirm");
-                else
-                    Hint("turning the chat mirror ON: the whole chat history goes into Discord threads first - press again to confirm");
-                return true;
-            }
-
-            m_MirrorArmed = false;
-            PaintMirror();
-            Hint("switching the chat mirror...");
-            if (m_MirrorOn)
-                Ask(OZ_AdminSect.CONFIG, "mirror_set:chat:off", "{}");
-            else
-                Ask(OZ_AdminSect.CONFIG, "mirror_set:chat:on", "{}");
+        if (nm == "BtnMirrorRoles")
+        {
+            MirrorClick("roles");
             return true;
         }
 
@@ -1132,6 +1137,87 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             else
                 bt.SetText("MIRROR ON");
         }
+
+        TextWidget rl = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("MirrorRolesLabel"));
+        if (rl)
+        {
+            if (!m_RolesKnown)
+                rl.SetText("roles mirror: ?");
+            else if (m_RolesOn)
+                rl.SetText("roles mirror: ON");
+            else
+                rl.SetText("roles mirror: OFF");
+        }
+
+        TextWidget rb = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnMirrorRolesText"));
+        if (rb)
+        {
+            if (m_RolesArmed)
+                rb.SetText("PRESS AGAIN");
+            else if (m_RolesKnown && m_RolesOn)
+                rb.SetText("ROLES OFF");
+            else
+                rb.SetText("ROLES ON");
+        }
+    }
+
+    // Один перемикач, два роди. Перше натискання каже, що саме станеться,
+    // друге робить (R5.2).
+    protected void MirrorClick(string kind)
+    {
+        bool known = m_MirrorKnown;
+        bool on    = m_MirrorOn;
+        bool armed = m_MirrorArmed;
+        if (kind == "roles")
+        {
+            known = m_RolesKnown;
+            on    = m_RolesOn;
+            armed = m_RolesArmed;
+        }
+
+        if (!known)
+        {
+            Hint("the mirror state has not arrived yet");
+            Ask(OZ_AdminSect.CONFIG, "mirror_list", "{}");
+            return;
+        }
+
+        if (!armed)
+        {
+            SetMirrorArmed(kind, true);
+            PaintMirror();
+            if (kind == "roles")
+            {
+                if (on)
+                    Hint("turning the roles mirror OFF: the bot stops touching Discord roles, its tables stay the home - press again to confirm");
+                else
+                    Hint("turning the roles mirror ON: the bot creates the roles and rewrites every linked member's roles from its tables - press again to confirm");
+            }
+            else
+            {
+                if (on)
+                    Hint("turning the chat mirror OFF: the bot stops writing, the Discord threads stay as an archive - press again to confirm");
+                else
+                    Hint("turning the chat mirror ON: the whole chat history goes into Discord threads first - press again to confirm");
+            }
+            return;
+        }
+
+        SetMirrorArmed(kind, false);
+        PaintMirror();
+        Hint("switching the " + kind + " mirror...");
+        if (on)
+            Ask(OZ_AdminSect.CONFIG, "mirror_set:" + kind + ":off", "{}");
+        else
+            Ask(OZ_AdminSect.CONFIG, "mirror_set:" + kind + ":on", "{}");
+    }
+
+    protected void SetMirrorArmed(string kind, bool armed)
+    {
+        if (kind == "roles")
+            m_RolesArmed = armed;
+        else
+            m_MirrorArmed = armed;
     }
 
     // ---------------------------------------------------------- дрiбне

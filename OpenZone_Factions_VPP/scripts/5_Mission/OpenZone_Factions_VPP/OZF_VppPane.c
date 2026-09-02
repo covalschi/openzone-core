@@ -27,6 +27,17 @@ modded class OZ_VppAdminMenu
         protected ref array<int> m_FacRowIdx;   // рядок списку -> iндекс у m_Factions
         protected int m_FacPicked = -1;
 
+        // Редактор фракцiй (ТЗ-2 §15, R7.8): що показує форма i чи зведено
+        // курок. Обидвi дiї назовнi -- SAVE i REMOVE -- у два натискання,
+        // як i все у вкладцi.
+        protected ref array<string> m_FacLabels;
+        protected ref array<int>    m_FacLimits;
+        protected ref array<bool>   m_FacLeaders;
+        protected bool   m_FacLeaderOn   = false;
+        protected bool   m_FacSaveArmed  = false;
+        protected bool   m_FacDelArmed   = false;
+        protected string m_FacArmedSlug  = "";
+
         // Ростер цiлком: картцi гравця треба все, а не лише iм'я з uid-ом.
         protected ref array<string> m_RosterNames;
         protected ref array<string> m_RosterUids;
@@ -63,6 +74,9 @@ modded class OZ_VppAdminMenu
 
         m_Factions  = new array<string>();
         m_FacRowIdx = new array<int>();
+        m_FacLabels  = new array<string>();
+        m_FacLimits  = new array<int>();
+        m_FacLeaders = new array<bool>();
         m_RosterNames    = new array<string>();
         m_RosterUids     = new array<string>();
         m_RosterDNames   = new array<string>();
@@ -124,9 +138,35 @@ modded class OZ_VppAdminMenu
         {
             if (op.IndexOf("player_wipe:") == 0)
                 m_WipeArmed = false;
+            if (op == "faction_upsert")
+                m_FacSaveArmed = false;
+            if (op.IndexOf("faction_remove:") == 0)
+                m_FacDelArmed = false;
             Hint("#" + error);
             return;
         }
+
+                if (op == "faction_upsert")
+                {
+                    m_FacSaveArmed = false;
+                    Hint("faction saved at the bot - the roster follows within seconds");
+                    // Реєстр приїде з наступним опитуванням моста (до 8 с), а
+                    // ростер панелi будується з нього -- перепитуємо двiчi.
+                    GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.AskRoster, 2500, false);
+                    GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.AskRoster, 9500, false);
+                    return;
+                }
+
+                if (op.IndexOf("faction_remove:") == 0)
+                {
+                    m_FacDelArmed = false;
+                    m_FacPicked = -1;
+                    ClearFacForm();
+                    Hint("faction removed at the bot - its members are plain stalkers again");
+                    GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.AskRoster, 2500, false);
+                    GetGame().GetCallQueue(CALL_CATEGORY_GUI).CallLater(this.AskRoster, 9500, false);
+                    return;
+                }
 
                 if (op == "roster")
                 {
@@ -185,11 +225,35 @@ modded class OZ_VppAdminMenu
 
             // Слаги фракцiй i каталоги -- з того самого конверта.
             m_Factions.Clear();
+            m_FacLabels.Clear();
+            m_FacLimits.Clear();
+            m_FacLeaders.Clear();
             if (r.Factions)
             {
                 for (int fi = 0; fi < r.Factions.Count(); fi++)
+                {
                     m_Factions.Insert(r.Factions[fi]);
+
+                    string flabel = r.Factions[fi];
+                    if (r.FacLabels && fi < r.FacLabels.Count() && r.FacLabels[fi] != "")
+                        flabel = r.FacLabels[fi];
+                    m_FacLabels.Insert(flabel);
+
+                    int flimit = 0;
+                    if (r.FacLimits && fi < r.FacLimits.Count())
+                        flimit = r.FacLimits[fi];
+                    m_FacLimits.Insert(flimit);
+
+                    bool fleader = false;
+                    if (r.FacLeaders && fi < r.FacLeaders.Count())
+                        fleader = r.FacLeaders[fi];
+                    m_FacLeaders.Insert(fleader);
+                }
             }
+            if (m_FacPicked >= m_Factions.Count())
+                m_FacPicked = -1;
+            if (m_FacPicked >= 0)
+                FillFacForm(m_FacPicked);
 
             // ЦИКЛЕР ПАНЕЛІ СПАВНІВ. Ядро тримає для нього шов
             // (OZ_VppFactionSlugs), і до 2026-09-01 його Set() не кликав ніхто
@@ -427,6 +491,8 @@ modded class OZ_VppAdminMenu
             for (int i = 0; i < m_Factions.Count(); i++)
             {
                 string line = m_Factions[i];
+                if (i < m_FacLabels.Count() && m_FacLabels[i] != "" && m_FacLabels[i] != m_Factions[i])
+                    line += "  --  " + m_FacLabels[i];
 
                 if (filter != "")
                 {
@@ -447,6 +513,55 @@ modded class OZ_VppAdminMenu
                 if (i == m_FacPicked)
                     lb.SelectRow(row);
             }
+        }
+
+    // ---------------------------------------------------- редактор фракцiй
+
+        // Форма показує вибрану фракцiю; NEW чистить її для нової.
+        protected void FillFacForm(int idx)
+        {
+            if (idx < 0 || idx >= m_Factions.Count())
+            {
+                ClearFacForm();
+                return;
+            }
+            SetEdit("FacSlug", m_Factions[idx]);
+            SetEdit("FacLabel", m_FacLabels[idx]);
+            SetEdit("FacLimit", m_FacLimits[idx].ToString());
+            m_FacLeaderOn = m_FacLeaders[idx];
+            m_FacSaveArmed = false;
+            m_FacDelArmed  = false;
+            PaintFacLeader();
+        }
+
+        protected void ClearFacForm()
+        {
+            SetEdit("FacSlug", "");
+            SetEdit("FacLabel", "");
+            SetEdit("FacLimit", "0");
+            m_FacLeaderOn  = true;
+            m_FacSaveArmed = false;
+            m_FacDelArmed  = false;
+            PaintFacLeader();
+        }
+
+        protected void PaintFacLeader()
+        {
+            TextWidget t = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnFacLeaderText"));
+            if (!t)
+                return;
+            if (m_FacLeaderOn)
+                t.SetText("LEADER POST: yes");
+            else
+                t.SetText("LEADER POST: no");
+        }
+
+        protected string FormSlug()
+        {
+            string slug = GetEdit("FacSlug");
+            slug.Trim();
+            slug.ToLower();
+            return slug;
         }
 
     // Цiль дiй з гравцем: точна адреса uid з ростера. Сервер приймає таку
@@ -542,7 +657,8 @@ modded class OZ_VppAdminMenu
                         m_Repaint = true;
                         RebuildFacList();
                         m_Repaint = false;
-                        Hint("faction: " + m_Factions[m_FacPicked]);
+                        FillFacForm(m_FacPicked);
+                        Hint("faction: " + m_Factions[m_FacPicked] + " - edit the form and press SAVE twice, or ASSIGN the picked player");
                     }
                     return true;
                 }
@@ -571,6 +687,13 @@ modded class OZ_VppAdminMenu
                 if (w && w.GetName() == "FacSearch")
                 {
                     RebuildFacList();
+                    return true;
+                }
+
+                if (w && (w.GetName() == "FacSlug" || w.GetName() == "FacLabel" || w.GetName() == "FacLimit"))
+                {
+                    m_FacSaveArmed = false;
+                    m_FacDelArmed  = false;
                     return true;
                 }
 
@@ -773,6 +896,101 @@ modded class OZ_VppAdminMenu
                 if (nm == "BtnRoster")
                 {
                     Ask(OZF_Const.SECTION, "roster", "{}");
+                    return true;
+                }
+
+                // ---- редактор фракцiй (ТЗ-2 §15, R7.8)
+
+                if (nm == "BtnFacNew")
+                {
+                    m_FacPicked = -1;
+                    m_Repaint = true;
+                    RebuildFacList();
+                    m_Repaint = false;
+                    ClearFacForm();
+                    Hint("new faction: slug (lowercase, 2-24), name, limit (0 = none), leader post - then SAVE twice");
+                    return true;
+                }
+
+                if (nm == "BtnFacLeader")
+                {
+                    m_FacLeaderOn = !m_FacLeaderOn;
+                    m_FacSaveArmed = false;
+                    PaintFacLeader();
+                    return true;
+                }
+
+                if (nm == "BtnFacSave")
+                {
+                    string sslug = FormSlug();
+                    if (sslug == "")
+                    {
+                        Hint("type a slug first - a short lowercase word");
+                        return true;
+                    }
+
+                    // Другим натисканням ПО ТОМУ Ж слагу: змiна форми скидає
+                    // курок, iнакше пiдтвердженням для однiєї фракцiї стало б
+                    // натискання, зроблене для iншої.
+                    if (!m_FacSaveArmed || m_FacArmedSlug != sslug)
+                    {
+                        m_FacSaveArmed = true;
+                        m_FacDelArmed  = false;
+                        m_FacArmedSlug = sslug;
+                        if (m_Factions.Find(sslug) == -1)
+                            Hint("press SAVE again to CREATE faction " + sslug + " at the bot (and its Discord role when the roles mirror is on)");
+                        else
+                            Hint("press SAVE again to CHANGE faction " + sslug + " at the bot");
+                        return true;
+                    }
+                    m_FacSaveArmed = false;
+
+                    OZF_FactionEdit e = new OZF_FactionEdit();
+                    e.Slug      = sslug;
+                    e.Label     = GetEdit("FacLabel");
+                    e.Label.Trim();
+                    string limitText = GetEdit("FacLimit");
+                    e.Limit     = limitText.ToInt();
+                    e.HasLeader = m_FacLeaderOn;
+
+                    string letter;
+                    string jerr;
+                    if (!JsonFileLoader<OZF_FactionEdit>.MakeData(e, letter, jerr, false))
+                    {
+                        Hint("cannot build the request: " + jerr);
+                        return true;
+                    }
+                    Ask(OZF_Const.SECTION, "faction_upsert", letter);
+                    Hint("saving faction " + sslug + "...");
+                    return true;
+                }
+
+                if (nm == "BtnFacDel")
+                {
+                    string dslug = FormSlug();
+                    if (dslug == "")
+                    {
+                        Hint("pick a faction on the left first");
+                        return true;
+                    }
+                    if (m_Factions.Find(dslug) == -1)
+                    {
+                        Hint("no such faction: " + dslug);
+                        return true;
+                    }
+
+                    if (!m_FacDelArmed || m_FacArmedSlug != dslug)
+                    {
+                        m_FacDelArmed  = true;
+                        m_FacSaveArmed = false;
+                        m_FacArmedSlug = dslug;
+                        Hint("press REMOVE again to delete faction " + dslug + " at the bot - its members become plain stalkers");
+                        return true;
+                    }
+                    m_FacDelArmed = false;
+
+                    Ask(OZF_Const.SECTION, "faction_remove:" + dslug, "{}");
+                    Hint("removing faction " + dslug + "...");
                     return true;
                 }
 

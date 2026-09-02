@@ -110,9 +110,9 @@ class OZ_MirrorFillReply : OZ_BridgeReply
 
 class OZ_MirrorOps
 {
-    // Стан дзеркал для панелі. "chat" є в списку завжди: це єдиний рід, у
-    // якого сьогодні взагалі є дзеркало, і панель мусить мати що показати
-    // на порожньому Settings.
+    // Стан дзеркал для панелі. "chat" i "roles" є в списку завжди: це два
+    // роди, у яких є дзеркало (ТЗ-2 §8 i §15), i панель мусить мати що
+    // показати на порожньому Settings.
     static string List(out bool ok, out string error)
     {
         ok = false;
@@ -120,6 +120,7 @@ class OZ_MirrorOps
         OZ_MirrorState st = new OZ_MirrorState();
         OZ_Settings s = OZ_Settings.Get();
         bool sawChat = false;
+        bool sawRoles = false;
         if (s && s.Bridge && s.Bridge.Mirrors)
         {
             for (int i = 0; i < s.Bridge.Mirrors.Count(); i++)
@@ -133,6 +134,8 @@ class OZ_MirrorOps
                 st.Mirrors.Insert(copy);
                 if (m.Kind == "chat")
                     sawChat = true;
+                if (m.Kind == "roles")
+                    sawRoles = true;
             }
         }
         if (!sawChat)
@@ -141,6 +144,13 @@ class OZ_MirrorOps
             chat.Kind   = "chat";
             chat.Mirror = false;
             st.Mirrors.Insert(chat);
+        }
+        if (!sawRoles)
+        {
+            OZ_KindMirror roles = new OZ_KindMirror();
+            roles.Kind   = "roles";
+            roles.Mirror = false;
+            st.Mirrors.Insert(roles);
         }
 
         string outJson;

@@ -820,7 +820,7 @@ FrameWidgetClass OZ_VppRoot {
    MultilineEditBoxWidgetClass RawEdit {
     visible 1
     position 230 36
-    size 750 400
+    size 750 370
     hexactpos 1
     vexactpos 1
     hexactsize 1
@@ -949,8 +949,8 @@ FrameWidgetClass OZ_VppRoot {
    TextWidgetClass MirrorLabel {
     visible 1
     ignorepointer 1
-    position 400 452
-    size 230 20
+    position 230 416
+    size 150 20
     hexactpos 1
     vexactpos 1
     hexactsize 1
@@ -966,8 +966,8 @@ FrameWidgetClass OZ_VppRoot {
    }
    ButtonWidgetClass BtnMirror {
     visible 1
-    position 640 448
-    size 180 28
+    position 386 412
+    size 130 26
     hexactpos 1
     vexactpos 1
     hexactsize 1
@@ -980,7 +980,7 @@ FrameWidgetClass OZ_VppRoot {
       ignorepointer 1
       color 0.31 0.31 0.35 1
       position -1 -1
-      size 182 30
+      size 132 28
       hexactpos 1
       vexactpos 1
       hexactsize 1
@@ -993,7 +993,7 @@ FrameWidgetClass OZ_VppRoot {
       ignorepointer 1
       color 0.145 0.145 0.161 1
       position 0 0
-      size 180 28
+      size 130 26
       hexactpos 1
       vexactpos 1
       hexactsize 1
@@ -1005,7 +1005,82 @@ FrameWidgetClass OZ_VppRoot {
       visible 1
       ignorepointer 1
       position 0 0
-      size 180 28
+      size 130 26
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      color 1 0.478 0.102 1
+      text "RELOAD"
+      font "gui/fonts/sdf_MetronBook24"
+      "exact text" 1
+      "exact text size" 12
+      "text halign" center
+      "text valign" center
+      priority 2
+     }
+    }
+   }
+   TextWidgetClass MirrorRolesLabel {
+    visible 1
+    ignorepointer 1
+    position 560 416
+    size 150 20
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    color 0.541 0.541 0.565 1
+    text ""
+    font "gui/fonts/sdf_MetronBook24"
+    "exact text" 1
+    "exact text size" 12
+    "text halign" left
+    "text valign" center
+    priority 3
+   }
+   ButtonWidgetClass BtnMirrorRoles {
+    visible 1
+    position 716 412
+    size 130 26
+    hexactpos 1
+    vexactpos 1
+    hexactsize 1
+    vexactsize 1
+    text ""
+    priority 4
+    {
+     PanelWidgetClass BtnMirrorRolesEdge {
+      visible 1
+      ignorepointer 1
+      color 0.31 0.31 0.35 1
+      position -1 -1
+      size 132 28
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      priority 0
+      style rover_sim_colorable
+     }
+     PanelWidgetClass BtnMirrorRolesBg {
+      visible 1
+      ignorepointer 1
+      color 0.145 0.145 0.161 1
+      position 0 0
+      size 130 26
+      hexactpos 1
+      vexactpos 1
+      hexactsize 1
+      vexactsize 1
+      priority 1
+      style rover_sim_colorable
+     }
+     TextWidgetClass BtnMirrorRolesText {
+      visible 1
+      ignorepointer 1
+      position 0 0
+      size 130 26
       hexactpos 1
       vexactpos 1
       hexactsize 1

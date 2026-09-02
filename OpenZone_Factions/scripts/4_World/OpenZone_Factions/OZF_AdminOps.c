@@ -48,13 +48,89 @@ class OZ_AdminRoster
     ref array<string> Ranks;
     ref array<string> FRanks;
 
+    // The faction editor's view of each entry in Factions, same order
+    // (TZ-2 section 15, R7.8): what it is called, the bot's ceiling, and
+    // whether it has a leader post.
+    ref array<string> FacLabels;
+    ref array<int>    FacLimits;
+    ref array<bool>   FacLeaders;
+
     void OZ_AdminRoster()
     {
-        Rows     = new array<ref OZ_AdminRosterRow>();
-        Factions = new array<string>();
-        Traits   = new array<string>();
-        Ranks    = new array<string>();
-        FRanks   = new array<string>();
+        Rows       = new array<ref OZ_AdminRosterRow>();
+        Factions   = new array<string>();
+        Traits     = new array<string>();
+        Ranks      = new array<string>();
+        FRanks     = new array<string>();
+        FacLabels  = new array<string>();
+        FacLimits  = new array<int>();
+        FacLeaders = new array<bool>();
+    }
+}
+
+// The faction editor's letter (TZ-2 section 15, R7.8): the VPP pane fills
+// Slug, Label, Limit and HasLeader; the SERVER stamps Admin before the
+// letter goes to the bridge, so a client cannot claim it.
+class OZF_FactionEdit
+{
+    string Slug      = "";
+    string Label     = "";
+    int    Limit     = 0;
+    bool   HasLeader = false;
+    bool   Admin     = false;
+}
+
+class OZF_FactionRemoveAsk
+{
+    string Slug  = "";
+    bool   Admin = false;
+}
+
+// A plain yes or no from the bridge, handed on to the admin who asked.
+class OZF_AckReply : OZ_BridgeReply
+{
+    protected string m_AdminUid;
+    protected string m_Op;
+    protected string m_What;
+
+    void OZF_AckReply(string adminUid, string op, string what)
+    {
+        m_AdminUid = adminUid;
+        m_Op       = op;
+        m_What     = what;
+    }
+
+    override void OnBody(string json)
+    {
+        PlayerIdentity to = OZ_Link.Online(m_AdminUid);
+        if (!to)
+            return;
+
+        OZ_BridgeAck ack;
+        string err;
+        if (!JsonFileLoader<OZ_BridgeAck>.LoadData(json, ack, err) || !ack)
+        {
+            OZ_Rpc.AdminRespond(to, OZF_Const.SECTION, m_Op, false, "", "STR_OZ_ERR_INTERNAL");
+            return;
+        }
+
+        if (!ack.Ok)
+        {
+            OZ_Log.Warn("admin: bridge refused " + m_What + ": " + ack.Why);
+            OZ_Rpc.AdminRespond(to, OZF_Const.SECTION, m_Op, false, "", ack.Why);
+            return;
+        }
+
+        OZ_Log.Info("admin: " + m_What + " accepted by the bridge");
+        OZ_Rpc.AdminRespond(to, OZF_Const.SECTION, m_Op, true, "{}", "");
+    }
+
+    override void OnFail(int code)
+    {
+        PlayerIdentity to = OZ_Link.Online(m_AdminUid);
+        if (!to)
+            return;
+        OZ_Rpc.AdminRespond(to, OZF_Const.SECTION, m_Op, false, "", "STR_OZ_ERR_NO_BRIDGE");
     }
 }
 
@@ -305,7 +381,86 @@ class OZF_AdminSection : OZ_AdminSection
         if (op.IndexOf("player_wipe:") == 0)
             return PlayerWipe(op.Substring(12, op.Length() - 12), op, sender, ok, error);
 
+        // The faction editor (TZ-2 section 15, R7.8): both go straight to the
+        // bot's tables, and the roster comes back on the next poll.
+        if (op == "faction_upsert")
+            return FactionUpsert(json, op, sender, ok, error);
+        if (op.IndexOf("faction_remove:") == 0)
+            return FactionRemove(op.Substring(15, op.Length() - 15), op, sender, ok, error);
+
         error = "STR_OZ_ERR_UNKNOWN_OP";
+        return "";
+    }
+
+    // Create or change a faction at the bot. Nothing is written here: the
+    // table in memory follows the roster the bot sends back, so the game
+    // never holds a faction the bot does not.
+    private string FactionUpsert(string json, string op, PlayerIdentity sender, out bool ok, out string error)
+    {
+        OZF_FactionEdit e;
+        string jerr;
+        if (!JsonFileLoader<OZF_FactionEdit>.LoadData(json, e, jerr) || !e || e.Slug == "")
+        {
+            error = "STR_OZ_ERR_NO_TARGET";
+            return "";
+        }
+
+        if (!OZ_BridgeClient.Alive())
+        {
+            error = "STR_OZ_ERR_NO_BRIDGE";
+            return "";
+        }
+
+        // The server vouches for its console. The bridge trusts the shared
+        // secret, and the flag rides inside the letter the secret signs.
+        e.Admin = true;
+
+        string letter;
+        if (!JsonFileLoader<OZF_FactionEdit>.MakeData(e, letter, jerr, false))
+        {
+            error = "STR_OZ_ERR_INTERNAL";
+            return "";
+        }
+
+        OZ_Log.Info("admin: faction " + e.Slug + " saved by " + sender.GetPlainId());
+        OZ_BridgeClient.Call("v1/factions/upsert", letter, new OZF_AckReply(sender.GetPlainId(), op, "faction " + e.Slug));
+
+        ok    = false;
+        error = OZ_Const.DEFER;
+        return "";
+    }
+
+    private string FactionRemove(string slug, string op, PlayerIdentity sender, out bool ok, out string error)
+    {
+        if (slug == "")
+        {
+            error = "STR_OZ_ERR_NO_TARGET";
+            return "";
+        }
+
+        if (!OZ_BridgeClient.Alive())
+        {
+            error = "STR_OZ_ERR_NO_BRIDGE";
+            return "";
+        }
+
+        OZF_FactionRemoveAsk r = new OZF_FactionRemoveAsk();
+        r.Slug  = slug;
+        r.Admin = true;
+
+        string letter;
+        string jerr;
+        if (!JsonFileLoader<OZF_FactionRemoveAsk>.MakeData(r, letter, jerr, false))
+        {
+            error = "STR_OZ_ERR_INTERNAL";
+            return "";
+        }
+
+        OZ_Log.Info("admin: faction " + slug + " removed by " + sender.GetPlainId());
+        OZ_BridgeClient.Call("v1/factions/remove", letter, new OZF_AckReply(sender.GetPlainId(), op, "removing faction " + slug));
+
+        ok    = false;
+        error = OZ_Const.DEFER;
         return "";
     }
 
@@ -388,6 +543,20 @@ class OZF_AdminSection : OZ_AdminSection
 
             OZ_AdminRoster r = new OZ_AdminRoster();
             OZ_Factions.Ids(r.Factions);
+
+            // The editor's columns, one per faction id above.
+            for (int fi = 0; fi < r.Factions.Count(); fi++)
+            {
+                string fslug = r.Factions[fi];
+                string flabel = fslug;
+                OZ_Faction fdef = OZ_Factions.Find(fslug);
+                if (fdef && fdef.DisplayName != "")
+                    flabel = fdef.DisplayName;
+                r.FacLabels.Insert(flabel);
+                r.FacLimits.Insert(OZ_Factions.BotLimitOf(fslug));
+                r.FacLeaders.Insert(OZ_RoleNames.Known(fslug + ":leader"));
+            }
+
             OZ_Roles.TraitIds(r.Traits);
             OZ_Roles.RankIds(r.Ranks);
             OZ_Roles.FRankIds(r.FRanks);

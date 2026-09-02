@@ -92,23 +92,275 @@ FrameWidgetClass PaneFactions {
    color 0.788 0.788 0.816 1
    priority 4
   }
-  TextWidgetClass FacNote {
+  EditBoxWidgetClass FacSlug {
    visible 1
-   ignorepointer 1
    position 20 380
-   size 340 84
+   size 110 26
    hexactpos 1
    vexactpos 1
    hexactsize 1
    vexactsize 1
-   color 0.541 0.541 0.565 1
-   text "Factions are created and removed only through the Discord bot. Pick one here to assign the selected player."
-   font "gui/fonts/sdf_MetronBook24"
+   color 0.788 0.788 0.816 1
+   text ""
+   font "gui/fonts/MetronBook14"
    "exact text" 1
-   "exact text size" 11
-   "text halign" left
-   "text valign" top
-   priority 3
+   priority 4
+  }
+  EditBoxWidgetClass FacLabel {
+   visible 1
+   position 136 380
+   size 224 26
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   color 0.788 0.788 0.816 1
+   text ""
+   font "gui/fonts/MetronBook14"
+   "exact text" 1
+   priority 4
+  }
+  EditBoxWidgetClass FacLimit {
+   visible 1
+   position 20 412
+   size 60 26
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   color 0.788 0.788 0.816 1
+   text ""
+   font "gui/fonts/MetronBook14"
+   "exact text" 1
+   priority 4
+  }
+  ButtonWidgetClass BtnFacLeader {
+   visible 1
+   position 86 412
+   size 130 26
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text ""
+   priority 4
+   {
+    PanelWidgetClass BtnFacLeaderEdge {
+     visible 1
+     ignorepointer 1
+     color 0.31 0.31 0.35 1
+     position -1 -1
+     size 132 28
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     priority 0
+     style rover_sim_colorable
+    }
+    PanelWidgetClass BtnFacLeaderBg {
+     visible 1
+     ignorepointer 1
+     color 0.145 0.145 0.161 1
+     position 0 0
+     size 130 26
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     priority 1
+     style rover_sim_colorable
+    }
+    TextWidgetClass BtnFacLeaderText {
+     visible 1
+     ignorepointer 1
+     position 0 0
+     size 130 26
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     color 1 0.478 0.102 1
+     text "LEADER POST: yes"
+     font "gui/fonts/sdf_MetronBook24"
+     "exact text" 1
+     "exact text size" 12
+     "text halign" center
+     "text valign" center
+     priority 2
+    }
+   }
+  }
+  ButtonWidgetClass BtnFacNew {
+   visible 1
+   position 222 412
+   size 138 26
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text ""
+   priority 4
+   {
+    PanelWidgetClass BtnFacNewEdge {
+     visible 1
+     ignorepointer 1
+     color 0.31 0.31 0.35 1
+     position -1 -1
+     size 140 28
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     priority 0
+     style rover_sim_colorable
+    }
+    PanelWidgetClass BtnFacNewBg {
+     visible 1
+     ignorepointer 1
+     color 0.145 0.145 0.161 1
+     position 0 0
+     size 138 26
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     priority 1
+     style rover_sim_colorable
+    }
+    TextWidgetClass BtnFacNewText {
+     visible 1
+     ignorepointer 1
+     position 0 0
+     size 138 26
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     color 1 0.478 0.102 1
+     text "NEW"
+     font "gui/fonts/sdf_MetronBook24"
+     "exact text" 1
+     "exact text size" 12
+     "text halign" center
+     "text valign" center
+     priority 2
+    }
+   }
+  }
+  ButtonWidgetClass BtnFacSave {
+   visible 1
+   position 20 444
+   size 165 26
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text ""
+   priority 4
+   {
+    PanelWidgetClass BtnFacSaveEdge {
+     visible 1
+     ignorepointer 1
+     color 0.2 0.35 0.24 1
+     position -1 -1
+     size 167 28
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     priority 0
+     style rover_sim_colorable
+    }
+    PanelWidgetClass BtnFacSaveBg {
+     visible 1
+     ignorepointer 1
+     color 0.145 0.2 0.145 1
+     position 0 0
+     size 165 26
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     priority 1
+     style rover_sim_colorable
+    }
+    TextWidgetClass BtnFacSaveText {
+     visible 1
+     ignorepointer 1
+     position 0 0
+     size 165 26
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     color 0.494 0.784 0.627 1
+     text "SAVE FACTION"
+     font "gui/fonts/sdf_MetronBook24"
+     "exact text" 1
+     "exact text size" 12
+     "text halign" center
+     "text valign" center
+     priority 2
+    }
+   }
+  }
+  ButtonWidgetClass BtnFacDel {
+   visible 1
+   position 191 444
+   size 169 26
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text ""
+   priority 4
+   {
+    PanelWidgetClass BtnFacDelEdge {
+     visible 1
+     ignorepointer 1
+     color 0.55 0.15 0.15 1
+     position -1 -1
+     size 171 28
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     priority 0
+     style rover_sim_colorable
+    }
+    PanelWidgetClass BtnFacDelBg {
+     visible 1
+     ignorepointer 1
+     color 0.25 0.1 0.1 1
+     position 0 0
+     size 169 26
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     priority 1
+     style rover_sim_colorable
+    }
+    TextWidgetClass BtnFacDelText {
+     visible 1
+     ignorepointer 1
+     position 0 0
+     size 169 26
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     color 1 0.4 0.3 1
+     text "REMOVE FACTION"
+     font "gui/fonts/sdf_MetronBook24"
+     "exact text" 1
+     "exact text size" 12
+     "text halign" center
+     "text valign" center
+     priority 2
+    }
+   }
   }
   PanelWidgetClass SecFacFBar {
    visible 1

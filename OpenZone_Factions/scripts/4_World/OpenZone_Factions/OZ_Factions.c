@@ -328,6 +328,11 @@ class OZ_FactionRosterEntry
     string DisplayName;
     string Color;
 
+    // The bot's ceiling on membership, 0 for none (TZ-4 R-C3.2). Travels so
+    // the admin console can show and edit it; the game never enforces it --
+    // the bot counts everybody, offline included, and the game cannot.
+    int Limit;
+
     // Базова фракцiя: її носять усi й вона не є органiзацiєю. Див. довге
     // пояснення в полi OZ_Faction.BaseFaction.
     bool Base;
@@ -361,6 +366,10 @@ class OZ_FactionRoster
     ref array<ref OZ_RoleName> Traits;
     ref array<ref OZ_RoleName> Posts;
     ref array<ref OZ_RoleName> FRanks;
+
+    // Factions REMOVED at the bot (TZ-2 section 15, R7.9). The merge adds and
+    // renames and cannot infer an absence, so removals travel by name.
+    ref array<string> Gone;
 }
 
 // Слова, якими описується ставлення. Рядками, бо їх читає адмін у JSON, і
@@ -396,6 +405,11 @@ class OZ_FactionProvider
 class OZ_Factions
 {
     private static ref OZ_FactionsConfig s_Cfg;
+
+    // The bot's membership ceilings by faction id, memory only, from the
+    // roster. Not a field of OZ_Faction: that class is the admin's file, and
+    // a number the bot owns has no business being written there.
+    private static ref map<string, int> s_BotLimits;
     private static ref OZ_FactionProvider s_Provider;
 
     // Ролі Discord: uid -> id УГРУПОВАННЯ. Наповнює міст через прив'язку
@@ -452,6 +466,17 @@ class OZ_Factions
         if (!s_Cfg.Factions)
             return 0;
         return s_Cfg.Factions.Count();
+    }
+
+    // The bot's ceiling for a faction, 0 when none or unknown.
+    static int BotLimitOf(string id)
+    {
+        if (!s_BotLimits || id == "")
+            return 0;
+        int n;
+        if (s_BotLimits.Find(id, n))
+            return n;
+        return 0;
     }
 
     // ------------------------------------------------------------- таблиця
@@ -949,11 +974,42 @@ class OZ_Factions
             // файлi реєстр не знiмає, бо реєстр про нього не знає.
             if (e.Base)
                 f.BaseFaction = true;
+
+            if (!s_BotLimits)
+                s_BotLimits = new map<string, int>();
+            s_BotLimits.Set(e.Id, e.Limit);
+        }
+
+        // REMOVALS BY NAME (TZ-2 section 15, R7.9). In memory only, like
+        // everything the roster brings: the admin's file is not touched, and
+        // the bot keeps saying Gone on every roster until the faction is
+        // created again, so a restart cannot bring it back. The base never
+        // goes -- nothing in the model survives that.
+        int gone = 0;
+        if (r.Gone && s_Cfg.Factions)
+        {
+            for (int g = 0; g < r.Gone.Count(); g++)
+            {
+                string slug = r.Gone[g];
+                if (slug == "")
+                    continue;
+                for (int k = s_Cfg.Factions.Count() - 1; k >= 0; k--)
+                {
+                    OZ_Faction victim = s_Cfg.Factions[k];
+                    if (!victim || victim.Id != slug)
+                        continue;
+                    if (victim.BaseFaction)
+                        continue;
+                    s_Cfg.Factions.RemoveOrdered(k);
+                    gone++;
+                    OZ_Log.Info("factions: " + slug + " removed at the bot - dropped from the table");
+                }
+            }
         }
 
         string m = "factions: roster from the bridge, stamp " + r.Stamp.ToString();
         m += " (" + added.ToString() + " added, ";
-        m += renamed.ToString() + " renamed)";
+        m += renamed.ToString() + " renamed, " + gone.ToString() + " removed)";
 
         // БАЗОВУ НАЗИВАЄМО ВГОЛОС. Її прапорець приходить лише з реєстру й
         // на диск не лягає (записи бота живуть у пам'ятi), тож без цього
