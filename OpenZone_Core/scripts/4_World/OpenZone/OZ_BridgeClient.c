@@ -549,6 +549,30 @@ class OZ_BridgeClient
             return;
         }
 
+        // Читання -- з кешу, коли він має відповідь на цей самий лист; запис
+        // -- скидає кеш, бо світ за ним інший (ТЗ-2 R4.3, R4.4). Хто не
+        // питає Alive() перед викликом, того сюди не пускають сторінки, тож
+        // застаріла відповідь при мертвому мості звідси не піде (R4.1).
+        // Обгортка -- у сильному посиланні: параметр 'reply' сильним не є, і
+        // компілятор відмовляється класти в нього новий об'єкт (зміряно:
+        // "Variable 'reply' is not strong ref"). Переліт тримає її сам.
+        ref OZ_BridgeCacheFill wrap = null;
+        if (OZ_BridgeCache.Readable(route))
+        {
+            string hit;
+            if (OZ_BridgeCache.Get(route, letter, hit))
+            {
+                if (reply)
+                    reply.OnBody(hit);
+                return;
+            }
+            wrap = new OZ_BridgeCacheFill(route, letter, reply);
+        }
+        else if (!OZ_BridgeCache.Neutral(route))
+        {
+            OZ_BridgeCache.Clear("write " + route);
+        }
+
         OZ_BridgeSettings b = OZ_Settings.Get().Bridge;
 
         OZ_BridgeCall c = new OZ_BridgeCall();
@@ -566,7 +590,10 @@ class OZ_BridgeClient
             return;
         }
 
-        Fly(route, json, reply);
+        if (wrap)
+            Fly(route, json, wrap);
+        else
+            Fly(route, json, reply);
     }
 
     private static void Fly(string route, string json, OZ_BridgeReply reply)
@@ -615,6 +642,16 @@ class OZ_BridgeClient
 
         if (!batch)
             return;
+
+        // Пачка з конвертами або з новим курсором -- світ змінився, кеш
+        // читань скидається цілком (ТЗ-2 R4.4). Порожня пачка зі старим
+        // курсором нічого не міняє й нічого не скидає.
+        bool moved = batch.Cursor != s_Cursor;
+        bool carried = false;
+        if (batch.Items && batch.Items.Count() > 0)
+            carried = true;
+        if (moved || carried)
+            OZ_BridgeCache.Clear("poll cursor " + batch.Cursor.ToString());
 
         s_Cursor = batch.Cursor;
 
