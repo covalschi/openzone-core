@@ -214,7 +214,10 @@ class OZ_MirrorOps
         {
             Write(kind, false);
             rep.On   = false;
-            rep.Note = "the bot stops writing " + kind + " to Discord from the next poll; the threads stay as an archive";
+            if (kind == "roles")
+                rep.Note = "the bot stops touching Discord roles from the next poll; they stay as they are until the mirror is on again";
+            else
+                rep.Note = "the bot stops writing " + kind + " to Discord from the next poll; the threads stay as an archive";
             OZ_Log.Info("mirror: " + kind + " switched off by " + sender.GetPlainId());
             ok = true;
             return Json(rep);

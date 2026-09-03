@@ -61,6 +61,32 @@ FrameWidgetClass PaneFactions {
    priority 3
    style rover_sim_colorable
   }
+  PanelWidgetClass FacSearchEdge {
+   visible 1
+   ignorepointer 1
+   color 0.31 0.31 0.35 1
+   position 19 35
+   size 342 30
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 1
+   style rover_sim_colorable
+  }
+  PanelWidgetClass FacSearchBg {
+   visible 1
+   ignorepointer 1
+   color 0.08 0.08 0.09 1
+   position 20 36
+   size 340 28
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 2
+   style rover_sim_colorable
+  }
   EditBoxWidgetClass FacSearch {
    visible 1
    position 20 36
@@ -92,6 +118,32 @@ FrameWidgetClass PaneFactions {
    color 0.788 0.788 0.816 1
    priority 4
   }
+  PanelWidgetClass FacSlugEdge {
+   visible 1
+   ignorepointer 1
+   color 0.31 0.31 0.35 1
+   position 19 379
+   size 112 28
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 1
+   style rover_sim_colorable
+  }
+  PanelWidgetClass FacSlugBg {
+   visible 1
+   ignorepointer 1
+   color 0.08 0.08 0.09 1
+   position 20 380
+   size 110 26
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 2
+   style rover_sim_colorable
+  }
   EditBoxWidgetClass FacSlug {
    visible 1
    position 20 380
@@ -106,6 +158,32 @@ FrameWidgetClass PaneFactions {
    "exact text" 1
    priority 4
   }
+  PanelWidgetClass FacLabelEdge {
+   visible 1
+   ignorepointer 1
+   color 0.31 0.31 0.35 1
+   position 135 379
+   size 226 28
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 1
+   style rover_sim_colorable
+  }
+  PanelWidgetClass FacLabelBg {
+   visible 1
+   ignorepointer 1
+   color 0.08 0.08 0.09 1
+   position 136 380
+   size 224 26
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 2
+   style rover_sim_colorable
+  }
   EditBoxWidgetClass FacLabel {
    visible 1
    position 136 380
@@ -119,6 +197,32 @@ FrameWidgetClass PaneFactions {
    font "gui/fonts/MetronBook14"
    "exact text" 1
    priority 4
+  }
+  PanelWidgetClass FacLimitEdge {
+   visible 1
+   ignorepointer 1
+   color 0.31 0.31 0.35 1
+   position 19 411
+   size 62 28
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 1
+   style rover_sim_colorable
+  }
+  PanelWidgetClass FacLimitBg {
+   visible 1
+   ignorepointer 1
+   color 0.08 0.08 0.09 1
+   position 20 412
+   size 60 26
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   priority 2
+   style rover_sim_colorable
   }
   EditBoxWidgetClass FacLimit {
    visible 1
