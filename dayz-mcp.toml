@@ -43,3 +43,9 @@ noise        = ["Bridge.Url is not https"]
 # лежить Steam64 власника. До того тут стояв 0, знятий 2026-08-24 з порожнього
 # списку, і кожен бут відтоді валив вердикт на цьому одному числі.
 admins = 1
+
+[client]
+# The client runs with -filePatching and mod_build keeps @<Mod>/<Mod> as a junction
+# to the source tree, so an edited .layout is read without repacking (the stand
+# config already carries allowFilePatching = 1).
+file_patching = true
