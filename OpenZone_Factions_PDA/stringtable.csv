@@ -1,25 +1,25 @@
-﻿"Language","original","english","czech","german","russian","polish","hungarian","italian","spanish","french","chinese","japanese","portuguese","chinesesimp",
-"STR_OZ_FACTION_INVITE","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction","Invite to faction",
-"STR_OZ_FACTION_EXPEL","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction","Expel from faction",
-"STR_OZ_FACTION_HANDOVER","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership","Hand over leadership",
-"STR_OZ_FACTION_JOIN","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join",
-"STR_OZ_FACTION_REFUSE","Refuse","Refuse","Refuse","Refuse","Refuse","Refuse","Refuse","Refuse","Refuse","Refuse","Refuse","Refuse","Refuse","Refuse",
-"STR_OZ_PAGE_FACTION","Faction","Faction","Faction","Faction","Faction","Faction","Faction","Faction","Faction","Faction","Faction","Faction","Faction","Faction",
-"STR_OZ_FACTION_NONE","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION","NO FACTION",
-"STR_OZ_FACTION_LEADER","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]","[LEADER]",
-"STR_OZ_FACTION_KICK","KICK","KICK","KICK","KICK","KICK","KICK","KICK","KICK","KICK","KICK","KICK","KICK","KICK","KICK",
-"STR_OZ_FACTION_LEAD","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER","MAKE LEADER",
-"STR_OZ_FACTION_CAND","candidate:","candidate:","candidate:","candidate:","candidate:","candidate:","candidate:","candidate:","candidate:","candidate:","candidate:","candidate:","candidate:","candidate:",
-"STR_OZ_FACTION_PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE","PROMOTE",
-"STR_OZ_FACTION_DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE","DEMOTE",
-"STR_OZ_FACTION_LEAVE","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION","LEAVE FACTION",
-"STR_OZ_F_AGAIN","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm","click again to confirm",
-"STR_OZ_F_ASK_KICK","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:","Remove from the faction:",
-"STR_OZ_F_ASK_LEAD","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:","Hand leadership to:",
-"STR_OZ_F_ASK_RANK","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for","New faction rank for",
-"STR_OZ_F_ASK_LEAVE","Leave","Leave","Leave","Leave","Leave","Leave","Leave","Leave","Leave","Leave","Leave","Leave","Leave","Leave","Leave",
-"STR_OZ_F_ASK_JOIN","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join","Join",
-"STR_OZ_F_LOSE","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave","you will leave",
-"STR_OZ_F_LOSE_RANK","rank","rank","rank","rank","rank","rank","rank","rank","rank","rank","rank","rank","rank","rank","rank",
-"STR_OZ_F_LOSE_LEAD","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post","and the leader post",
-"STR_OZ_F_NO_RANK","no rank","no rank","no rank","no rank","no rank","no rank","no rank","no rank","no rank","no rank","no rank","no rank","no rank","no rank","no rank",
+﻿"Language","original","english"
+"STR_OZ_FACTION_INVITE","Запросити до угруповання","Invite to faction"
+"STR_OZ_FACTION_EXPEL","Вигнати з угруповання","Expel from faction"
+"STR_OZ_FACTION_HANDOVER","Передати лідерство","Hand over leadership"
+"STR_OZ_FACTION_JOIN","Вступити","Join"
+"STR_OZ_FACTION_REFUSE","Відмовитись","Refuse"
+"STR_OZ_PAGE_FACTION","Угруповання","Faction"
+"STR_OZ_FACTION_NONE","БЕЗ УГРУПОВАННЯ","NO FACTION"
+"STR_OZ_FACTION_LEADER","[ЛIДЕР]","[LEADER]"
+"STR_OZ_FACTION_KICK","ВИГНАТИ","KICK"
+"STR_OZ_FACTION_LEAD","ЗРОБИТИ ЛIДЕРОМ","MAKE LEADER"
+"STR_OZ_FACTION_CAND","кандидат:","candidate:"
+"STR_OZ_FACTION_PROMOTE","ПIДВИЩИТИ","PROMOTE"
+"STR_OZ_FACTION_DEMOTE","ЗНИЗИТИ","DEMOTE"
+"STR_OZ_FACTION_LEAVE","ПОКИНУТИ УГРУПОВАННЯ","LEAVE FACTION"
+"STR_OZ_F_AGAIN","натисніть ще раз, щоб підтвердити","click again to confirm"
+"STR_OZ_F_ASK_KICK","Вигнати з угруповання:","Remove from the faction:"
+"STR_OZ_F_ASK_LEAD","Передати лідерство:","Hand leadership to:"
+"STR_OZ_F_ASK_RANK","Новий ранг в угрупованні для","New faction rank for"
+"STR_OZ_F_ASK_LEAVE","Ви втрачаєте угруповання","Leave"
+"STR_OZ_F_ASK_JOIN","Вступ до угруповання","Join"
+"STR_OZ_F_LOSE","ви втрачаєте угруповання","you will leave"
+"STR_OZ_F_LOSE_RANK","ранг","rank"
+"STR_OZ_F_LOSE_LEAD","і посаду лідера","and the leader post"
+"STR_OZ_F_NO_RANK","без рангу","no rank"
