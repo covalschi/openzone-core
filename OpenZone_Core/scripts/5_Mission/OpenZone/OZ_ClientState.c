@@ -189,8 +189,11 @@ class OZ_ClientState
     //
     // Ядровим цим каналом сьогодні говорить КПК (обмін контактами); фракції
     // мають власний, під власним іменем мода, і зводиться все одно в
-    // OZ_RoleNotice.
-    void OZ_RoleRes(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
+    // OZ_Notice.
+    //
+    // ІМ'Я МЕТОДА -- ЦЕ РЯДОК НА ПРОВОДІ (OZ_Rpc.RPC_NOTICE), збіг посимвольний;
+    // збіг із іменем класу-збірника нижче не заважає, як не заважає в OZ_Show.
+    void OZ_Notice(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
         if (type != CallType.Client)
             return;
@@ -199,7 +202,7 @@ class OZ_ClientState
         if (!ctx.Read(data))
             return;
 
-        OZ_RoleNotice.Take(data.param1, data.param2, data.param3);
+        OZ_Notice.Take(data.param1, data.param2, data.param3);
     }
 
     // «Покажи це». Ядро не знає, що саме -- лише розносить команду тим, хто

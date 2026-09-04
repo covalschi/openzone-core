@@ -62,8 +62,18 @@ class OZ_Rpc
     // фракцій, під його власне ім'я мода (OZF_Rpc). Лишилась половина, якою
     // говорить БУДЬ-ЯКИЙ мод серії: КПК відповідає нею на обмін контактами
     // (OZ_PdaContactSwap.Say), фракції -- своєю власною. Ядро тут лише конверт
-    // і клієнтський приймач, який роздає почуте через OZ_RoleNotice.
-    static const string RPC_ROLE_RES = "OZ_RoleRes";
+    // і клієнтський приймач, який роздає почуте через OZ_Notice.
+    //
+    // ІМ'Я НА ПРОВОДІ ЗМІНИЛОСЬ РАЗОМ З УСІМ ІНШИМ ("OZ_RoleRes" -> "OZ_Notice",
+    // 2026-09-04): сервер і клієнт крутять один і той самий pbo, і клієнт з
+    // іншою збіркою обов'язкового мода до сервера не приєднається взагалі, --
+    // тобто обидва кінці рядка їдуть однією посилкою, а не домовляються.
+    //
+    // Рядок збігається з ІМЕНЕМ МЕТОДА-ОБРОБНИКА (OZ_ClientState.OZ_Notice)
+    // посимвольно -- цього вимагає диспетчер CF, -- і того, що метод зветься
+    // так само, як клас-збірник OZ_Notice, боятись не треба: рівно та сама
+    // пара вже стоїть поруч і працює (OZ_ClientState.OZ_Show кличе OZ_Show.Take).
+    static const string RPC_NOTICE = "OZ_Notice";
 
     // Адмінська консоль -- ВЛАСНА пара, з тієї ж причини, що прив'язка й ролі,
     // тільки гостріше. Сторінки проходять крізь OZ_PageAccess, тобто крізь
@@ -129,7 +139,7 @@ class OZ_Rpc
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_RES,  inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_RES_PART, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_RES, inst, SingleplayerExecutionType.Client);
-        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ROLE_RES, inst, SingleplayerExecutionType.Client);
+        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_NOTICE, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ADMIN_RES, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ADMIN_RES_PART, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_SHOW, inst, SingleplayerExecutionType.Client);
@@ -150,7 +160,11 @@ class OZ_Rpc
     // не матеріалізує хвіст. Виміряно зондом на стенді: ВИХІД Substring
     // мовчки ріжеться до 8191 байтів, тож стара форма "json = хвіст"
     // втрачала все після ~9 КіБ на першій же ітерації.
-    private static int CutSafe(string s, int from, int at)
+    // НЕ private: різати рядок по межі символу треба й сусіднім модам серії
+    // (мод фракцій підрізає ним текст, який Discord прислав своїми словами), а
+    // другий різак означав би друге місце, де ту саму пастку з UTF-8 можна
+    // проґавити.
+    static int CutSafe(string s, int from, int at)
     {
         int cut = at;
         while (cut > from && (s.Get(cut).ToAscii() & 0xC0) == 0x80)
@@ -290,19 +304,23 @@ class OZ_Rpc
     // RoleRequest ТУТ БІЛЬШЕ НЕМАЄ: прохання змінити роль возить мод фракцій
     // своїм каналом (OZF_Rpc.RoleRequest). Лишився зворотний бік -- ним ядро
     // й будь-який мод серії кажуть клієнтові, що сталось.
+    //
+    // І ЗВЕТЬСЯ ВІН ТЕПЕР ТИМ, ЧИМ Є (2026-09-04). До того тут стояли
+    // RoleRespond/RPC_ROLE_RES із поясненням «перейменувати означало б
+    // розсинхронити ядро з клієнтами, які вже стоять» -- і це пояснення було
+    // просто неправдою: сервер і клієнт крутять ОДИН І ТОЙ САМИЙ pbo, клієнт
+    // з іншою збіркою обов'язкового мода до сервера не приєднається взагалі,
+    // тож обидва кінці рядка їдуть разом. Справжня ціна перейменування -- один
+    // виклик у КПК і його перезбірка, і вона заплачена.
 
     // `why` -- або ключ таблиці рядків (STR_OZ_...), або ГОТОВИЙ ТЕКСТ від
     // моста. Друге тому, що причину відмови Discord знає лише він, і «бот не
     // може керувати цією роллю» набагато корисніше за наш код помилки. Той,
     // хто малює, розрізняє їх за префіксом.
-    //
-    // Ім'я лишилось тим самим навмисно: рядок RPC_ROLE_RES їде проводом, і
-    // перейменувати його означало б розсинхронити ядро з клієнтами, які вже
-    // стоять. Читати його слід як «звістка», а не як «щось про фракції».
-    static void RoleRespond(PlayerIdentity to, string op, bool ok, string why)
+    static void Notice(PlayerIdentity to, string op, bool ok, string why)
     {
         Param3<string, bool, string> p = new Param3<string, bool, string>(op, ok, why);
-        GetRPCManager().SendRPC(OZ_Const.MOD, RPC_ROLE_RES, p, true, to);
+        GetRPCManager().SendRPC(OZ_Const.MOD, RPC_NOTICE, p, true, to);
     }
 
     // Сервер -> клієнт: показати щось. Що саме -- вирішує той, хто підписався

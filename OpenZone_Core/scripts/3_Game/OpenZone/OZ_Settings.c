@@ -254,7 +254,7 @@ class OZ_Settings : OZ_ConfigBase
         OZ_Json.EnsureTree();
 
         s_Inst = new OZ_Settings();
-        OZ_ConfigLoader<OZ_Settings>.Load(OZ_Const.SETTINGS, "Settings", s_Inst);
+        OZ_ConfigLoader<OZ_Settings>.Load(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s_Inst);
 
         OZ_Log.SetDebug(s_Inst.DebugMode);
     }

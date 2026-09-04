@@ -17,6 +17,17 @@ class OZ_Const
     static const string LANG_DIR    = "$profile:OpenZone\\Lang";
     static const string SETTINGS    = "$profile:OpenZone\\OZ_Core_Settings.json";
 
+    // ТЕГ цього файла для конфіг-служби -- КОНСТАНТОЮ, а не рядком у кожному
+    // виклику. З тега робиться ім'я резервної копії (OZ_Json.Backup пише
+    // <тег>.bak.json), і два написання одного тега -- "Settings" при
+    // завантаженні й "settings" при записі дзеркал -- на Windows дають той
+    // самий файл, а на Linux два різні. Копію читає не лише ядро: мод фракцій
+    // бере з неї старий розділ "Faction", коли живий файл ядро вже
+    // перезаписало, і промах у регістрі коштував би йому саме тієї межі, яку
+    // він переносить.
+    static const string SETTINGS_TAG = "Settings";
+    static const string SETTINGS_BAK = "$profile:OpenZone\\Backup\\Settings.bak.json";
+
     // Версія схеми Settings.json. Зростає лише разом із міграцією.
     //
     // v3 (2026-09-01, ТЗ-2 R3.1): дзеркала Discord по родах. Порожній список

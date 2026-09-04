@@ -284,7 +284,7 @@ class OZ_MirrorOps
             s.Bridge.Mirrors.Insert(add);
         }
 
-        OZ_ConfigLoader<OZ_Settings>.Save(OZ_Const.SETTINGS, "settings", s);
+        OZ_ConfigLoader<OZ_Settings>.Save(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s);
 
         string state = "off";
         if (on)
