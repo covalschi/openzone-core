@@ -185,7 +185,11 @@ class OZ_ClientState
         m.OnLinkResponse(data.param1, data.param2, data.param3, data.param4);
     }
 
-    // Відповідь на прохання змінити ролі. Далі її розбирає той, хто малює.
+    // Звістка від сервера. Далі її розбирає той, хто малює.
+    //
+    // Ядровим цим каналом сьогодні говорить КПК (обмін контактами); фракції
+    // мають власний, під власним іменем мода, і зводиться все одно в
+    // OZ_RoleNotice.
     void OZ_RoleRes(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
         if (type != CallType.Client)

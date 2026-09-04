@@ -60,15 +60,17 @@ class OZ_BridgeSettings
     ref array<ref OZ_KindMirror> Mirrors;
 }
 
-// Фракцiйнi межi -- рiшення сервера, не Discord. Стеля складу живе НЕ тут,
-// а в кожнiй фракцiї окремо (Factions.json, поле MaxMembers): у кожного
-// угруповання свiй штат, i редагується вiн через адмiнську консоль.
-class OZ_FactionLimits
-{
-    // Скiльки живе запрошення у фракцiю. Довше -- i гравець приймає
-    // запрошення вiд лiдера, який давно передумав.
-    int InviteTtlSeconds = 120;
-}
+// ФРАКЦІЙНИХ МЕЖ ТУТ БІЛЬШЕ НЕМАЄ (рішення власника 2026-09-04).
+//
+// Розділ "Faction" разом із класом меж поїхав у мод фракцій, у власний файл
+// $profile:OpenZone\OZ_Factions_Settings.json. Причина та сама, що й в усього
+// іншого виносу: у ядрі служби, а не гра, і сервер, якому потрібна сама лише
+// рація, не мусить мати в налаштуваннях розділ про запрошення до угруповань.
+//
+// СТАРІ ФАЙЛИ ВІД ЦЬОГО НЕ ЛАМАЮТЬСЯ. Розділ, який лишився на диску,
+// JsonFileLoader просто не має куди покласти і мовчки пропускає; мод фракцій
+// на першому старті читає з нього своє число сам, тож адмін не втрачає межу,
+// яку колись виставив (див. OZF_Settings.Inherit).
 
 class OZ_Settings : OZ_ConfigBase
 {
@@ -93,8 +95,6 @@ class OZ_Settings : OZ_ConfigBase
     // виходу. false -- не пускати, для того, хто свідомо хоче саме цього.
     bool AllowPlayWhenBridgeDown = true;
 
-    ref OZ_FactionLimits Faction;
-
     private static ref OZ_Settings s_Inst;
 
     static OZ_Settings Get()
@@ -116,7 +116,6 @@ class OZ_Settings : OZ_ConfigBase
         AdminIds      = new array<string>();
         VppPermission = "OpenZone:Admin";
         Bridge        = new OZ_BridgeSettings();
-        Faction       = new OZ_FactionLimits();
 
         RequireDiscordLink      = true;
         AllowPlayWhenBridgeDown = true;
@@ -139,12 +138,11 @@ class OZ_Settings : OZ_ConfigBase
     override bool Migrate(int from)
     {
         // Ланцюжок покрокових мiграцiй: кожен крок пiднiмає на одну версiю.
-        if (from < 2)
-        {
-            // v2: фракцiйнi межi. Новий блок з умовчаннями -- стара поведiнка
-            // (без лiмiту, двi хвилини на запрошення) зберiгається дослiвно.
-            Faction = new OZ_FactionLimits();
-        }
+        //
+        // КРОКУ v2 ТУТ БІЛЬШЕ НЕМАЄ: він заводив розділ "Faction", а той поїхав
+        // у мод фракцій. Номер не перевикористовується й крок не зсувається --
+        // версії у файлах адмінів означають те саме, що й означали, а зайвий
+        // розділ на диску нікому не заважає.
 
         // v3: дзеркала. Порожнiй список -- усi вимкненi, i це НЕ збереження
         // старої поведiнки, а свiдома її змiна (ТЗ-2 R3.2): ранiше вiдсутнiсть
@@ -173,8 +171,6 @@ class OZ_Settings : OZ_ConfigBase
             Bridge.Kinds = new array<string>();
         if (!Bridge.Mirrors)
             Bridge.Mirrors = new array<ref OZ_KindMirror>();
-        if (!Faction)
-            Faction = new OZ_FactionLimits();
 
         // ДЗЕРКАЛА: чистимо запис, а не завантаження (ТЗ-2 R3.4).
         //
@@ -209,13 +205,6 @@ class OZ_Settings : OZ_ConfigBase
                     break;
                 }
             }
-        }
-
-        if (Faction.InviteTtlSeconds < 10)
-        {
-            OZ_Log.Warn("Faction.InviteTtlSeconds under 10 s cannot be read in time, clamped to 10");
-            Faction.InviteTtlSeconds = 10;
-            warnings++;
         }
 
         for (int i = 0; i < AdminIds.Count(); i++)
