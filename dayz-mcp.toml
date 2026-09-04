@@ -11,7 +11,8 @@ name = "openzone-core"
 #
 # Ядро володіє лише Settings.json. Profiles.json (профілі пристроїв) належить
 # КПК: конфіг-служба тут, а самі файли оголошує той мод, якому вони потрібні.
-mods = ["OpenZone_Core", "OpenZone_Factions", "OpenZone_VPP", "OpenZone_Factions_PDA", "OpenZone_Factions_VPP"]
+mods = ["OpenZone_Core", "OpenZone_VPP"]
+# The faction PBOs live in openzone-factions since 2026-09-04 (their own repository).
 
 [expect]
 # Рядок, який ядро друкує, коли всі його конфіги прочитані.

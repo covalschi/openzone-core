@@ -1,11 +1,24 @@
 {
-  "note": "Preview gallery for ui_gallery: the VPP admin window and the pbo-glue pages of the core as the engine draws them.",
+  "note": "Preview gallery for ui_gallery: the VPP admin window and the link screen of the core as the engine draws them (the faction pages moved to openzone-factions).",
   "entries": [
-    {"name": "vpp-admin", "layout": "OpenZone_VPP/gui/layouts/oz_vpp_admin.layout", "host": "1000 620"},
-    {"name": "vpp-tab", "layout": "OpenZone_VPP/gui/layouts/oz_vpp_tab.layout", "host": "150 28"},
-    {"name": "vpp-row", "layout": "OpenZone_VPP/gui/layouts/oz_vpp_row.layout", "host": "560 30"},
-    {"name": "factions-vpp", "layout": "OpenZone_Factions_VPP/gui/layouts/ozf_vpp_pane.layout", "host": "1000 620"},
-    {"name": "factions-pda", "layout": "OpenZone_Factions_PDA/gui/layouts/oz_pda_page_faction.layout", "host": "666 518"},
-    {"name": "link", "layout": "OpenZone_Core/gui/layouts/oz_link.layout"}
+    {
+      "name": "vpp-admin",
+      "layout": "OpenZone_VPP/gui/layouts/oz_vpp_admin.layout",
+      "host": "1000 620"
+    },
+    {
+      "name": "vpp-tab",
+      "layout": "OpenZone_VPP/gui/layouts/oz_vpp_tab.layout",
+      "host": "150 28"
+    },
+    {
+      "name": "vpp-row",
+      "layout": "OpenZone_VPP/gui/layouts/oz_vpp_row.layout",
+      "host": "560 30"
+    },
+    {
+      "name": "link",
+      "layout": "OpenZone_Core/gui/layouts/oz_link.layout"
+    }
   ]
 }

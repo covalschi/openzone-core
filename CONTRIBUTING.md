@@ -27,7 +27,10 @@ cannot be accepted. **GPL code in particular cannot go in.**
 - **Do not invent DayZ API.** Every engine call must be checked against the
   unpacked game scripts. If you are not sure, unpack the PBO and look.
 - **No text in code.** Every user-facing string goes through the stringtable.
-  English is the base language.
+  `original` is Ukrainian, `english` is English, the twelve remaining vanilla
+  columns repeat the Ukrainian original (the engine needs the full column set);
+  the capital Ukrainian I is stored as Latin I because no Metron font of the
+  game draws U+0406.
 - **No hard dependency beyond Community Framework.** Anything else is an optional
   provider behind an `#ifdef` plus a runtime probe, with a working fallback.
 - **Never identify an item by inheritance from our own class.** Item classnames come
