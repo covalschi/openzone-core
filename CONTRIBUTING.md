@@ -30,7 +30,8 @@ cannot be accepted. **GPL code in particular cannot go in.**
   `original` is Ukrainian, `english` is English, the twelve remaining vanilla
   columns repeat the Ukrainian original (the engine needs the full column set);
   the capital Ukrainian I is stored as Latin I because no Metron font of the
-  game draws U+0406.
+  game draws U+0406. The one exception is the VPP admin console: it is English
+  in place and stays that way.
 - **No hard dependency beyond Community Framework.** Anything else is an optional
   provider behind an `#ifdef` plus a runtime probe, with a working fallback. This
   binds a mod's own pbo, not the family: a hard dependency is fine in a separate,
