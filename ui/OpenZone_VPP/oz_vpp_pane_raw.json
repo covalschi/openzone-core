@@ -5,19 +5,19 @@
     "hidden": true, "priority": 2,
     "note": "Hidden: ShowPane shows the open tab's pane and hides the rest.",
     "children": [
-      {"vbox": {"name": "RawBody", "gap": 10, "children": [
+      {"vbox": {"name": "RawBody", "gap": "$space.gap", "children": [
         {"section": {"name": "SecRaw", "text": "RAW CONFIGS (CORE)"}},
-        {"hbox": {"name": "RawCols", "h": "fill", "gap": 20, "children": [
+        {"hbox": {"name": "RawCols", "h": "fill", "gap": "$space.column", "children": [
           {"listbox": {"name": "RawList", "w": 190, "font": "field", "color": "$text",
             "props": {"style": "NoScrollBar", "title visible": false, "highlight row": true, "lines": 13},
             "note": "Only configs whose owner is the core: a glue mod's own file belongs to whoever draws it."}},
           {"vbox": {"name": "RawSide", "w": 750, "gap": 8, "children": [
             {"field": {"name": "RawEdit", "h": "fill", "lines": 19,
               "note": "The whole file, as text. 19 lines is what the 336-unit box holds at the fixed 14-point field face."}},
-            {"hbox": {"name": "RawMirror", "h": "$size.button", "gap": 10, "children": [
+            {"hbox": {"name": "RawMirror", "h": "$size.button", "gap": "$space.gap", "children": [
               {"label": {"name": "MirrorLabel", "w": 180, "font": "small", "color": "$muted"}},
               {"button": {"name": "BtnMirror", "w": 150, "text": "MIRROR ON"}},
-              {"gap": {"w": 20}},
+              {"gap": {"w": "$space.column"}},
               {"label": {"name": "MirrorRolesLabel", "w": 180, "font": "small", "color": "$muted"}},
               {"button": {"name": "BtnMirrorRoles", "w": 150, "text": "ROLES ON"}}
             ]}},

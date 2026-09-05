@@ -11,7 +11,8 @@
     {
       "name": "vpp-tab",
       "layout": "OpenZone_VPP/gui/layouts/oz_vpp_tab.layout",
-      "host": "150 28"
+      "host": "150 28",
+      "fixture": "preview/vpp-tab.json"
     },
     {
       "name": "vpp-spawns",

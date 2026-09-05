@@ -5,8 +5,8 @@
     "hidden": true, "priority": 2,
     "note": "Hidden: ShowPane shows the open tab's pane and hides the rest.",
     "children": [
-      {"vbox": {"name": "SpBody", "gap": 10, "children": [
-        {"hbox": {"name": "SpCols", "h": "fill", "gap": 20, "children": [
+      {"vbox": {"name": "SpBody", "gap": "$space.gap", "children": [
+        {"hbox": {"name": "SpCols", "h": "fill", "gap": "$space.column", "children": [
           {"vbox": {"name": "SpZoneCol", "w": 480, "gap": 8, "children": [
             {"section": {"name": "SecSpZ", "text": "SPAWN ZONES"}},
             {"listbox": {"name": "SpawnList", "h": "fill", "font": "field", "color": "$text",
@@ -27,7 +27,7 @@
               {"label": {"name": "SpRadLbl", "w": "$vpp.labelW", "text": "radius, m", "font": "small", "color": "$muted"}},
               {"field": {"name": "SpRadius", "w": "$vpp.fieldW"}}
             ]}},
-            {"hbox": {"h": "$size.button", "gap": 10, "children": [
+            {"hbox": {"h": "$size.button", "gap": "$space.gap", "children": [
               {"button": {"name": "BtnSpHere", "w": 225, "text": "SPAWN HERE", "edge": "$ok", "color": "$ok"}},
               {"button": {"name": "BtnSpClear", "w": 225, "text": "CLEAR ZONE", "edge": "$bad", "color": "$bad"}}
             ]}},
@@ -37,7 +37,7 @@
               {"label": {"name": "SpUidLbl", "w": "$vpp.labelW", "text": "steam64", "font": "small", "color": "$muted"}},
               {"field": {"name": "SpUid", "w": "$vpp.fieldW"}}
             ]}},
-            {"hbox": {"h": "$size.button", "gap": 10, "children": [
+            {"hbox": {"h": "$size.button", "gap": "$space.gap", "children": [
               {"button": {"name": "BtnSpUidHere", "w": 225, "text": "POINT HERE", "edge": "$ok", "color": "$ok"}},
               {"button": {"name": "BtnSpUidClear", "w": 225, "text": "CLEAR POINT", "edge": "$bad", "color": "$bad"}}
             ]}}

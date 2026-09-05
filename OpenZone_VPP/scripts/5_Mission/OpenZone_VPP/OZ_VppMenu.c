@@ -218,6 +218,13 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     // змінюєш токен -- зміни й цю сталу.
     static const float TAB_GAP = 6;
 
+    // Колір напису вкладки: та сама пара ARGB, що в OZ_PdaMenu.c для
+    // активної/неактивної вкладки -- дзеркало color.accent і color.muted із
+    // ui/tokens.json (0.31 0.71 0.91 і 0.58 0.65 0.71, ×255, округлено).
+    // Рушій json не читає, тому, як і TAB_GAP вище, число живе двічі.
+    static const int TAB_TEXT_OPEN = ARGB(255, 79, 181, 232);
+    static const int TAB_TEXT_IDLE = ARGB(255, 148, 166, 181);
+
     // Своя панель -- окремою розміткою, точно як у склейок: створити під
     // коренем і зареєструвати. Ім'я файлу росте з того самого id, тож
     // розійтися їм нема де.
@@ -284,6 +291,14 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     // (160/8/20/52/40): на 3840x1600 вони стискали вкладку зі 150 одиниць до
     // 103 і клали смугу на 35-й одиниці замість 52-ї, тобто вікно виглядало
     // по-різному на різних екранах.
+    //
+    // РАННІЙ ВИХІД НА НУЛІ, А НЕ НА ВІД'ЄМНИХ: до першого проходу розмітки
+    // GetScreenSize повертає 0 і для смуги, і для першої вкладки (зміряно,
+    // gui-layouts.md §24, "widget measured before its first layout pass").
+    // Без цієї сторожі room == 0 робить want від'ємним, SetPos тягне вкладки
+    // вліво від нуля, а ShrinkTab кличеться з від'ємною шириною. Тому
+    // OnMenuShow кличе LayoutTabs ЩЕ РАЗ: перший виклик іде з RegisterPane,
+    // поки вікно ще приховане й розмір невідомий, другий -- коли він уже є.
     protected void LayoutTabs()
     {
         int n = m_TabBtns.Count();
@@ -293,6 +308,8 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         float room, striph;
         strip.GetScreenSize(room, striph);
+        if (room <= 0)
+            return;
 
         float lw, lh, sw, sh;
         m_TabBtns[0].GetSize(lw, lh);
@@ -313,21 +330,28 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             float bw, bh;
             b.GetScreenSize(bw, bh);
             if (bw > want)
-                ShrinkTab(b, want / scale);
+                ShrinkTab(b, want);
         }
     }
 
     // Кнопка і всі її діти (рамка, тло, напис) вужчають на одне число.
+    //
+    // ПІКСЕЛІ, НЕ ОДИНИЦІ: SetSize на віджеті точного розміру пише ЕКРАННІ
+    // пікселі (зміряно 2026-09-03, gui-layouts.md §24), тому ширина-ціль тут
+    // приходить уже в пікселях (LayoutTabs більше не ділить на scale), і
+    // дельта рахується від GetScreenSize, а не GetSize. Шлях спрацьовує лише
+    // від сьомої вкладки (див. коментар LayoutTabs, три вкладки в ядрі) і на
+    // живому стенді не перевірений -- жива перевірка ще належна.
     private void ShrinkTab(Widget b, float width)
     {
         float w, h;
-        b.GetSize(w, h);
+        b.GetScreenSize(w, h);
         float d = w - width;
         b.SetSize(width, h);
         Widget c = b.GetChildren();
         while (c)
         {
-            c.GetSize(w, h);
+            c.GetScreenSize(w, h);
             c.SetSize(w - d, h);
             c = c.GetSibling();
         }
@@ -345,9 +369,9 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             if (t)
             {
                 if (m_TabIds[i] == id)
-                    t.SetColor(ARGB(255, 255, 122, 26));
+                    t.SetColor(TAB_TEXT_OPEN);
                 else
-                    t.SetColor(ARGB(255, 138, 143, 153));
+                    t.SetColor(TAB_TEXT_IDLE);
             }
         }
 
@@ -378,6 +402,12 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     override void OnMenuShow()
     {
         super.OnMenuShow();
+
+        // Другий прохід розмітки смуги: перший (з RegisterPane) майже завжди
+        // впаде на нулях, бо вікно ще приховане -- OnMenuShow це перший
+        // момент, коли розмір уже відомий (див. коментар LayoutTabs).
+        LayoutTabs();
+
         if (M_SUB_WIDGET)
             M_SUB_WIDGET.SetSort(1000);
         Ask(OZ_AdminSect.CONFIG, "cfg_list", "{}");

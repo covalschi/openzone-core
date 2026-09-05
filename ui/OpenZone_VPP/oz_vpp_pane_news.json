@@ -16,7 +16,7 @@
         {"label": {"name": "NwBodyLbl", "text": "BODY", "font": "small", "color": "$muted"}},
         {"field": {"name": "NwBody", "h": "fill", "lines": 12,
           "note": "The post itself. 12 lines is what the 214-unit box holds at the fixed 14-point field face."}},
-        {"hbox": {"name": "NwSign", "h": "$size.button", "gap": 10, "children": [
+        {"hbox": {"name": "NwSign", "h": "$size.button", "gap": "$space.gap", "children": [
           {"label": {"name": "NwWhoLbl", "w": "$vpp.labelW", "text": "SIGNED BY", "font": "small", "color": "$muted"}},
           {"button": {"name": "BtnNwWho", "w": 360, "text": "myself"}}
         ]}},
