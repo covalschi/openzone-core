@@ -12,11 +12,6 @@
       "host": "150 28"
     },
     {
-      "name": "vpp-row",
-      "layout": "OpenZone_VPP/gui/layouts/oz_vpp_row.layout",
-      "host": "560 30"
-    },
-    {
       "name": "link",
       "layout": "OpenZone_Core/gui/layouts/oz_link.layout"
     }

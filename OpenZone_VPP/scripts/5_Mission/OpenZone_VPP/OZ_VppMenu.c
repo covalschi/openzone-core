@@ -1,7 +1,8 @@
-// Вкладка «OpenZone» у VPP Admin Tools, третя редакцiя: фракцiї -- лише
-// призначення (народжує й ховає їх бот у Discord), гравцевi -- мiтки,
-// особистий спавн i пермадес. Субмод КПК доклада свою вкладку через
-// modded class -- точки розширення позначенi словом protected.
+// Вкладка «OpenZone» у VPP Admin Tools: цей pbo реєструє рiвно три
+// панелi -- SPAWNS, RAW JSON, NEWS. Панель iншого мода додає СКЛЕЙКА --
+// окремий pbo, що чiпляється сюди через modded class, де точки
+// розширення позначенi словом protected. Панель FACTIONS, наприклад,
+// приїжджає з OpenZone_Factions_VPP, з репозиторiю фракцiй.
 //
 // Клiєнтський UI i НIЧОГО бiльше: кожна дiя їде на сервер АДМIНСЬКИМ
 // конвертом ядра (OZ_Rpc.AdminRequest у роздiл "config" чи "spawns"), i
@@ -72,7 +73,7 @@ modded class VPPAdminHud
     override void DefineButtons()
     {
         super.DefineButtons();
-        InsertButton("OZ_VppAdminMenu", "OpenZone", "set:dayz_gui_vpp image:vpp_icon_xml_editor", "OpenZone: factions, spawns, configs");
+        InsertButton("OZ_VppAdminMenu", "OpenZone", "set:dayz_gui_vpp image:vpp_icon_xml_editor", "OpenZone: spawns, configs, news");
     }
 }
 

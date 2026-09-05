@@ -32,7 +32,11 @@ cannot be accepted. **GPL code in particular cannot go in.**
   the capital Ukrainian I is stored as Latin I because no Metron font of the
   game draws U+0406.
 - **No hard dependency beyond Community Framework.** Anything else is an optional
-  provider behind an `#ifdef` plus a runtime probe, with a working fallback.
+  provider behind an `#ifdef` plus a runtime probe, with a working fallback. This
+  binds a mod's own pbo, not the family: a hard dependency is fine in a separate,
+  optional glue pbo that depends on both sides it glues, and nothing else needs.
+  `OpenZone_VPP` is Core's own example — a hard dependency on VPP Admin Tools,
+  confined to a pbo a server can skip entirely.
 - **Never identify an item by inheritance from our own class.** Item classnames come
   from JSON so that admins can point the mod at items from any mod.
 - Every `.ps1` file must be saved as **UTF-8 with BOM**, or Windows PowerShell 5.1

@@ -17,7 +17,18 @@ infrastructure.
 | **Page registry** | Screens register themselves once; any mod can add one |
 | **Player store** | Per-SteamID JSON that survives character death |
 | **Bridge client** | Long-poll client for the OpenZone Discord bridge |
-| **Spawn loadouts** | A service another mod fills in (`OZ_Loadout`, three-valued: no opinion / naked / preset) plus an applicator that strips what the mission gave a new character and dresses it from a preset, in the same frame after `OnClientNewEvent`; one-shot spawn points may carry a loadout word. The factions mod supplies the ladder (`OZ_Factions_Loadouts.json`) |
+| **Affiliation contract** | `OZ_Identity`: which organisation, which stand towards another player, who leads. Declared here, answered with "none" here, filled in by the factions mod; read-only by design. The only faction-shaped thing in Core |
+| **Spawn loadouts** | A service another mod fills in (`OZ_Loadout`, three-valued: no opinion / naked / preset) plus an applicator that strips what the mission gave a new character and dresses it from a preset, in the same frame after `OnClientNewEvent`; one-shot spawn points may carry a loadout word. [The factions mod](https://github.com/covalschi/openzone-factions) supplies the ladder (`OZ_Factions_Loadouts.json`) |
+
+## OpenZone_VPP
+
+A second, optional pbo shipped from this same repository. It adds an "OpenZone" tab to
+VPP Admin Tools with three panes — SPAWNS, RAW JSON, NEWS — and nothing else. Unlike
+Core proper, it carries a hard dependency on VPP Admin Tools (`DZM_VPPAdminToolsScripts`);
+a server that leaves `@OpenZone_VPP` out of its mod list keeps every other service Core
+provides. The FACTIONS pane in that tab is not registered here — it comes from
+`OpenZone_Factions_VPP`, in the [OpenZone Factions](https://github.com/covalschi/openzone-factions)
+repository.
 
 ## Requirements
 
@@ -28,6 +39,7 @@ Optional, detected at runtime: VPP Admin Tools, DayZ Expansion.
 ## Mods built on it
 
 - **[OpenZone PDA](https://github.com/covalschi/openzone-pda)** — S.T.A.L.K.E.R.-style PDA: map, factions, friends, shared markers, Discord-backed chat, configurable radio
+- **[OpenZone Factions](https://github.com/covalschi/openzone-factions)** — factions, roles, ranks, roster, permadeath; supplies `OZ_Identity`
 
 ## Licence
 
