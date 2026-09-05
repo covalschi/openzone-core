@@ -1,0 +1,16 @@
+{
+  "layout": "oz_vpp_admin",
+  "note": "The OpenZone admin window, hosted by VPP Admin Tools. The root places itself at a fraction of the host (at_frac) at an exact size, because VPP hands it a workspace, not a page. Only the window chrome lives here: the background, the title, the close button and TabStrip -- the empty strip the script fills with one tab template per registered pane. THE PANES ARE NOT HERE: every pane, the core's three and the glue mods' own, is its own layout the script creates under this root at [0, vpp.paneY], so a mod that adds a pane needs nothing from this file. Names OZ_VppRoot, BtnVppClose and TabStrip are read by OZ_VppMenu.c.",
+  "root": {"frame": {"name": "OZ_VppRoot", "size": "$vpp.window", "at_frac": ["$vpp.windowX", "$vpp.windowY"], "hidden": true, "priority": 10,
+    "note": "Hidden: VPP shows the window itself (ShowSubMenu right after OnCreate). Priority 10 above VPP's own frames, as before.",
+    "children": [
+      {"panel": {"name": "VppBg", "size": "$vpp.window", "color": "$screen", "edge": true, "priority": 1,
+        "note": "The window's ground and its one-unit border, the same pair the PDA shell paints; priority 1 leaves 2 for the panes the script creates on top of it."}},
+      {"frame": {"name": "VppHeader", "w": "fill", "h": "$vpp.header", "priority": 3, "children": [
+        {"label":  {"name": "VppTitle", "at": [20, 14], "w": 500, "h": 26, "text": "OPENZONE ADMIN", "font": "title", "color": "$accent"}},
+        {"button": {"name": "BtnVppClose", "anchor": "right", "at": [14, 12], "size": [34, 34], "text": "X", "font": "header", "glyph": true}},
+        {"frame":  {"name": "TabStrip", "at": [0, 52], "w": "fill", "h": 28,
+          "note": "Empty on purpose: LayoutTabs puts one oz_vpp_tab.layout in it per registered pane, so the strip is empty in the gallery. 28 is the height of vpp.tab and 52 puts its bottom at 80, inside the vpp.header band (96) and clear of the panes at vpp.paneY -- written out because the generator does no arithmetic on tokens."}}
+      ]}}
+    ]}}
+}

@@ -1,0 +1,10 @@
+{
+  "note": "NEWS with a post typed and a persona of the bridge picked to sign it.",
+  "ops": [
+    {"op": "show", "nth": 1, "name": "PaneNews"},
+    {"op": "text", "nth": 1, "name": "NwTitle", "text": "Sidorovych sells detectors again"},
+    {"op": "text", "nth": 1, "name": "NwBody", "text": "The trader is back at the bar with a crate of Bear detectors.\nPrices hold until the emission, and not an hour longer.\n\n- the Duty quartermaster"},
+    {"op": "text", "nth": 1, "name": "BtnNwWhoText", "text": "Sidorovych"},
+    {"op": "text", "nth": 1, "name": "NewsHint", "text": "posted: 1 channel, 14 PDAs"}
+  ]
+}

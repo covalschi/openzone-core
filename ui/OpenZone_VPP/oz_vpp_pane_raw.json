@@ -1,0 +1,35 @@
+{
+  "layout": "oz_vpp_pane_raw",
+  "note": "RAW JSON pane of the admin window: the core's own server configs by name on the left, the file itself in an editor on the right, the two Discord mirror switches under it and RELOAD/APPLY at the bottom. Created by OZ_VppMenu.OnCreate under OZ_VppRoot at [0, vpp.paneY]. Names RawList, RawEdit, MirrorLabel, MirrorRolesLabel, RawHint, BtnMirrorText, BtnMirrorRolesText and the four button names are read by OZ_VppMenu.c.",
+  "root": {"frame": {"name": "PaneRaw", "size": "$vpp.pane", "at": [0, "$vpp.paneY"], "inset": "$vpp.inset",
+    "hidden": true, "priority": 2,
+    "note": "Hidden: ShowPane shows the open tab's pane and hides the rest.",
+    "children": [
+      {"vbox": {"name": "RawBody", "gap": 10, "children": [
+        {"section": {"name": "SecRaw", "text": "RAW CONFIGS (CORE)"}},
+        {"hbox": {"name": "RawCols", "h": "fill", "gap": 20, "children": [
+          {"listbox": {"name": "RawList", "w": 190, "font": "field", "color": "$text",
+            "props": {"style": "NoScrollBar", "title visible": false, "highlight row": true, "lines": 13},
+            "note": "Only configs whose owner is the core: a glue mod's own file belongs to whoever draws it."}},
+          {"vbox": {"name": "RawSide", "w": 750, "gap": 8, "children": [
+            {"field": {"name": "RawEdit", "h": "fill", "lines": 19,
+              "note": "The whole file, as text. 19 lines is what the 336-unit box holds at the fixed 14-point field face."}},
+            {"hbox": {"name": "RawMirror", "h": "$size.button", "gap": 10, "children": [
+              {"label": {"name": "MirrorLabel", "w": 180, "font": "small", "color": "$muted"}},
+              {"button": {"name": "BtnMirror", "w": 150, "text": "MIRROR ON"}},
+              {"gap": {"w": 20}},
+              {"label": {"name": "MirrorRolesLabel", "w": 180, "font": "small", "color": "$muted"}},
+              {"button": {"name": "BtnMirrorRoles", "w": 150, "text": "ROLES ON"}}
+            ]}},
+            {"hbox": {"name": "RawActions", "h": "$size.button", "children": [
+              {"button": {"name": "BtnRawReload", "w": 150, "text": "RELOAD"}},
+              {"gap": {"w": "fill"}},
+              {"button": {"name": "BtnRawApply", "w": 150, "text": "APPLY", "edge": "$ok", "color": "$ok"}}
+            ]}}
+          ]}}
+        ]}},
+        {"label": {"name": "RawHint", "h": "$size.hint", "font": "hint", "color": "$muted",
+          "note": "Empty: every answer of the config route lands here."}}
+      ]}}
+    ]}}
+}

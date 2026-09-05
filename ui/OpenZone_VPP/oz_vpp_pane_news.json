@@ -1,0 +1,33 @@
+{
+  "layout": "oz_vpp_pane_news",
+  "note": "NEWS pane of the admin window: a post to the bridge, and from there to Discord and every PDA. Created by OZ_VppMenu.OnCreate under OZ_VppRoot at [0, vpp.paneY]. Names NwTitle, NwBody, NewsHint, BtnNwWhoText and the two button names are read by OZ_VppMenu.c. The title and body fields are wider than vpp.fieldW on purpose: this pane is one column across the whole window, and a headline typed into 260 units would be unreadable.",
+  "root": {"frame": {"name": "PaneNews", "size": "$vpp.pane", "at": [0, "$vpp.paneY"], "inset": "$vpp.inset",
+    "hidden": true, "priority": 2,
+    "note": "Hidden: ShowPane shows the open tab's pane and hides the rest.",
+    "children": [
+      {"vbox": {"name": "NwForm", "gap": 8, "children": [
+        {"section": {"name": "SecNw", "text": "NEWS (ADMIN)"}},
+        {"label": {"name": "NwHelp1", "font": "small", "color": "$muted",
+          "text": "A post goes to the bridge and from there to Discord and every PDA. Title, body, and whose name signs it."}},
+        {"hrow": {"h": "$size.field", "children": [
+          {"label": {"name": "NwTitleLbl", "w": "$vpp.labelW", "text": "TITLE", "font": "small", "color": "$muted"}},
+          {"field": {"name": "NwTitle", "w": 760}}
+        ]}},
+        {"label": {"name": "NwBodyLbl", "text": "BODY", "font": "small", "color": "$muted"}},
+        {"field": {"name": "NwBody", "h": "fill", "lines": 12,
+          "note": "The post itself. 12 lines is what the 214-unit box holds at the fixed 14-point field face."}},
+        {"hbox": {"name": "NwSign", "h": "$size.button", "gap": 10, "children": [
+          {"label": {"name": "NwWhoLbl", "w": "$vpp.labelW", "text": "SIGNED BY", "font": "small", "color": "$muted"}},
+          {"button": {"name": "BtnNwWho", "w": 360, "text": "myself"}}
+        ]}},
+        {"label": {"name": "NwHelp2", "font": "small", "color": "$muted",
+          "text": "Click to cycle: your own name, then every persona the bridge lists for you."}},
+        {"hbox": {"name": "NwActions", "h": "$size.button", "children": [
+          {"gap": {"w": "fill"}},
+          {"button": {"name": "BtnNwPost", "w": 150, "text": "POST", "edge": "$ok", "color": "$ok"}}
+        ]}},
+        {"label": {"name": "NewsHint", "h": "$size.hint", "font": "hint", "color": "$muted",
+          "note": "Empty: every answer of the news route lands here."}}
+      ]}}
+    ]}}
+}

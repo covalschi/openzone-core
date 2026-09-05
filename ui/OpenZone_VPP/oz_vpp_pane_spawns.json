@@ -1,0 +1,50 @@
+{
+  "layout": "oz_vpp_pane_spawns",
+  "note": "SPAWNS pane of the admin window: the list of known spawn zones on the left, the form that writes one on the right, and the personal point below it. Created by OZ_VppMenu.OnCreate under OZ_VppRoot at [0, vpp.paneY] -- exactly where every glue mod's pane creates itself, so all of them still overlap and the script shows one at a time. Names SpawnList, SpSlug, SpRadius, SpUid, SpawnHint, BtnSpFacText and the five button names are read by OZ_VppMenu.c.",
+  "root": {"frame": {"name": "PaneSpawns", "size": "$vpp.pane", "at": [0, "$vpp.paneY"], "inset": "$vpp.inset",
+    "hidden": true, "priority": 2,
+    "note": "Hidden: ShowPane shows the open tab's pane and hides the rest.",
+    "children": [
+      {"vbox": {"name": "SpBody", "gap": 10, "children": [
+        {"hbox": {"name": "SpCols", "h": "fill", "gap": 20, "children": [
+          {"vbox": {"name": "SpZoneCol", "w": 480, "gap": 8, "children": [
+            {"section": {"name": "SecSpZ", "text": "SPAWN ZONES"}},
+            {"listbox": {"name": "SpawnList", "h": "fill", "font": "field", "color": "$text",
+              "props": {"style": "NoScrollBar", "title visible": false, "highlight row": true, "lines": 13},
+              "note": "The engine's own listbox, filled by AddItem; 13 lines over 414 units keeps the 31-unit row of the hand-written pane."}}
+          ]}},
+          {"vbox": {"name": "SpFormCol", "w": 460, "gap": 8, "children": [
+            {"section": {"name": "SecSpA", "text": "SET ZONE"}},
+            {"label": {"name": "SpHelp1", "text": "Zone lands where YOU stand.", "font": "small", "color": "$muted"}},
+            {"label": {"name": "SpHelp2", "text": "Cycler lists known slugs; the field below wins.", "font": "small", "color": "$muted"}},
+            {"label": {"name": "SpHelp3", "text": "slug: star = staging, dash = fallback zone", "font": "small", "color": "$muted"}},
+            {"button": {"name": "BtnSpFac", "text": "faction: -"}},
+            {"hrow": {"h": "$size.field", "children": [
+              {"label": {"name": "SpSlugLbl", "w": "$vpp.labelW", "text": "slug", "font": "small", "color": "$muted"}},
+              {"field": {"name": "SpSlug", "w": "$vpp.fieldW"}}
+            ]}},
+            {"hrow": {"h": "$size.field", "children": [
+              {"label": {"name": "SpRadLbl", "w": "$vpp.labelW", "text": "radius, m", "font": "small", "color": "$muted"}},
+              {"field": {"name": "SpRadius", "w": "$vpp.fieldW"}}
+            ]}},
+            {"hbox": {"h": "$size.button", "gap": 10, "children": [
+              {"button": {"name": "BtnSpHere", "w": 225, "text": "SPAWN HERE", "edge": "$ok", "color": "$ok"}},
+              {"button": {"name": "BtnSpClear", "w": 225, "text": "CLEAR ZONE", "edge": "$bad", "color": "$bad"}}
+            ]}},
+            {"section": {"name": "SecSpP", "text": "PERSONAL POINT"}},
+            {"label": {"name": "SpHelp4", "text": "One player, one home. Click a row to fill in.", "font": "small", "color": "$muted"}},
+            {"hrow": {"h": "$size.field", "children": [
+              {"label": {"name": "SpUidLbl", "w": "$vpp.labelW", "text": "steam64", "font": "small", "color": "$muted"}},
+              {"field": {"name": "SpUid", "w": "$vpp.fieldW"}}
+            ]}},
+            {"hbox": {"h": "$size.button", "gap": 10, "children": [
+              {"button": {"name": "BtnSpUidHere", "w": 225, "text": "POINT HERE", "edge": "$ok", "color": "$ok"}},
+              {"button": {"name": "BtnSpUidClear", "w": 225, "text": "CLEAR POINT", "edge": "$bad", "color": "$bad"}}
+            ]}}
+          ]}}
+        ]}},
+        {"label": {"name": "SpawnHint", "h": "$size.hint", "font": "hint", "color": "$muted",
+          "note": "Empty: every answer of the spawns route lands here."}}
+      ]}}
+    ]}}
+}

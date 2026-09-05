@@ -1,0 +1,6 @@
+{
+  "note": "The admin window as VPP shows it. The root ships hidden -- VPP calls Show itself -- so the gallery has to show it, or the entry photographs an empty host. The tab strip stays empty: tabs exist only at runtime, one per registered pane.",
+  "ops": [
+    {"op": "show", "nth": 1, "name": "OZ_VppRoot"}
+  ]
+}

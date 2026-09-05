@@ -1,0 +1,12 @@
+{
+  "layout": "oz_vpp_tab",
+  "note": "One tab button of the admin window, instantiated once per registered pane into TabStrip. The script renames the root to 'tab:<id>' and writes the caption into OZ_VppTabText, so both names are a contract with OZ_VppMenu.c. A button ROOT holds page content instead of the Edge/Bg/Text idiom a nested button gets, so the three children are written out here -- with the names that idiom would have given them.",
+  "root": {"button": {"name": "OZ_VppTab", "size": "$vpp.tab", "children": [
+    {"panel": {"name": "OZ_VppTabEdge", "at": [-1, -1], "size": [152, 30], "color": "$edge", "priority": 0,
+      "note": "One unit outside the button on every side: vpp.tab (150x28) plus two."}},
+    {"panel": {"name": "OZ_VppTabBg", "size": "$vpp.tab", "color": "$raised", "priority": 1}},
+    {"label": {"name": "OZ_VppTabText", "size": "$vpp.tab", "text": "", "font": "small", "color": "$accent",
+      "align": "center", "priority": 2,
+      "note": "Empty: the caption is the pane's label, set by RegisterPane; ShowPane recolours it accent for the open tab and muted for the rest."}}
+  ]}}
+}

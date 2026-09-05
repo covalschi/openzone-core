@@ -1,0 +1,11 @@
+{
+  "note": "SPAWNS with a faction zone picked and a personal point typed in. SpawnList stays empty: rows of a TextListboxWidget go in through AddItem, and a fixture reaches widgets only (add/text/show/hide/color).",
+  "ops": [
+    {"op": "show", "nth": 1, "name": "PaneSpawns"},
+    {"op": "text", "nth": 1, "name": "BtnSpFacText", "text": "faction: dolg"},
+    {"op": "text", "nth": 1, "name": "SpSlug", "text": "dolg-bar"},
+    {"op": "text", "nth": 1, "name": "SpRadius", "text": "35"},
+    {"op": "text", "nth": 1, "name": "SpUid", "text": "76561198012345678"},
+    {"op": "text", "nth": 1, "name": "SpawnHint", "text": "zone dolg-bar written at 7412 0 8330, radius 35 m"}
+  ]
+}

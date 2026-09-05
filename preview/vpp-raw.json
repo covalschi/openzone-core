@@ -1,0 +1,11 @@
+{
+  "note": "RAW JSON with a config open in the editor and both mirrors known. RawList stays empty: rows of a TextListboxWidget go in through AddItem, out of a fixture's reach.",
+  "ops": [
+    {"op": "show", "nth": 1, "name": "PaneRaw"},
+    {"op": "text", "nth": 1, "name": "RawEdit", "text": "{\n  \"Bridge\": {\n    \"Url\": \"http://127.0.0.1:8787\",\n    \"Token\": \"***\"\n  },\n  \"AdminIds\": [\"76561198012345678\"],\n  \"DebugMode\": 1\n}"},
+    {"op": "text", "nth": 1, "name": "MirrorLabel", "text": "chat mirror: OFF"},
+    {"op": "text", "nth": 1, "name": "MirrorRolesLabel", "text": "roles mirror: ON"},
+    {"op": "text", "nth": 1, "name": "BtnMirrorRolesText", "text": "ROLES OFF"},
+    {"op": "text", "nth": 1, "name": "RawHint", "text": "Settings.json read: 1219 bytes"}
+  ]
+}

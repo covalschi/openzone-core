@@ -1,15 +1,35 @@
 {
-  "note": "Preview gallery for ui_gallery: the VPP admin window and the link screen of the core as the engine draws them (the faction pages moved to openzone-factions).",
+  "note": "Preview gallery for ui_gallery: the VPP admin window, its tab template, the three panes of the core and the link screen, as the engine draws them (the faction pages moved to openzone-factions). The window and the panes are hidden in their own layouts -- VPP shows the window, ShowPane shows the open tab's pane -- so each fixture shows its root first, or the entry photographs an empty host. TabStrip is empty in every shot: a tab exists only at runtime, one per pane registered, and how many there are depends on which glue pbos loaded. The panes are hosted at 1000x620, not at their own 1000x524, because each one sits at [0, vpp.paneY] inside the window -- the host is the window they will land in.",
   "entries": [
     {
       "name": "vpp-admin",
       "layout": "OpenZone_VPP/gui/layouts/oz_vpp_admin.layout",
-      "host": "1000 620"
+      "host": "1920 1080",
+      "fixture": "preview/vpp-window.json",
+      "note": "The host is the workspace VPP hands the window, not the window itself: the root positions itself at a FRACTION of its host (at_frac 0.24 0.14), so a host the size of the window would push it 24 per cent right and crop the close button off the shot."
     },
     {
       "name": "vpp-tab",
       "layout": "OpenZone_VPP/gui/layouts/oz_vpp_tab.layout",
       "host": "150 28"
+    },
+    {
+      "name": "vpp-spawns",
+      "layout": "OpenZone_VPP/gui/layouts/oz_vpp_pane_spawns.layout",
+      "host": "1000 620",
+      "fixture": "preview/vpp-spawns.json"
+    },
+    {
+      "name": "vpp-raw",
+      "layout": "OpenZone_VPP/gui/layouts/oz_vpp_pane_raw.layout",
+      "host": "1000 620",
+      "fixture": "preview/vpp-raw.json"
+    },
+    {
+      "name": "vpp-news",
+      "layout": "OpenZone_VPP/gui/layouts/oz_vpp_pane_news.layout",
+      "host": "1000 620",
+      "fixture": "preview/vpp-news.json"
     },
     {
       "name": "link",

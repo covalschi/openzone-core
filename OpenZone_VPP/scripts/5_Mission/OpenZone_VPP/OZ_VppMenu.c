@@ -159,9 +159,9 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         m_NwPick   = 0;
         m_NwSelf   = "";
 
-        RegisterPane("spawns",   "SPAWNS",   M_SUB_WIDGET.FindAnyWidget("PaneSpawns"), "SpawnHint");
-        RegisterPane("raw",      "RAW JSON", M_SUB_WIDGET.FindAnyWidget("PaneRaw"),    "RawHint");
-        RegisterPane("news",     "NEWS",     M_SUB_WIDGET.FindAnyWidget("PaneNews"),   "NewsHint");
+        AddOwnPane("spawns", "SPAWNS",   "SpawnHint");
+        AddOwnPane("raw",    "RAW JSON", "RawHint");
+        AddOwnPane("news",   "NEWS",     "NewsHint");
 
         if (!m_Ears)
         {
@@ -213,6 +213,43 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     protected int               m_NwPick;
     protected string            m_NwSelf;
 
+    // Зазор між вкладками в одиницях розмітки -- дзеркало vpp.tabGap із
+    // ui/tokens.json. Рушій того файлу не читає, тому число живе двічі:
+    // змінюєш токен -- зміни й цю сталу.
+    static const float TAB_GAP = 6;
+
+    // Своя панель -- окремою розміткою, точно як у склейок: створити під
+    // коренем і зареєструвати. Ім'я файлу росте з того самого id, тож
+    // розійтися їм нема де.
+    protected void AddOwnPane(string id, string label, string hintName)
+    {
+        string layout = "OpenZone_VPP/gui/layouts/oz_vpp_pane_" + id + ".layout";
+
+        Widget pane = GetGame().GetWorkspace().CreateWidgets(layout, M_SUB_WIDGET);
+        if (!pane)
+        {
+            OZ_Log.Error("vpp pane: layout failed to load: " + layout);
+            return;
+        }
+
+        RegisterPane(id, label, pane, hintName);
+    }
+
+    // Смуга вкладок -- порожня рамка з розмітки вікна. Якщо її раптом немає
+    // (старий .layout поруч із новим скриптом), вкладки лишаються дітьми
+    // кореня, як було до 2026-09-05: гірше на вигляд, але не порожньо.
+    protected Widget TabStrip()
+    {
+        if (!M_SUB_WIDGET)
+            return null;
+
+        Widget strip = M_SUB_WIDGET.FindAnyWidget("TabStrip");
+        if (strip)
+            return strip;
+
+        return M_SUB_WIDGET;
+    }
+
     protected void RegisterPane(string id, string label, Widget pane, string hintName = "")
     {
         if (!pane)
@@ -220,7 +257,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         m_PaneHints.Set(id, hintName);
 
-        Widget btn = GetGame().GetWorkspace().CreateWidgets("OpenZone_VPP/gui/layouts/oz_vpp_tab.layout", M_SUB_WIDGET);
+        Widget btn = GetGame().GetWorkspace().CreateWidgets("OpenZone_VPP/gui/layouts/oz_vpp_tab.layout", TabStrip());
         if (!btn)
             return;
 
@@ -237,39 +274,45 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         LayoutTabs();
     }
 
-    // Вкладки діляться шириною панелі. На кроці 160 шоста вкладка (RADIO,
-    // яку докладає склейка рації) вилазила за правий край і клацнути її було
-    // неможливо -- зміряно на стенді 2026-09-02. Крок стискається, поки всі
-    // не влізуть; SetPos тут рахує в екранних пікселях, а розмір розкладки --
-    // у власних одиницях, тому масштаб береться з самої кнопки.
+    // Вкладки ділять смугу. Кімната -- ЕКРАННА ширина самої смуги, ширина
+    // вкладки -- з першого шаблону, зазор -- TAB_GAP; коли всі не влазять,
+    // ширина ділиться на всіх, і кнопка з дітьми вужчає.
+    //
+    // SetPos/SetSize рахують в ЕКРАННИХ пікселях, а розмітка -- у власних
+    // одиницях (зміряно 2026-09-02), тому масштаб береться з самої кнопки, а
+    // позиція -- відносно смуги. Доти тут стояли п'ять піксельних літералів
+    // (160/8/20/52/40): на 3840x1600 вони стискали вкладку зі 150 одиниць до
+    // 103 і клали смугу на 35-й одиниці замість 52-ї, тобто вікно виглядало
+    // по-різному на різних екранах.
     protected void LayoutTabs()
     {
         int n = m_TabBtns.Count();
-        if (n == 0 || !M_SUB_WIDGET)
+        Widget strip = TabStrip();
+        if (n == 0 || !strip)
             return;
 
-        float pw, ph;
-        M_SUB_WIDGET.GetScreenSize(pw, ph);
-        float step = 160;
-        float room = pw - 40;
-        if (room > 0 && step * n > room)
-            step = room / n;
+        float room, striph;
+        strip.GetScreenSize(room, striph);
 
         float lw, lh, sw, sh;
         m_TabBtns[0].GetSize(lw, lh);
         m_TabBtns[0].GetScreenSize(sw, sh);
-        float scale = 1;
-        if (lw > 0 && sw > 0)
-            scale = sw / lw;
+        if (lw <= 0 || sw <= 0)
+            return;
 
-        float want = step - 8;
+        float scale = sw / lw;
+        float gap   = TAB_GAP * scale;
+        float want  = lw * scale;
+        if (want * n + gap * (n - 1) > room)
+            want = (room - gap * (n - 1)) / n;
+
         for (int i = 0; i < n; i++)
         {
             Widget b = m_TabBtns[i];
-            b.SetPos(20 + i * step, 52);
+            b.SetPos(i * (want + gap), 0);
             float bw, bh;
             b.GetScreenSize(bw, bh);
-            if (bw > want && scale > 0)
+            if (bw > want)
                 ShrinkTab(b, want / scale);
         }
     }
