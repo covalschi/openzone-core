@@ -26,6 +26,17 @@ cannot be accepted. **GPL code in particular cannot go in.**
 
 - **Do not invent DayZ API.** Every engine call must be checked against the
   unpacked game scripts. If you are not sure, unpack the PBO and look.
+- **`OpenZone_VPP/gui/layouts/*.layout` files are generated, never hand-edited**
+  -- with one named exception: `OpenZone_Core/gui/layouts/oz_link.layout`
+  (hand-written on purpose, palette kept by hand). Every other layout comes
+  from a description under `ui/OpenZone_VPP/`; regenerate with the MCP's
+  `layout_build` or `python -m dayz_mcp.layoutgen <root>` from the generator
+  repo. Run the gallery at two sizes and in two languages before calling a
+  UI change done.
+- **`ui/tokens.json` lives here and nowhere else.** `OpenZone_PDA` and
+  `OpenZone_Factions` read it through their own `[build] tokens`; the
+  `vpp` group exists only for this repo's own `OpenZone_VPP` window and is
+  read straight, with no `[build] tokens` hop needed.
 - **No text in code.** Every user-facing string goes through the stringtable.
   `original` is Ukrainian, `english` is English, the twelve remaining vanilla
   columns repeat the Ukrainian original (the engine needs the full column set);

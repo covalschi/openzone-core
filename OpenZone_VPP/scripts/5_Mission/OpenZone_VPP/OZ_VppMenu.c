@@ -225,6 +225,23 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     static const int TAB_TEXT_OPEN = ARGB(255, 79, 181, 232);
     static const int TAB_TEXT_IDLE = ARGB(255, 148, 166, 181);
 
+    // Розмір шаблону вкладки в ОДИНИЦЯХ РОЗМІТКИ, знятий ОДИН РАЗ із першої
+    // ж створеної кнопки -- до того, як до неї хоч раз доторкнувся ShrinkTab
+    // (RegisterPane нижче). GetSize кнопки ПІСЛЯ SetSize, яким ShrinkTab її
+    // стискає, -- поведінка, якої рушій не документує і ніхто не міряв, тому
+    // LayoutTabs більше не читає розмір шаблону з m_TabBtns[0] живцем: лише
+    // з цих двох полів, які раз записані вже не міняються.
+    protected float m_TabW = 0;
+    protected float m_TabH = 0;
+
+    // Перший вдалий прохід LayoutTabs ще не стався (сторож нижче): до нього
+    // GetScreenSize повертає 0 і для смуги, і для щойно створеної кнопки, а
+    // ShowSubMenu приходить одразу після OnCreate -- раніше першого кадру
+    // рушія. LayoutTabs виставляє прапорець замість того, щоб здатися
+    // назавжди; MissionGameplay.OnUpdate внизу файлу пробує ще раз щокадру,
+    // поки вікно відкрите, аж доки прохід не вдасться і сам його не згасить.
+    protected bool m_TabsPending = false;
+
     // Своя панель -- окремою розміткою, точно як у склейок: створити під
     // коренем і зареєструвати. Ім'я файлу росте з того самого id, тож
     // розійтися їм нема де.
@@ -257,16 +274,32 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         return M_SUB_WIDGET;
     }
 
+    // Обидві ранні здачі тепер КАЖУТЬ ПРО СЕБЕ (лог) і не лишають сироти:
+    // до 2026-09-05 обидві мовчали, а підказку панелі записували ще ДО
+    // перевірки кнопки -- отже запис у m_PaneHints без пари в m_TabIds/
+    // m_TabBtns/m_Panes лишався, якщо шаблон вкладки не завантажився.
     protected void RegisterPane(string id, string label, Widget pane, string hintName = "")
     {
         if (!pane)
+        {
+            OZ_Log.Error("vpp pane: no widget to register: " + id);
             return;
-
-        m_PaneHints.Set(id, hintName);
+        }
 
         Widget btn = GetGame().GetWorkspace().CreateWidgets("OpenZone_VPP/gui/layouts/oz_vpp_tab.layout", TabStrip());
         if (!btn)
+        {
+            OZ_Log.Error("vpp tab: layout failed to load: " + id);
             return;
+        }
+
+        // Розмір шаблону -- з ПЕРШОЇ кнопки, яка тут коли-небудь з'явилась,
+        // до того, як LayoutTabs нижче встигне її стиснути (коментар біля
+        // m_TabW вище).
+        if (m_TabW <= 0)
+            btn.GetSize(m_TabW, m_TabH);
+
+        m_PaneHints.Set(id, hintName);
 
         btn.SetName("tab:" + id);
 
@@ -282,23 +315,33 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     }
 
     // Вкладки ділять смугу. Кімната -- ЕКРАННА ширина самої смуги, ширина
-    // вкладки -- з першого шаблону, зазор -- TAB_GAP; коли всі не влазять,
-    // ширина ділиться на всіх, і кнопка з дітьми вужчає.
+    // вкладки -- зі знятого один раз шаблону (m_TabW/m_TabH вище), зазор --
+    // TAB_GAP; коли всі не влазять, ширина ділиться на всіх, і кнопка з
+    // дітьми вужчає (ShrinkTab).
     //
     // SetPos/SetSize рахують в ЕКРАННИХ пікселях, а розмітка -- у власних
-    // одиницях (зміряно 2026-09-02), тому масштаб береться з самої кнопки, а
-    // позиція -- відносно смуги. Доти тут стояли п'ять піксельних літералів
-    // (160/8/20/52/40): на 3840x1600 вони стискали вкладку зі 150 одиниць до
-    // 103 і клали смугу на 35-й одиниці замість 52-ї, тобто вікно виглядало
-    // по-різному на різних екранах.
+    // одиницях (зміряно 2026-09-02), тому масштаб рахується від СМУГИ:
+    // GetScreenSize і GetSize смуги ShrinkTab ніколи не чіпає, тож їхнє
+    // співвідношення лишається правильним, скільки разів LayoutTabs не
+    // виклич. Раніше масштаб брався від самої кнопки (m_TabBtns[0].GetSize),
+    // а другий прохід після стиску міг прочитати вже стиснуту кнопку й
+    // стиснути її ще раз -- смуга такого ризику не несе. Доти тут стояли
+    // п'ять піксельних літералів (160/8/20/52/40): на 3840x1600 вони
+    // стискали вкладку зі 150 одиниць до 103 і клали смугу на 35-й одиниці
+    // замість 52-ї, тобто вікно виглядало по-різному на різних екранах.
     //
-    // РАННІЙ ВИХІД НА НУЛІ, А НЕ НА ВІД'ЄМНИХ: до першого проходу розмітки
-    // GetScreenSize повертає 0 і для смуги, і для першої вкладки (зміряно,
-    // gui-layouts.md §24, "widget measured before its first layout pass").
-    // Без цієї сторожі room == 0 робить want від'ємним, SetPos тягне вкладки
-    // вліво від нуля, а ShrinkTab кличеться з від'ємною шириною. Тому
-    // OnMenuShow кличе LayoutTabs ЩЕ РАЗ: перший виклик іде з RegisterPane,
-    // поки вікно ще приховане й розмір невідомий, другий -- коли він уже є.
+    // РАННІЙ ВИХІД НА НУЛІ, А НЕ НА ВІД'ЄМНИХ, І НЕ НАЗАВЖДИ: до першого
+    // проходу розмітки GetScreenSize повертає 0 і для смуги, і для щойно
+    // створеної кнопки (зміряно, gui-layouts.md §24, "widget measured before
+    // its first layout pass"), а ShowSubMenu приходить одразу після OnCreate
+    // (коментар в OnCreate) -- тобто й виклик з OnMenuShow часто встигає
+    // раніше першого кадру рушія. Без цієї сторожі room == 0 робить want
+    // від'ємним, SetPos тягне вкладки вліво від нуля, а ShrinkTab кличеться
+    // з від'ємною шириною. Замість остаточної здачі гарда виставляє
+    // m_TabsPending, і MissionGameplay.OnUpdate (сторож у кінці файлу)
+    // пробує ще раз щокадру, поки вікно відкрите, аж доки прохід не вдасться;
+    // виклик з OnMenuShow лишається -- він просто рідко буває першим, що
+    // спрацював.
     protected void LayoutTabs()
     {
         int n = m_TabBtns.Count();
@@ -308,18 +351,19 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         float room, striph;
         strip.GetScreenSize(room, striph);
-        if (room <= 0)
-            return;
 
-        float lw, lh, sw, sh;
-        m_TabBtns[0].GetSize(lw, lh);
-        m_TabBtns[0].GetScreenSize(sw, sh);
-        if (lw <= 0 || sw <= 0)
-            return;
+        float stripLw, stripLh;
+        strip.GetSize(stripLw, stripLh);
 
-        float scale = sw / lw;
+        if (room <= 0 || stripLw <= 0 || m_TabW <= 0)
+        {
+            m_TabsPending = true;
+            return;
+        }
+
+        float scale = room / stripLw;
         float gap   = TAB_GAP * scale;
-        float want  = lw * scale;
+        float want  = m_TabW * scale;
         if (want * n + gap * (n - 1) > room)
             want = (room - gap * (n - 1)) / n;
 
@@ -332,6 +376,8 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             if (bw > want)
                 ShrinkTab(b, want);
         }
+
+        m_TabsPending = false;
     }
 
     // Кнопка і всі її діти (рамка, тло, напис) вужчають на одне число.
@@ -403,9 +449,12 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     {
         super.OnMenuShow();
 
-        // Другий прохід розмітки смуги: перший (з RegisterPane) майже завжди
-        // впаде на нулях, бо вікно ще приховане -- OnMenuShow це перший
-        // момент, коли розмір уже відомий (див. коментар LayoutTabs).
+        // Прохід розмітки смуги ЗВІДСИ: не єдиний і не завжди вдалий --
+        // ShowSubMenu (тобто цей виклик) приходить одразу після OnCreate,
+        // часто раніше першого кадру рушія, тож GetScreenSize може й тут
+        // повернути 0 (коментар у LayoutTabs). Лишається як найраніша
+        // спроба; коли вона падає на нулях, m_TabsPending передає естафету
+        // MissionGameplay.OnUpdate.
         LayoutTabs();
 
         if (M_SUB_WIDGET)
@@ -444,6 +493,15 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             return;
         M_SUB_WIDGET.Show(false);
         m_IsVisible = false;
+    }
+
+    // Кличе MissionGameplay.OnUpdate (сторож у кінці файлу), поки перший
+    // вдалий прохід LayoutTabs не стався. LayoutTabs сама гасить прапорець
+    // по вдалому проходу, тож виклик після успіху -- порожній no-op.
+    void RetryTabsLayoutIfPending()
+    {
+        if (m_TabsPending)
+            LayoutTabs();
     }
 
     // ---------------------------------------------------------- транспорт
@@ -1312,8 +1370,11 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     }
 }
 
-// Вартовий: VPP ховає лише власний корiнь; сироту на коренi робочої
-// областi прибирає мiсiя (OnUpdate пiдменю пiсля ховання не тiкає).
+// Вартовий: дві роботи, поки вікно відкрите. VPP ховає лише власний
+// корінь, сироту на корені робочої області прибирає місія (OnUpdate
+// підменю після ховання не тікає). Друга -- добиває розмітку смуги
+// вкладок, поки перший вдалий прохід ще не стався (m_TabsPending,
+// коментар у LayoutTabs).
 modded class MissionGameplay
 {
     override void OnUpdate(float timeslice)
@@ -1322,6 +1383,8 @@ modded class MissionGameplay
 
         if (!OZ_VppAdminMenu.s_Inst || !OZ_VppAdminMenu.s_Inst.IsOpen())
             return;
+
+        OZ_VppAdminMenu.s_Inst.RetryTabsLayoutIfPending();
 
         VPPAdminHud hud = VPPAdminHud.Cast(GetGame().GetUIManager().FindMenu(VPP_ADMIN_HUD));
         if (!hud || !hud.IsShowing())
