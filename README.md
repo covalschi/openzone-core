@@ -19,6 +19,7 @@ infrastructure.
 | **Bridge client** | Long-poll client for the OpenZone Discord bridge |
 | **Affiliation contract** | `OZ_Identity`: which organisation, which stand towards another player, who leads. Declared here, answered with "none" here, filled in by the factions mod; read-only by design. The only faction-shaped thing in Core |
 | **Spawn loadouts** | A service another mod fills in (`OZ_Loadout`, three-valued: no opinion / naked / preset) plus an applicator that strips what the mission gave a new character and dresses it from a preset, in the same frame after `OnClientNewEvent`; one-shot spawn points may carry a loadout word. [The factions mod](https://github.com/covalschi/openzone-factions) supplies the ladder (`OZ_Factions_Loadouts.json`) |
+| **Design tokens** | `ui/tokens.json`: the series' single source of colour, font, spacing and device-geometry tokens; the PDA and the factions read this same file through their own `[build] tokens` |
 
 ## OpenZone_VPP
 

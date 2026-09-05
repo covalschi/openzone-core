@@ -14,6 +14,9 @@ name = "openzone-core"
 mods = ["OpenZone_Core", "OpenZone_VPP"]
 # The faction PBOs live in openzone-factions since 2026-09-04 (their own repository).
 
+# The series' single source of design tokens: the PDA and the factions read this file through their own [build] tokens.
+tokens = "ui/tokens.json"
+
 [expect]
 # Рядок, який ядро друкує, коли всі його конфіги прочитані.
 ready_line   = "core loaded"
