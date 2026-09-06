@@ -597,11 +597,19 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
     // Підказка -- у рядок ТІЄЇ панелі, що на екрані.
     //
-    // Ім'я віджета називає САМА панель у RegisterPane. Перебір відомих імен
-    // лишився запасним ходом для панелей, зареєстрованих старим викликом, i
-    // саме через нього панель рації (RadHint) викидала всі свої підказки: її
-    // ім'я в переліку ядра ніколи не значилось, а ядро й не мусить знати
-    // імена віджетів чужих модів.
+    // Ім'я віджета називає САМА панель у RegisterPane, і більше нічого тут
+    // не вгадується.
+    //
+    // ПЕРЕЛІКУ ЧУЖИХ ІМЕН ТУТ БІЛЬШЕ НЕМАЄ (2026-09-06). Ядро тримало
+    // ланцюжок SpawnHint/RawHint/FacHint/PdaHint/RadHint -- запасний хід для
+    // панелей, зареєстрованих старим викликом без імені. Він же й показував,
+    // чому такий перелік не працює: панель рації викидала всі свої підказки
+    // рівно доти, доки її ім'я не дописали сюди руками. Ядро не мусить знати
+    // імена віджетів чужих модів, і тепер не знає: усі три чужі панелі (КПК,
+    // фракції, рація) передають hintName самі, а три власні -- поготів.
+    //
+    // Панель, яка імені не назвала, лишається без підказок, і це видно
+    // одразу: мовчазний рядок замість чужого рядка з іншої панелі.
     protected void Hint(string t)
     {
         string id = CurrentPane();
@@ -609,23 +617,11 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         if (!p)
             return;
 
-        TextWidget h;
-
         string named = "";
-        if (m_PaneHints.Find(id, named) && named != "")
-            h = TextWidget.Cast(p.FindAnyWidget(named));
+        if (!m_PaneHints.Find(id, named) || named == "")
+            return;
 
-        if (!h)
-            h = TextWidget.Cast(p.FindAnyWidget("SpawnHint"));
-        if (!h)
-            h = TextWidget.Cast(p.FindAnyWidget("RawHint"));
-        if (!h)
-            h = TextWidget.Cast(p.FindAnyWidget("FacHint"));
-        if (!h)
-            h = TextWidget.Cast(p.FindAnyWidget("PdaHint"));
-        if (!h)
-            h = TextWidget.Cast(p.FindAnyWidget("RadHint"));
-
+        TextWidget h = TextWidget.Cast(p.FindAnyWidget(named));
         if (h)
             h.SetText(t);
     }
