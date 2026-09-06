@@ -110,17 +110,28 @@ class OZ_MirrorFillReply : OZ_BridgeReply
 
 class OZ_MirrorOps
 {
-    // Стан дзеркал для панелі. "chat" i "roles" є в списку завжди: це два
-    // роди, у яких є дзеркало (ТЗ-2 §8 i §15), i панель мусить мати що
-    // показати на порожньому Settings.
+    // Стан дзеркал для панелі.
+    //
+    // СПИСОК БУДУЄМО З ТОГО, ЩО СПРАВДІ Є, а не з двох літералів.
+    //
+    // Тут стояли жорстко "chat" і "roles" -- «два роди, у яких є дзеркало».
+    // Обидва належать ЧУЖИМ модам: chat реєструє КПК, roles -- фракції. Тобто
+    // ядро наодинці пропонувало адмінові тумблери для дзеркал, яких на його
+    // сервері не існує, а третій мод зі своїм родом не з'явився б у панелі
+    // ніколи -- при тому, що підписка на рід і так проходить через ядро.
+    //
+    // Джерел два, і обидва потрібні: підписки кажуть, що на сервері живе
+    // (OZ_BridgeClient.Subscribe), а Settings -- що адмін уже вмикав, зокрема
+    // й для мода, який зараз знято.
     static string List(out bool ok, out string error)
     {
         ok = false;
 
         OZ_MirrorState st = new OZ_MirrorState();
+        array<string> kinds = new array<string>();
+        OZ_BridgeClient.FillKinds(kinds);
+
         OZ_Settings s = OZ_Settings.Get();
-        bool sawChat = false;
-        bool sawRoles = false;
         if (s && s.Bridge && s.Bridge.Mirrors)
         {
             for (int i = 0; i < s.Bridge.Mirrors.Count(); i++)
@@ -128,29 +139,17 @@ class OZ_MirrorOps
                 OZ_KindMirror m = s.Bridge.Mirrors[i];
                 if (!m || m.Kind == "")
                     continue;
-                OZ_KindMirror copy = new OZ_KindMirror();
-                copy.Kind   = m.Kind;
-                copy.Mirror = OZ_BridgeClient.Mirrored(m.Kind);
-                st.Mirrors.Insert(copy);
-                if (m.Kind == "chat")
-                    sawChat = true;
-                if (m.Kind == "roles")
-                    sawRoles = true;
+                if (kinds.Find(m.Kind) == -1)
+                    kinds.Insert(m.Kind);
             }
         }
-        if (!sawChat)
+
+        for (int k = 0; k < kinds.Count(); k++)
         {
-            OZ_KindMirror chat = new OZ_KindMirror();
-            chat.Kind   = "chat";
-            chat.Mirror = false;
-            st.Mirrors.Insert(chat);
-        }
-        if (!sawRoles)
-        {
-            OZ_KindMirror roles = new OZ_KindMirror();
-            roles.Kind   = "roles";
-            roles.Mirror = false;
-            st.Mirrors.Insert(roles);
+            OZ_KindMirror copy = new OZ_KindMirror();
+            copy.Kind   = kinds[k];
+            copy.Mirror = OZ_BridgeClient.Mirrored(kinds[k]);
+            st.Mirrors.Insert(copy);
         }
 
         string outJson;
@@ -284,7 +283,14 @@ class OZ_MirrorOps
             s.Bridge.Mirrors.Insert(add);
         }
 
-        OZ_ConfigLoader<OZ_Settings>.Save(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s);
+        // БЕЗ РЕЗЕРВНОЇ КОПІЇ, і це не економія.
+        //
+        // Слот Settings.bak.json один, і в ньому лежить те, що адмін правив
+        // руками, -- зокрема застарілий розділ "Faction", який мод фракцій
+        // читає звідти при своїй міграції. Перемикач дзеркала, тобто одна
+        // булева, затирав цю копію ЩОРАЗУ, і після двох натискань відновити
+        // з неї було вже нічого.
+        OZ_ConfigLoader<OZ_Settings>.Save(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s, false);
 
         string state = "off";
         if (on)

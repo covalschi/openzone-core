@@ -204,7 +204,7 @@ class OZ_BridgeClient
     private static int  s_Cursor  = 0;
 
     private static ref array<ref OZ_BridgeXfer> s_InFlight;
-    private static ref map<string, ref OZ_BridgeSink> s_Sinks;
+    private static ref map<string, ref OZ_BridgeSink> s_Sinks = new map<string, ref OZ_BridgeSink>();
     private static ref OZ_BridgePollReply s_PollReply;
     private static ref OZ_BridgePump s_Pump;
 
@@ -242,11 +242,20 @@ class OZ_BridgeClient
             return;
         }
 
-        if (!s_Sinks)
-            s_Sinks = new map<string, ref OZ_BridgeSink>();
-
         s_Sinks.Set(kind, sink);
         OZ_Log.Dbg("bridge: sink for \"" + kind + "\"");
+    }
+
+    // Роди, які на цьому сервері хтось справді читає. Ядро їх не знає
+    // наперед -- їх оголошують МОДИ підпискою, -- і саме тому список дзеркал
+    // для панелі будується звідси, а не з двох літералів у ядрі.
+    static void FillKinds(array<string> outKinds)
+    {
+        if (!outKinds)
+            return;
+
+        for (int i = 0; i < s_Sinks.Count(); i++)
+            outKinds.Insert(s_Sinks.GetKey(i));
     }
 
     // Порожній список у налаштуваннях -- «все, що попросять»: саме так міст
@@ -360,7 +369,7 @@ class OZ_BridgeClient
         // Питаємо ПІСЛЯ Enabled, а не замість: адмін, який лишив Enabled: true
         // на сервері без відповідних модів, має прочитати саме це, а не
         // «disabled», якого він не писав.
-        if (!s_Sinks || s_Sinks.Count() == 0)
+        if (s_Sinks.Count() == 0)
         {
             OZ_Log.Info("bridge: nothing on this server lives in the bot - not polling at all");
             return;
@@ -750,7 +759,7 @@ class OZ_BridgeClient
                 continue;
 
             OZ_BridgeSink sink;
-            if (!s_Sinks || !s_Sinks.Find(e.Kind, sink) || !sink)
+            if (!s_Sinks.Find(e.Kind, sink) || !sink)
             {
                 OZ_Log.Dbg("bridge: nobody reads \"" + e.Kind + "\"");
                 continue;
