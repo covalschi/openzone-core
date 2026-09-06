@@ -90,10 +90,11 @@ class OZ_LoadoutService
 
 class OZ_Loadout
 {
-    // Одноразова точка з цим словом замість id пресета -- «нічого не
-    // надягати»: гравець з'являється голим (R2.1, п.1).
-    static const string NONE = "-";
-
+    // NONE І Present() ТУТ БІЛЬШЕ НЕМАЄ. Перше було словом одноразової точки
+    // чужого мода («надягти нічого»), і разом із самою точкою пішло з
+    // OZ_Spawns; друге не мало викликачів у жодному репозиторії серії -- за
+    // «чи є мод» ходять до OZ_Identity.Present(), а тут відповідь дає сама
+    // порожня реалізація.
     private static ref OZ_LoadoutService s_Svc;
 
     static void Provide(OZ_LoadoutService svc)
@@ -105,11 +106,6 @@ class OZ_Loadout
         OZ_Log.Info("loadout service provided by another mod");
     }
 
-    static bool Present()
-    {
-        return s_Svc != null;
-    }
-
     static OZ_LoadoutService Get()
     {
         if (!s_Svc)
@@ -118,12 +114,12 @@ class OZ_Loadout
     }
 
     // ШОВ. Кличе OZ_MissionServer одразу після super.OnClientNewEvent --
-    // персонаж уже створений і одягнений місією. Порядок -- дзеркало
-    // OZ_Spawns.Resolve (R2.1): одноразова точка вирішує першою, далі служба,
-    // а без думки служби місія лишається як є.
+    // персонаж уже створений і одягнений місією. Без думки служби місія
+    // лишається як є.
     //
-    // Рішення одноразової точки ВЖЕ з'їдене тим самим Resolve, що з'їв
-    // позицію (R2.5); тут ми лише забираємо те, що він відклав.
+    // ГІЛКИ ОДНОРАЗОВОЇ ТОЧКИ ТУТ БІЛЬШЕ НЕМАЄ: сама точка пішла з OZ_Spawns
+    // за відсутністю продюсера в усій серії. OZ_LoadoutService.Preset
+    // лишається -- його реалізує мод фракцій, і це частина контракту.
     static void OnSpawn(PlayerBase player, PlayerIdentity identity)
     {
         if (!player || !identity)
@@ -132,32 +128,6 @@ class OZ_Loadout
             return;
 
         string uid = identity.GetPlainId();
-
-        string once;
-        if (OZ_Spawns.TakeOnceLoadout(uid, once))
-        {
-            if (once == NONE)
-            {
-                OZ_LoadoutApply.To(player, null);
-                OZ_Log.Info("loadout: " + uid + " -> naked (one-shot)");
-                return;
-            }
-
-            if (once != "")
-            {
-                OZ_LoadoutPreset named;
-                if (Get().Preset(once, named) && named)
-                {
-                    OZ_LoadoutApply.To(player, named);
-                    OZ_Log.Info("loadout: " + uid + " -> " + named.Id + " (one-shot)");
-                    return;
-                }
-
-                // Невідомий id -- не привід лишити людину голою через чужу
-                // одруківку (дух R6.3): кажемо в лог і йдемо драбиною.
-                OZ_Log.Warn("loadout: one-shot preset \"" + once + "\" is unknown, falling back to the service");
-            }
-        }
 
         OZ_LoadoutPreset preset;
         OZ_LoadoutVerdict verdict = Get().ForPlayer(uid, preset);

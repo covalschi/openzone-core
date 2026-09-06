@@ -75,12 +75,9 @@ class OZ_AdminCfg
     }
 }
 
-// Конверти операцiй.
-class OZ_AdminAsk
-{
-    string Name = "";
-    string Json = "";
-}
+// Конверти операцiй. OZ_AdminAsk тут БІЛЬШЕ НЕМАЄ: iм'я конфiгу їде в самiй
+// операцiї, а тiло -- сирим тiлом запиту (див. OZ_ConfigSection.Handle), тож
+// конверт зi строковим полем був оголошений i не вжитий жодного разу.
 
 class OZ_AdminCfgList
 {
@@ -207,15 +204,23 @@ class OZ_ConfigSection : OZ_AdminSection
         if (!f)
             return "";
 
-        string text = "";
+        array<string> lines = new array<string>();
         string line;
         while (FGets(f, line) >= 0)
-        {
-            if (text != "")
-                text += "\n";
-            text += line;
-        }
+            lines.Insert(line);
         CloseFile(f);
+
+        // ЧЕРЕЗ МАСИВ, А НЕ `text += line`. Рядки Enforce незмiннi, тож кожне
+        // додавання копiює ВЕСЬ накопичений текст: для файла на 750 рядкiв це
+        // близько одинадцяти мегабайт копiй на одне натискання RAW у вкладцi
+        // VPP, i росте воно квадратично з розмiром конфiгу.
+        string text = "";
+        for (int i = 0; i < lines.Count(); i++)
+        {
+            if (i > 0)
+                text += "\n";
+            text += lines[i];
+        }
         return text;
     }
 }
@@ -239,8 +244,22 @@ class OZ_SpawnsCfgApplier : OZ_AdminCfgApplier
             return false;
         }
 
+        // ПЕРЕВІРЯЄМО ПЕРЕД ЗАПИСОМ, І ПИШЕМО РІВНО ОДИН РАЗ.
+        //
+        // Було два записи: цей, із бекапом, і другий -- усередині Reload(),
+        // бо Load() перезаписує файл, щойно Validate знайшов ХОЧ ОДНЕ
+        // зауваження (порожній Center, від'ємний радіус -- звичайні одруківки
+        // адміна). Другий запис теж робив бекап, і той затирав щойно створену
+        // копію ДОправочного файла тією самою правкою. Адмін лишався без
+        // undo рівно тоді, коли він потрібен.
+        int warnings;
+        tmp.Validate(warnings);
+        tmp.Version = tmp.LatestVersion();
+
         OZ_ConfigLoader<OZ_SpawnsConfig>.Save(OZ_Const.PROFILE_DIR + "\\OZ_Core_Spawns.json", "spawns", tmp);
-        OZ_Spawns.Reload();
+        // Тихо: файл щойно записаний і перевірений, другий бекап і другий
+        // запис тут нічого не додають.
+        OZ_Spawns.Reload(true);
         return true;
     }
 }
@@ -371,25 +390,28 @@ class OZ_SpawnSection : OZ_AdminSection
     // «слово» або «слово число». Радіус за замовчуванням -- двадцять метрів.
     private bool Split(string arg, out string head, out float radius, out string error)
     {
-        string rest = Trimmed(arg);
+        // Trim() у Enforce Є (enstring.c:304) -- ручний цикл тут був
+        // дванадцятьма рядками навколо рушійного виклику, а сусідній
+        // рядок того самого файла вже кликав .Trim().
+        string rest = arg.Trim();
         head   = rest;
         radius = 20;
 
         int sp = rest.IndexOf(" ");
         if (sp == -1)
         {
-            head = Trimmed(head);
+            head = head.Trim();
             return true;
         }
 
-        head = Trimmed(rest.Substring(0, sp));
+        head = rest.Substring(0, sp).Trim();
 
         // РАДІУС МУСИТЬ БУТИ ЧИСЛОМ.
         //
         // ToFloat() на будь-якому смітті чесно повертає нуль, і зона ставала
         // точкою: усі спавняться в одному пікселі, один в одному. Помилку
         // набору не видно ніде -- команда відповідала «готово».
-        string tail = Trimmed(rest.Substring(sp + 1, rest.Length() - sp - 1));
+        string tail = rest.Substring(sp + 1, rest.Length() - sp - 1).Trim();
         if (!Number(tail))
         {
             error = "STR_OZ_ERR_BAD_RADIUS";
@@ -412,40 +434,20 @@ class OZ_SpawnSection : OZ_AdminSection
     }
 
     // Тіло гравця НА СЕРВЕРІ -- не координата, яку прислав клієнт.
+    //
+    // Обхід GetPlayers() за uid живе в одному місці на все ядро
+    // (OZ_Players.ManOf): тут і в OZ_Link.Online стояли дві копії того самого
+    // циклу з тими самими null-перевірками.
     private vector BodyOf(PlayerIdentity who)
     {
         if (!who)
             return vector.Zero;
 
-        array<Man> players = new array<Man>();
-        GetGame().GetPlayers(players);
-        for (int i = 0; i < players.Count(); i++)
-        {
-            if (!players[i])
-                continue;
-            PlayerIdentity id = players[i].GetIdentity();
-            if (!id)
-                continue;
-            if (id.GetPlainId() != who.GetPlainId())
-                continue;
-            return players[i].GetPosition();
-        }
-        return vector.Zero;
-    }
+        Man m = OZ_Players.ManOf(who.GetPlainId());
+        if (!m)
+            return vector.Zero;
 
-    // Пробіли з обох боків. У Enforce немає Trim(), а рядок приходить із
-    // поля вводу -- там вони будуть.
-    private string Trimmed(string s)
-    {
-        int from = 0;
-        int to   = s.Length();
-
-        while (from < to && s.Substring(from, 1) == " ")
-            from++;
-        while (to > from && s.Substring(to - 1, 1) == " ")
-            to--;
-
-        return s.Substring(from, to - from);
+        return m.GetPosition();
     }
 
     // Чи це взагалі число. ToFloat() не вміє сказати «ні», тож питаємо самі.
