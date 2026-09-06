@@ -78,6 +78,38 @@ class OZ_LinkGate
         return s_Menu;
     }
 
+    // ПРИЧИНА, КОЛИ ВІКНА НЕМАЄ.
+    //
+    // Сервер віддає причину кіка (STR_OZ_KICK_NO_LINK) у вікно воріт, яке
+    // зараз перед гравцем: рушій свого тексту при розриві не показує, і це
+    // найближче до «внятної причини», що взагалі є. Але вікна може не бути --
+    // розмітка не завантажилась (Disable вище), гравець мертвий або
+    // перероджується (Playing нижче), -- і тоді причина не мала куди
+    // подітись: людину розривало мовчки саме в тому разі, коли пояснення
+    // потрібне найбільше.
+    //
+    // Сповіщення малює рушійний HUD, а не наш pbo, тож воно переживає рівно
+    // ту невдачу, через яку вікна й немає.
+    static void Aside(string reason)
+    {
+        if (reason == "")
+            return;
+
+        // InitInstance робить сам рушій на старті клієнта; на виділеному
+        // сервері примірника немає, і AddNotificationExtended розіменовує
+        // його без перевірки.
+        if (!NotificationSystem.GetInstance())
+            return;
+
+        string text = reason;
+        if (text.IndexOf("STR_") == 0)
+            text = "#" + text;
+
+        NotificationSystem.AddNotificationExtended(ASIDE_SECONDS, text, "", "");
+    }
+
+    private static const float ASIDE_SECONDS = 10.0;
+
     // Кличеться з MissionGameplay.OnUpdate. Дешевий: два порівняння, поки
     // ворота не потрібні, і FindMenu лише коли потрібні.
     static void Tick()

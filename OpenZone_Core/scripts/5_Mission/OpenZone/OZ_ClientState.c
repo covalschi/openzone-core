@@ -180,10 +180,18 @@ class OZ_ClientState
             return;
 
         OZ_LinkMenu m = OZ_LinkGate.Menu();
-        if (!m)
+        if (m)
+        {
+            m.OnLinkResponse(data.param1, data.param2, data.param3, data.param4);
             return;
+        }
 
-        m.OnLinkResponse(data.param1, data.param2, data.param3, data.param4);
+        // Вікна немає -- а відмова приїхала. Так виглядає причина кіка,
+        // надіслана гравцеві, чиї ворота зламані або зняті: без цього рядка
+        // вона зникала, і розрив ставав мовчазним. Удача без вікна нікому не
+        // потрібна: її показувало б те саме вікно.
+        if (!data.param2)
+            OZ_LinkGate.Aside(data.param4);
     }
 
     // Звістка від сервера. Далі її розбирає той, хто малює.
