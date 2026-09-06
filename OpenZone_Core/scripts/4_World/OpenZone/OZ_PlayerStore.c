@@ -185,22 +185,20 @@ class OZ_PlayerData : OZ_ConfigBase
         return 3;
     }
 
-    override bool Migrate(int from)
-    {
-        // ГІЛКИ ЧИТАННЯ СТАРОГО ФОРМАТУ ТУТ НЕМАЄ, І ЦЕ РІШЕННЯ, А НЕ ПРОГАЛИНА.
-        //
-        // 2 -> 3 розщепило Faction на BaseFaction і OrgFaction, а SeenFaction
-        // на SeenBase і SeenOrg. Прочитати старе поле нікуди: одне значення не
-        // знає, якою з двох осей воно було, і будь-яка спроба вгадати поставила
-        // б угруповання тому, хто просто сталкер, або навпаки.
-        //
-        // Платити за це не треба: власник зняв вимогу зворотної сумісності
-        // 2026-09-01 -- мод живе тільки на дев-стенді, старі файли гравців
-        // просто видаляються (ТЗ-1 §11). Версія піднята саме для того, щоб
-        // старий файл був ВИДНО, а не тихо прочитаний наполовину.
-        Version = LatestVersion();
-        return true;
-    }
+    // ГІЛКИ ЧИТАННЯ СТАРОГО ФОРМАТУ ТУТ НЕМАЄ, І ЦЕ РІШЕННЯ, А НЕ ПРОГАЛИНА.
+    //
+    // 2 -> 3 розщепило Faction на BaseFaction і OrgFaction, а SeenFaction на
+    // SeenBase і SeenOrg. Прочитати старе поле нікуди: одне значення не знає,
+    // якою з двох осей воно було, і будь-яка спроба вгадати поставила б
+    // угруповання тому, хто просто сталкер, або навпаки.
+    //
+    // Платити за це не треба: власник зняв вимогу зворотної сумісності
+    // 2026-09-01 -- мод живе тільки на дев-стенді, старі файли гравців просто
+    // видаляються (ТЗ-1 §11). Версія піднята саме для того, щоб старий файл
+    // був ВИДНО, а не тихо прочитаний наполовину.
+    //
+    // Власного override Migrate() при цьому не треба зовсім: «підняти версію
+    // й нічого не читати» -- це рівно те, що робить база OZ_ConfigBase.
 
     override void LoadDefaults()
     {
@@ -297,26 +295,32 @@ class OZ_PlayerData : OZ_ConfigBase
 
 class OZ_PlayerStore
 {
-    private static ref map<string, ref OZ_PlayerData> s_Cache;
-    private static ref array<string>                  s_Dirty;
+    // Контейнери -- одразу при оголошенні. Ensure() перед кожним зверненням
+    // був восьмим таким у ядрі й нічого не давав: статики Enforce ініціюються
+    // при оголошенні так само надійно (те саме вже робили OZ_BridgeClient і
+    // OZ_Identity).
+    private static ref map<string, ref OZ_PlayerData> s_Cache = new map<string, ref OZ_PlayerData>();
+    private static ref array<string>                  s_Dirty = new array<string>();
 
-    private static void Ensure()
-    {
-        if (!s_Cache)
-            s_Cache = new map<string, ref OZ_PlayerData>();
-        if (!s_Dirty)
-            s_Dirty = new array<string>();
-    }
+    // Чий файл ми НЕ ЗМОГЛИ прочитати й НЕ ЗМОГЛИ винести в карантин.
+    //
+    // На диску лежить єдиний примірник даних цієї людини, а в пам'яті --
+    // дефолти. Писати їх поверх означало б стерти акаунт через хвилинний збій
+    // ФС; тому запис таким uid заборонений до кінця сеансу цього запису.
+    private static ref array<string> s_Locked = new array<string>();
 
     private static string PathOf(string uid)
     {
         return OZ_Const.PLAYERS_DIR + "\\" + uid + ".json";
     }
 
+    private static string GravePathOf(string uid, int gen)
+    {
+        return OZ_Const.PLAYERS_DIR + "\\" + uid + ".g" + gen.ToString() + ".json";
+    }
+
     static OZ_PlayerData Load(string uid)
     {
-        Ensure();
-
         if (s_Cache.Contains(uid))
             return s_Cache.Get(uid);
 
@@ -324,7 +328,13 @@ class OZ_PlayerStore
         // backup=false: файлів гравців сотні, і копія кожного перед кожним
         // записом засмітила б Backup так, що знайти в ньому щось стало б
         // неможливо. Резервні копії -- для конфігів адміна.
-        OZ_ConfigLoader<OZ_PlayerData>.Load(PathOf(uid), "player_" + uid, d, false);
+        bool writable = OZ_ConfigLoader<OZ_PlayerData>.Load(PathOf(uid), "player_" + uid, d, false);
+
+        int locked = s_Locked.Find(uid);
+        if (!writable && locked == -1)
+            s_Locked.Insert(uid);
+        else if (writable && locked != -1)
+            s_Locked.Remove(locked);
 
         d.SteamId = uid;
 
@@ -348,12 +358,14 @@ class OZ_PlayerStore
         if (OZ_PlayerFlags.Upgrade(d))
             MarkDirty(uid);
 
-        if (d.FirstSeen == "")
-        {
-            d.FirstSeen = OZ_Time.NowUtc();
-            MarkDirty(uid);
-        }
-
+        // ШТАМПА FirstSeen ТУТ БІЛЬШЕ НЕМАЄ -- він переїхав у
+        // OZ_Module.OnInvokeConnect, тобто в те єдине місце, де ми ТОЧНО
+        // знаємо, що це справді гравець і він справді зайшов.
+        //
+        // Тут він заводив файл кожному uid, який хтось колись спитав:
+        // офлайновому контакту з чужого записника, ключу зі старого
+        // повідомлення, будь-чому. Каталог players\ обростав людьми, яких на
+        // сервері не бувало.
         return d;
     }
 
@@ -365,8 +377,6 @@ class OZ_PlayerStore
     // і цикл FlushAll крутився б на ньому ВІЧНО, вішаючи сервер на скиданні.
     static void MarkDirty(string uid)
     {
-        Ensure();
-
         if (!s_Cache.Contains(uid))
         {
             OZ_Log.Dbg("player " + uid + ": marked dirty while not loaded, ignored");
@@ -379,8 +389,6 @@ class OZ_PlayerStore
 
     static void Flush(string uid)
     {
-        Ensure();
-
         // З ЧЕРГИ ПРИБИРАЄМО В БУДЬ-ЯКОМУ РАЗІ, і це головне в цій функції.
         //
         // Раніше вихід «немає в кеші» стояв ПЕРЕД зняттям позначки, тож
@@ -393,23 +401,110 @@ class OZ_PlayerStore
         if (!s_Cache.Contains(uid))
             return;
 
+        // ФАЙЛ, ЯКОГО МИ НЕ ЗРОЗУМІЛИ, НЕ ПЕРЕПИСУЄМО ДЕФОЛТАМИ.
+        if (s_Locked.Find(uid) != -1)
+        {
+            string no = "player " + uid;
+            no += ": file could not be read and could not be quarantined";
+            no += " - refusing to overwrite it with defaults";
+            OZ_Log.Error(no);
+            return;
+        }
+
         OZ_ConfigLoader<OZ_PlayerData>.Save(PathOf(uid), "player_" + uid, s_Cache.Get(uid), false);
     }
 
     static void FlushAll()
     {
-        Ensure();
         while (s_Dirty.Count() > 0)
             Flush(s_Dirty[0]);
+    }
+
+    // Скинути НЕ БІЛЬШЕ n записів за раз.
+    //
+    // FlushAll писав усе брудне одним синхронним циклом раз на тридцять
+    // секунд, а брудними після ролового ресинку ролей стають майже всі
+    // онлайн одночасно -- тобто вісім десятків файлів в одному кадрі на
+    // сервері з одним ядром. Стеля втрати від цього не міняється (черга
+    // однаково розходиться за секунди), а хитч зникає.
+    static void FlushSome(int n)
+    {
+        int done = 0;
+        while (s_Dirty.Count() > 0 && done < n)
+        {
+            Flush(s_Dirty[0]);
+            done++;
+        }
     }
 
     // Вивантажує з пам'яті, дописавши на диск. Кличеться на дисконекті:
     // тримати в кеші того, хто пішов, немає сенсу.
     static void Unload(string uid)
     {
-        Ensure();
         Flush(uid);
-        s_Cache.Remove(uid);
+        if (s_Cache.Contains(uid))
+            s_Cache.Remove(uid);
+
+        int locked = s_Locked.Find(uid);
+        if (locked != -1)
+            s_Locked.Remove(locked);
+    }
+
+    // ------------------------------------------------- офлайнове читання
+    //
+    // ПОГЛЯНУТИ на запис, не беручи його в кеш назавжди.
+    //
+    // Load() тримає все, що колись питали, до кінця сеансу: Unload() знімає
+    // лише того, хто сам вийшов. А офлайнові uid питають на КОЖНЕ малювання
+    // списку контактів -- чужі друзі, чужі друзі друзів, -- і кеш ріс, поки
+    // сервер стояв. Гірше: Load ще й штампував FirstSeen випадковому uid і
+    // заводив йому файл, тобто створював запис людині, яка сюди не заходила.
+    //
+    // Peek читає крізь маленький кеш зі строком: нічого не брудниться,
+    // нічого не штампується, файл не заводиться. Хто зараз у Зоні -- той у
+    // s_Cache, і Peek віддає саме його, не читаючи диска вдруге.
+    private static ref map<string, ref OZ_PlayerData> s_Peek   = new map<string, ref OZ_PlayerData>();
+    private static ref map<string, int>               s_PeekAt = new map<string, int>();
+
+    private static const int PEEK_TTL_MS = 300000;   // п'ять хвилин
+    private static const int PEEK_MAX    = 256;
+
+    static OZ_PlayerData Peek(string uid)
+    {
+        if (uid == "")
+            return null;
+
+        if (s_Cache.Contains(uid))
+            return s_Cache.Get(uid);
+
+        int now = GetGame().GetTime();
+
+        int at;
+        if (s_PeekAt.Find(uid, at) && (now - at) < PEEK_TTL_MS)
+            return s_Peek.Get(uid);
+
+        // Файла немає -- людини теж. Порожній запис тут гірший за null:
+        // викликач мусить бачити різницю між «нічого не знаємо» й «знаємо,
+        // що порожньо».
+        OZ_PlayerData d;
+        if (FileExist(PathOf(uid)))
+        {
+            d = new OZ_PlayerData();
+            OZ_ConfigLoader<OZ_PlayerData>.Load(PathOf(uid), "player_" + uid, d, false, false);
+            d.SteamId = uid;
+        }
+
+        // Скидаємо цілком, а не найстаріше: кеш показу, а не сховище, і
+        // другий прохід по мапі заради LRU коштував би більше, ніж економив.
+        if (s_Peek.Count() >= PEEK_MAX)
+        {
+            s_Peek.Clear();
+            s_PeekAt.Clear();
+        }
+
+        s_Peek.Set(uid, d);
+        s_PeekAt.Set(uid, now);
+        return d;
     }
 
     // ------------------------------------------- ключ персонажа
@@ -420,9 +515,12 @@ class OZ_PlayerStore
     //
     // Голий uid у старому файлі означає перше покоління -- до пермадесу
     // інших і не було.
+    // ЧИТАЄМО ЧЕРЕЗ Peek, а не Load: ключ персонажа питають і про того, кого
+    // на сервері немає -- контакт із чужого записника, адресат старого
+    // повідомлення. Load тримав би кожного такого в кеші до кінця сеансу.
     static string KeyOf(string uid)
     {
-        OZ_PlayerData d = Load(uid);
+        OZ_PlayerData d = Peek(uid);
         if (!d)
             return uid + "#1";
         return uid + "#" + d.Gen.ToString();
@@ -453,7 +551,7 @@ class OZ_PlayerStore
         if (uid == "")
             return false;
 
-        OZ_PlayerData d = Load(uid);
+        OZ_PlayerData d = Peek(uid);
         if (!d)
             return false;
 
@@ -474,14 +572,13 @@ class OZ_PlayerStore
         if (s_Frozen.Contains(key))
             return s_Frozen.Get(key);
 
-        string uid = UidOfKey(key);
-        string path = OZ_Const.PLAYERS_DIR + "\\" + uid + ".g" + GenOfKey(key).ToString() + ".json";
+        string path = GravePathOf(UidOfKey(key), GenOfKey(key));
 
         OZ_PlayerData d;
         if (FileExist(path))
         {
             d = new OZ_PlayerData();
-            OZ_ConfigLoader<OZ_PlayerData>.Load(path, "grave_" + key, d, false);
+            OZ_ConfigLoader<OZ_PlayerData>.Load(path, "grave_" + key, d, false, false);
         }
 
         s_Frozen.Set(key, d);
@@ -490,10 +587,15 @@ class OZ_PlayerStore
 
     // Запис ЗА КЛЮЧЕМ: живий або заморожений. Може бути null -- покоління
     // є в чиємусь записнику, а файла вже немає (адмін прибрав руками).
+    //
+    // ЩО ЗВІДСИ ПОВЕРТАЄТЬСЯ -- ДЛЯ ЧИТАННЯ. Живий і присутній гравець
+    // прийде з кеша, як і раніше; відсутнього віддає Peek, і правки в ньому
+    // на диск не поїдуть (MarkDirty відмовить тому, кого немає в кеші, --
+    // так само, як відмовляв і замороженому запису досі).
     static OZ_PlayerData ByKey(string key)
     {
         if (IsLive(key))
-            return Load(UidOfKey(key));
+            return Peek(UidOfKey(key));
         return FrozenOf(key);
     }
 
@@ -507,8 +609,6 @@ class OZ_PlayerStore
     // Steam64 не змінився й наступний Load піде саме за ним.
     static void Freeze(string uid)
     {
-        Ensure();
-
         OZ_PlayerData d = Load(uid);
         if (!d)
             return;
@@ -517,7 +617,7 @@ class OZ_PlayerStore
         MarkDirty(uid);
         Flush(uid);
 
-        string grave = OZ_Const.PLAYERS_DIR + "\\" + uid + ".g" + d.Gen.ToString() + ".json";
+        string grave = GravePathOf(uid, d.Gen);
         if (FileExist(PathOf(uid)))
         {
             if (!CopyFile(PathOf(uid), grave))
@@ -529,13 +629,17 @@ class OZ_PlayerStore
         d.Gen = d.Gen + 1;
         MarkDirty(uid);
         Flush(uid);
+
+        // Знімок показу застарів разом із поколінням.
+        if (s_Peek.Contains(uid))
+        {
+            s_Peek.Remove(uid);
+            s_PeekAt.Remove(uid);
+        }
     }
 
-    static int CachedCount()
-    {
-        Ensure();
-        return s_Cache.Count();
-    }
+    // CachedCount() ТУТ БІЛЬШЕ НЕМАЄ: діагностичний лічильник без жодного
+    // викликача в усій серії.
 }
 
 // Перенесення старих прапорців гравця в нові поля (ТЗ-4 §A, 2026-09-02).
