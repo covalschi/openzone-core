@@ -74,8 +74,35 @@ class OZ_BridgeCache
         if (kind == "news")   return true;
         if (kind == "roles")  return true;
         if (kind == "roster") return true;
-        if (kind == "link")   return true;
+
+        // ВАЙП -- ЖИВИЙ РІД, і його тут бракувало: міст шле його
+        // (openzone-bridge/src/index.js:881,1498), мод фракцій на нього
+        // підписаний (OZF_Module.c:68), а кеш читав у лозі «poll item of
+        // unknown kind "wipe"» і скидався ЦІЛКОМ. Скидання цілком було
+        // випадково правильним, і саме тому небезпечним: додати рід у цей
+        // список і нічого більше означало б тихо перетворити його на
+        // порожню дію -- доріг "v1/wipe/" не існує. Що він застарює
+        // насправді -- у PrefixOf нижче.
+        if (kind == "wipe")   return true;
+
+        // "link" ТУТ БІЛЬШЕ НЕМАЄ: такого конверта не шле ніхто (у мості
+        // жодного kind: 'link'), і не читає теж ніхто.
         return false;
+    }
+
+    // Що саме застаріває від конверта цього роду.
+    //
+    // Зазвичай -- дорога того самого імені: "news" застарює "v1/news/".
+    // Виняток один, і він мовчазний: вайп гравця переписує СКЛАД РОЗМОВ
+    // (openzone-bridge/src/index.js, wipePlayer чистить c.members і архівує
+    // приватний тред), тобто застарює чат -- при тому, що дороги "v1/wipe/"
+    // не існує зовсім.
+    private static string PrefixOf(string kind)
+    {
+        if (kind == "wipe")
+            return "v1/chat/";
+
+        return "v1/" + kind + "/";
     }
 
     private static string Key(string route, string letter)
@@ -143,7 +170,7 @@ class OZ_BridgeCache
         if (s_Body.Count() == 0)
             return true;
 
-        string prefix = "v1/" + kind + "/";
+        string prefix = PrefixOf(kind);
 
         array<string> doomed = new array<string>();
         for (int i = 0; i < s_Body.Count(); i++)
