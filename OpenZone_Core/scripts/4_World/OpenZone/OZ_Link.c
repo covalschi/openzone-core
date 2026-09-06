@@ -106,6 +106,29 @@ class OZ_Link
     private static ref map<string, int> s_BeganAt = new map<string, int>();
     private static const int BEGIN_GAP_MS = 10000;
 
+    // ВОРОТА ТЕПЕР СЕРВЕРНІ (рішення власника R-F2.2/H37, ТЗ-5 §F2).
+    //
+    // RequireDiscordLink досі виконував ОДИН лише клієнт: вікно, яке не
+    // відпускає. Сервер не питав OZ_Link.Gated() ніде, крім прапорця в
+    // пакеті синхронізації, тож неприв'язаний гравець із підміненим чи просто
+    // без нашого клієнта ходив, лутався й користувався всіма сторінками як
+    // прив'язаний. Тобто настройка не обмежувала нічого (defect D32).
+    //
+    // Рішення власника -- КІК, а не гейт на кожну операцію: пускати в Зону
+    // того, кого машинерія ролей не знає, немає сенсу ні в чому, а перевірка
+    // в кожній точці входу -- це двадцять місць, де її колись забудуть.
+    //
+    // Кік відкладений, і це не м'якість: код видає МІСТ, гравець мусить піти в
+    // Discord і набрати шість символів. П'ять хвилин -- це «пішов і повернувся»
+    // з великим запасом; хто за цей час не прив'язався, той відмовився.
+    private static ref map<string, int> s_KickAt = new map<string, int>();
+    private static const int GATE_GRACE_MS = 300000;
+
+    // Кому вже сказали, за що. Кік іде НАСТУПНИМ тіком, щоб гарантований
+    // RPC із причиною встиг доїхати до вікна воріт (R-F2.3: кик із внятною
+    // причиною, а не мовчазний розрив).
+    private static ref array<string> s_KickTold = new array<string>();
+
     // Знайти живу особу за uid. Потрібно, бо відповідь моста приїжджає
     // ПІЗНІШЕ за запит, і особа, захоплена тоді, могла вже протухнути.
     static PlayerIdentity Online(string uid)
@@ -243,6 +266,78 @@ class OZ_Link
         OZ_Rpc.LinkRespond(who, OZ_LinkConst.OP_STATE, true, json, "");
     }
 
+    // ГРАВЕЦЬ ЗАЙШОВ. Кличе OZ_Module.OnInvokeConnect.
+    //
+    // Два різні обов'язки в одному місці:
+    //
+    //   D33 (R-F2.4) -- ЗВІРКА НА ВХОДІ. Прив'язка, що сталась поза
+    //   десятихвилинним вікном (гравець набрав /link через годину після
+    //   того, як вийшов), не записувалась НІКОЛИ: у пам'яті сервера вже не
+    //   було кого чекати. Watch() ставить його в чергу опиту стану, і
+    //   найближчий тік запитає міст -- тобто вхід і є та сверка.
+    //
+    //   R-F2.2 -- СТРОК. Хто не прив'язався за GATE_GRACE_MS, того кикаємо.
+    static void OnConnect(PlayerIdentity who)
+    {
+        if (!who)
+            return;
+
+        string uid = who.GetPlainId();
+        if (uid == "")
+            return;
+
+        OZ_Settings s = OZ_Settings.Get();
+        if (!s || !s.RequireDiscordLink)
+            return;
+        if (IsLinked(uid))
+            return;
+
+        // Звірка з мостом: він міг записати прив'язку, поки нас тут не було.
+        // ОДИН запит, а не десятихвилинне чекання: чекають того, хто щойно
+        // взяв код, а тут ми лише питаємо, чи вже не прив'язаний.
+        AskStatus(uid);
+
+        int grace = GATE_GRACE_MS / 1000;
+        s_KickAt.Set(uid, GetGame().GetTime() + GATE_GRACE_MS);
+        EnsureTimer();
+        OZ_Log.Dbg("link: " + uid + " has " + grace.ToString() + "s to link or leave");
+    }
+
+    // Спитати міст, чи цей uid уже прив'язаний. Відповідь нікому не йде: вона
+    // лягає у файл (OZ_LinkStatusReply -> Confirm), а клієнт побачить зміну
+    // своїм же запитом стану.
+    private static void AskStatus(string uid)
+    {
+        if (!OZ_BridgeClient.Alive())
+            return;
+
+        OZ_LinkAsk a = new OZ_LinkAsk();
+        a.Uid = uid;
+
+        string letter;
+        string err;
+        if (!JsonFileLoader<OZ_LinkAsk>.MakeData(a, letter, err, false))
+            return;
+
+        OZ_BridgeClient.Call("v1/link/status", letter, new OZ_LinkStatusReply(uid));
+    }
+
+    // Гравець вийшов сам -- чи ми його вивели. Прибираємо все, що про нього
+    // пам'ятали.
+    static void Leave(string uid)
+    {
+        Forget(uid);
+
+        if (s_KickAt.Contains(uid))
+            s_KickAt.Remove(uid);
+
+        int told = s_KickTold.Find(uid);
+        if (told != -1)
+            s_KickTold.Remove(told);
+
+        StopIfIdle();
+    }
+
     static void Watch(string uid)
     {
         if (uid == "")
@@ -302,6 +397,12 @@ class OZ_Link
         StopIfIdle();
     }
 
+    // Чи є кому тікати. Дві черги: хто чекає код і хто чекає рішення.
+    private static int Pending()
+    {
+        return s_Waiting.Count() + s_KickAt.Count();
+    }
+
     private static void EnsureTimer()
     {
         if (s_Timer)
@@ -326,7 +427,7 @@ class OZ_Link
     // після першого ж запиту коду за весь сеанс.
     private static void StopIfIdle()
     {
-        if (s_Waiting.Count() > 0)
+        if (Pending() > 0)
             return;
         if (!s_Timer)
             return;
@@ -336,6 +437,11 @@ class OZ_Link
 
     static void Tick()
     {
+        // Ворота дивимось ЗАВЖДИ, навіть коли міст мовчить: рішення про кік
+        // спирається на Gated(), а той сам ураховує і мертвий міст, і
+        // AllowPlayWhenBridgeDown.
+        Gate();
+
         if (s_Waiting.Count() == 0)
         {
             StopIfIdle();
@@ -368,15 +474,7 @@ class OZ_Link
                 continue;
             }
 
-            OZ_LinkAsk a = new OZ_LinkAsk();
-            a.Uid = uid;
-
-            string letter;
-            string err;
-            if (!JsonFileLoader<OZ_LinkAsk>.MakeData(a, letter, err, false))
-                continue;
-
-            OZ_BridgeClient.Call("v1/link/status", letter, new OZ_LinkStatusReply(uid));
+            AskStatus(uid);
         }
 
         for (int j = 0; j < expired.Count(); j++)
@@ -386,6 +484,67 @@ class OZ_Link
         }
 
         StopIfIdle();
+    }
+
+    // Строк воріт. Один прохід: кому вже нема чого чекати -- зняти, кому
+    // вийшов час -- сказати, кому вже сказали -- вивести.
+    private static void Gate()
+    {
+        if (s_KickAt.Count() == 0)
+            return;
+
+        int now = GetGame().GetTime();
+
+        array<string> done = new array<string>();
+        array<string> kick = new array<string>();
+
+        for (int i = 0; i < s_KickAt.Count(); i++)
+        {
+            string uid = s_KickAt.GetKey(i);
+
+            // Вийшов сам, прив'язався, або ворота перестали триматись
+            // (дзеркал нема, міст ліг при AllowPlayWhenBridgeDown) -- усе це
+            // однаково означає «більше не наша справа».
+            if (!Online(uid) || !Gated(uid))
+            {
+                done.Insert(uid);
+                continue;
+            }
+
+            if (now < s_KickAt.GetElement(i))
+                continue;
+
+            kick.Insert(uid);
+        }
+
+        for (int d = 0; d < done.Count(); d++)
+            Leave(done[d]);
+
+        for (int k = 0; k < kick.Count(); k++)
+        {
+            string ku = kick[k];
+            PlayerIdentity to = Online(ku);
+            if (!to)
+            {
+                Leave(ku);
+                continue;
+            }
+
+            if (s_KickTold.Find(ku) == -1)
+            {
+                // Причина -- у вікно воріт, яке зараз перед ним: рушій свого
+                // тексту при розриві не показує, і це найближче до «внятної
+                // причини», що взагалі є. Кік -- наступним тіком.
+                s_KickTold.Insert(ku);
+                OZ_Rpc.LinkRespond(to, OZ_LinkConst.OP_BEGIN, false, "", "STR_OZ_KICK_NO_LINK");
+                OZ_Log.Info("link: " + ku + " did not link in time - telling him, kicking on the next tick");
+                continue;
+            }
+
+            OZ_Log.Info("link: kicking " + ku + " - RequireDiscordLink is on and he is not linked");
+            Leave(ku);
+            GetGame().DisconnectPlayer(to, ku);
+        }
     }
 }
 

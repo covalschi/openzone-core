@@ -566,6 +566,11 @@ class OZ_Module : CF_ModuleWorld
         // означав би друге читання й друге місце, де про це можна забути.
         OZ_Identity.Get().EnsureBase(pArgs.Identity.GetPlainId());
 
+        // ВОРОТА ПРИВЯЗКИ -- СЕРВЕРНІ (R-F2.2/R-F2.4, H37). Свірка з мостом на
+        // вході й строк, після якого неприв'язаного виводять; подробиці --
+        // в OZ_Link.OnConnect.
+        OZ_Link.OnConnect(pArgs.Identity);
+
         string line = "connect " + pArgs.Identity.GetName();
         line += " (" + pArgs.Identity.GetPlainId();
         line += ") admin=" + admin;
@@ -663,9 +668,10 @@ class OZ_Module : CF_ModuleWorld
         if (m_HelloAt.Contains(dArgs.UID))
             m_HelloAt.Remove(dArgs.UID);
 
-        // Опитування моста про його код привязки теж припиняємо: воно жило
-        // до десяти хвилин і не знало, що питати вже нема про кого.
-        OZ_Link.Forget(dArgs.UID);
+        // Опитування моста про його код прив'язки теж припиняємо: воно жило
+        // до десяти хвилин і не знало, що питати вже нема про кого. Разом із
+        // ним іде й строк воріт.
+        OZ_Link.Leave(dArgs.UID);
 
         OZ_Log.Dbg("disconnect " + dArgs.UID);
     }
