@@ -18,8 +18,57 @@ infrastructure.
 | **Player store** | Per-SteamID JSON that survives character death. `Load()` keeps a uid resident and CREATES its file if there is none, so a lookup about somebody offline belongs in `Peek()` — it reads through a short-lived cache, marks nothing dirty and writes nothing |
 | **Bridge client** | Long-poll client for the OpenZone Discord bridge |
 | **Affiliation contract** | `OZ_Identity`: which organisation, which stand towards another player, who leads. Declared here, answered with "none" here, filled in by the factions mod; read-only by design. The only faction-shaped thing in Core |
-| **Spawn loadouts** | A service another mod fills in (`OZ_Loadout`, three-valued: no opinion / naked / preset) plus an applicator that strips what the mission gave a new character and dresses it from a preset, in the same frame after `OnClientNewEvent`; one-shot spawn points may carry a loadout word. [The factions mod](https://github.com/covalschi/openzone-factions) supplies the ladder (`OZ_Factions_Loadouts.json`) |
+| **Spawn loadouts** | A service another mod fills in (`OZ_Loadout`, three-valued: no opinion / naked / preset) plus an applicator that strips what the mission gave a new character and dresses it from a preset, in the same frame after `OnClientNewEvent`. [The factions mod](https://github.com/covalschi/openzone-factions) supplies the ladder (`OZ_Factions_Loadouts.json`) |
 | **Design tokens** | `ui/tokens.json`: the series' single source of colour, font, spacing, device-geometry and VPP admin-window (`vpp`) tokens; the PDA and the factions read this same file through their own `[build] tokens` |
+
+## Writing a config on Core
+
+A config is a class extending `OZ_ConfigBase`, read through
+`OZ_ConfigLoader<T>.Load(path, tag, cfg)`. A broken file never stops the server:
+it is quarantined, the defaults load, the log says so. Three rules for the class
+itself, and the third is the one that bites.
+
+**1. Construct it yourself.** `Load` refuses a null `cfg`. The serializer would
+happily allocate the root — and then nothing in the object would have run its
+field initialisers.
+
+**2. `LoadDefaults()` assigns every field.** It runs on a missing file, on a
+failed parse and on a failed migration, on top of whatever was half-read.
+
+**3. `Validate()` reseats every nested object.** `JsonFileLoader` is a wrapper
+over the native `JsonSerializer.ReadFromString`, declared
+`proto bool ReadFromString(void variable_in, ...)`: it fills the ROOT object you
+passed in, but it allocates every nested `ref` and every array element itself —
+even for a section the file does not contain, which comes back allocated and
+zeroed rather than null. Those allocations never run the script constructor, so
+`string Kind = ""` and `int MaxMembers = 50` did not happen. A member the file
+did not carry is raw memory: it reads as zero immediately after the parse and as
+somebody else's bytes minutes later, which is how a rank once printed as
+`mercenary:$`. The usual way in is not a corrupt file but a **new field** —
+live files do not carry it, and `LoadDefaults()` does not run on a successful
+parse.
+
+The idiom is a `Copy()` on every nested class (a `new` of its own type, member by
+member, nested ones through their own `Copy()`), called from `Validate()` — which
+the loader runs immediately after the parse, while the read is still honest:
+
+```c
+if (!Bridge)
+    Bridge = new OZ_BridgeSettings();
+else
+    Bridge = Bridge.Copy();
+```
+
+After the copy a member absent from the file holds zero, not the value in its
+initialiser, so `Validate()` supplies the real defaults it cares about
+(`Bridge.ServerId`, `Staging.Radius`) exactly as it always did. Core's own six
+copies — `OZ_BridgeSettings`, `OZ_KindMirror`, `OZ_SpawnPlace`, `OZ_SpawnZone`,
+`OZ_SpawnPersonal`, `OZ_FriendReq` — are the worked example.
+
+The same holds outside `OZ_ConfigLoader` for any `JsonFileLoader.LoadData` whose
+result outlives the call: a bridge envelope kept in a cache, a config a screen
+paints from between refreshes. Copy it in the sink. A value read in the same call
+as the parse needs no copy.
 
 ## The Discord link gate
 
