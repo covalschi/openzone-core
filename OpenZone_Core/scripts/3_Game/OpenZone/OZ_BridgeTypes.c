@@ -19,6 +19,14 @@ class OZ_BridgeEnvelope
     // Корисне навантаження, вкладене як рядок JSON. Ядро в нього не
     // заглядає -- воно возить конверти, а не читає листи.
     string Json;
+
+    OZ_BridgeEnvelope Copy()
+    {
+        OZ_BridgeEnvelope c = new OZ_BridgeEnvelope();
+        c.Kind = Kind;
+        c.Json = Json;
+        return c;
+    }
 }
 
 class OZ_BridgeBatch
@@ -29,6 +37,28 @@ class OZ_BridgeBatch
     void OZ_BridgeBatch()
     {
         Items = new array<ref OZ_BridgeEnvelope>();
+    }
+
+    // КОПІЯ ПЕРЕД РОЗДАЧЕЮ (шапка OZ_ConfigBase, зміряно 2026-09-06).
+    // Absorb роздає конверти по черзі, а кожен sink.Deliver() розбирає СВІЙ
+    // документ -- тобто між читанням Items[i] і читанням Items[i+1] стоїть
+    // цілий чужий розбір. Без копії другий конверт пачки читається з
+    // пам'яті, яку вже віддали комусь іншому.
+    OZ_BridgeBatch Copy()
+    {
+        OZ_BridgeBatch c = new OZ_BridgeBatch();
+        c.Cursor = Cursor;
+
+        if (Items)
+        {
+            for (int i = 0; i < Items.Count(); i++)
+            {
+                if (Items[i])
+                    c.Items.Insert(Items[i].Copy());
+            }
+        }
+
+        return c;
     }
 }
 

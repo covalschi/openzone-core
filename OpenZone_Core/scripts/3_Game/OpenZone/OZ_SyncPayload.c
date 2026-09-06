@@ -10,6 +10,15 @@ class OZ_SyncPageInfo
     string PageId;
     string TitleKey;
     string Icon;
+
+    OZ_SyncPageInfo Copy()
+    {
+        OZ_SyncPageInfo c = new OZ_SyncPageInfo();
+        c.PageId   = PageId;
+        c.TitleKey = TitleKey;
+        c.Icon     = Icon;
+        return c;
+    }
 }
 
 // Один рядок розширення пакета: ключ і значення, обидва рядки. Не map --
@@ -18,6 +27,14 @@ class OZ_SyncExtra
 {
     string Key   = "";
     string Value = "";
+
+    OZ_SyncExtra Copy()
+    {
+        OZ_SyncExtra c = new OZ_SyncExtra();
+        c.Key   = Key;
+        c.Value = Value;
+        return c;
+    }
 }
 
 class OZ_SyncPayload
@@ -66,5 +83,45 @@ class OZ_SyncPayload
     {
         Pages  = new array<ref OZ_SyncPageInfo>();
         Extras = new array<ref OZ_SyncExtra>();
+    }
+
+    // КОПІЯ В ОБ'ЄКТ, ЯКИЙ ЗРОБИВ СКРИПТ (шапка OZ_ConfigBase, зміряно
+    // 2026-09-06). Корінь пакета клієнт створює сам, тому три його прапорці
+    // безпечні; а Pages і Extras разом з їхніми рядками виділяє серіалізатор,
+    // і саме їх OZ_ClientState тримає ЦІЛУ СЕСІЮ -- кожна сторінка КПК читає
+    // їх через хвилини після розбору. Без цієї копії там лежатимуть чужі
+    // байти. Порожній елемент замість null: цикли нижче по коду читають поля
+    // елемента без перевірки.
+    OZ_SyncPayload Copy()
+    {
+        OZ_SyncPayload c = new OZ_SyncPayload();
+        c.DebugMode    = DebugMode;
+        c.Linked       = Linked;
+        c.LinkRequired = LinkRequired;
+
+        int i;
+        if (Pages)
+        {
+            for (i = 0; i < Pages.Count(); i++)
+            {
+                if (Pages[i])
+                    c.Pages.Insert(Pages[i].Copy());
+                else
+                    c.Pages.Insert(new OZ_SyncPageInfo());
+            }
+        }
+
+        if (Extras)
+        {
+            for (i = 0; i < Extras.Count(); i++)
+            {
+                if (Extras[i])
+                    c.Extras.Insert(Extras[i].Copy());
+                else
+                    c.Extras.Insert(new OZ_SyncExtra());
+            }
+        }
+
+        return c;
     }
 }

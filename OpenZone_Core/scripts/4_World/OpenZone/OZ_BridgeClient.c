@@ -738,16 +738,20 @@ class OZ_BridgeClient
     // Повертає true, коли пачка НІЧОГО не привезла й не зрушила курсор.
     static bool Absorb(string json)
     {
-        OZ_BridgeBatch batch;
+        // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase).
+        OZ_BridgeBatch parsed = new OZ_BridgeBatch();
         string err;
-        if (!JsonFileLoader<OZ_BridgeBatch>.LoadData(json, batch, err))
+        if (!JsonFileLoader<OZ_BridgeBatch>.LoadData(json, parsed, err))
         {
             OZ_Log.Error("bridge: batch is not readable: " + err);
             return false;
         }
 
-        if (!batch)
-            return false;
+        // І одразу копія: нижче кожен sink.Deliver() розбирає власний
+        // документ, а цикл після нього повертається по наступний конверт
+        // ЦІЄЇ пачки. Копія робиться до першого такого розбору -- поки
+        // читання ще чесне.
+        OZ_BridgeBatch batch = parsed.Copy();
 
         // СКИДАЄМО КЕШ ПО РОДАХ, А НЕ ЦІЛКОМ (ТЗ-2 R4.4 у формі, яку вона
         // мала на увазі).

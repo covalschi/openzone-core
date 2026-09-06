@@ -681,6 +681,8 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         {
             OZ_MirrorState mst;
             string merr;
+            // Копії не треба: цикл нижче лише знімає з конверта прапорці у
+            // власні поля вікна й нічого між читаннями не виділяє.
             if (JsonFileLoader<OZ_MirrorState>.LoadData(json, mst, merr) && mst && mst.Mirrors)
             {
                 m_MirrorKnown = true;
@@ -709,27 +711,38 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             m_RolesArmed  = false;
             if (JsonFileLoader<OZ_MirrorReport>.LoadData(json, mrep, rerr) && mrep)
             {
-                if (mrep.Kind == "roles")
+                // ЗНІМАЄМО ВСЕ ВІДРАЗУ, а вже тоді складаємо рядок. Складання
+                // рядка -- це виділення пам'яті, а конверт виділив
+                // серіалізатор (шапка OZ_ConfigBase): читати з нього далі,
+                // між двома склейками, означає читати з чужої сторінки.
+                string kind    = mrep.Kind;
+                bool   on      = mrep.On;
+                int    pushed  = mrep.Pushed;
+                int    skipped = mrep.Skipped;
+                int    failed  = mrep.Failed;
+                string note    = mrep.Note;
+
+                if (kind == "roles")
                 {
                     m_RolesKnown = true;
-                    m_RolesOn    = mrep.On;
+                    m_RolesOn    = on;
                 }
                 else
                 {
                     m_MirrorKnown = true;
-                    m_MirrorOn    = mrep.On;
+                    m_MirrorOn    = on;
                 }
-                string line = mrep.Kind + " mirror ";
-                if (mrep.On)
+                string line = kind + " mirror ";
+                if (on)
                     line += "ON";
                 else
                     line += "OFF";
-                if (mrep.Skipped == 1 && mrep.Pushed == 0 && mrep.Failed == 0 && mrep.Note.IndexOf("already") == 0)
+                if (skipped == 1 && pushed == 0 && failed == 0 && note.IndexOf("already") == 0)
                     line += " (unchanged)";
                 else
-                    line += ": pushed " + mrep.Pushed.ToString() + ", skipped " + mrep.Skipped.ToString() + ", failed " + mrep.Failed.ToString();
-                if (mrep.Note != "")
-                    line += " - " + mrep.Note;
+                    line += ": pushed " + pushed.ToString() + ", skipped " + skipped.ToString() + ", failed " + failed.ToString();
+                if (note != "")
+                    line += " - " + note;
                 Hint(line);
             }
             PaintMirror();
@@ -738,9 +751,13 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         if (op == "cfg_list")
         {
-            OZ_AdminCfgList l;
+            // Корінь створює скрипт: тоді Names лишається тим масивом, що
+            // його зробив конструктор, навіть коли відповідь порожня.
+            // Раніше тут стояв голий OZ_AdminCfgList l -- і Names.Count()
+            // нижче падав би на відповіді без цього поля.
+            OZ_AdminCfgList l = new OZ_AdminCfgList();
             string lerr;
-            if (JsonFileLoader<OZ_AdminCfgList>.LoadData(json, l, lerr) && l)
+            if (JsonFileLoader<OZ_AdminCfgList>.LoadData(json, l, lerr) && l && l.Names)
             {
                 m_CfgNames.Clear();
                 m_CfgOwners.Clear();
@@ -821,6 +838,8 @@ class OZ_VppAdminMenu : AdminHudSubMenu
                 return;
             }
 
+            // Копії не треба: обидва читання перекладають рядки з конверта
+            // у власні поля вікна, і саме це переписування Є копією.
             m_NwSelf = v.Self;
             m_NwVoices.Clear();
             if (v.Voices)

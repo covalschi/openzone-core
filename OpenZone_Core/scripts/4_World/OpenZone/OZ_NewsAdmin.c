@@ -101,18 +101,24 @@ class OZ_NewsAdminReply : OZ_BridgeReply
             return;
         }
 
+        // Знімаємо обидва поля до першої склейки рядка: конверт виділив
+        // серіалізатор, і після виділення пам'яті на тому місці вже чужі
+        // байти (шапка OZ_ConfigBase).
+        string refused = a.Error;
+        string who     = a.Who;
+
         // Відмову віддаємо СЛОВАМИ МОСТА. Він єдиний знає, чому саме: чужа
         // персона, порожній заголовок, немає права писати. Свій код помилки
         // тут означав би перекладати те, чого ми не бачили.
-        if (a.Error != "")
+        if (refused != "")
         {
-            OZ_Log.Warn("news: " + m_Op + " refused by the bridge: " + a.Error);
-            OZ_Rpc.AdminRespond(to, OZ_AdminSect.NEWS, m_Op, false, "", a.Error);
+            OZ_Log.Warn("news: " + m_Op + " refused by the bridge: " + refused);
+            OZ_Rpc.AdminRespond(to, OZ_AdminSect.NEWS, m_Op, false, "", refused);
             return;
         }
 
         if (m_Op == OZ_NewsOp.POST)
-            OZ_Log.Info("news: posted as \"" + a.Who + "\"");
+            OZ_Log.Info("news: posted as \"" + who + "\"");
 
         OZ_Rpc.AdminRespond(to, OZ_AdminSect.NEWS, m_Op, true, json, "");
     }

@@ -151,21 +151,28 @@ class OZ_ClientState
             return;
         }
 
-        s_Payload = p;
-        OZ_Log.SetDebug(p.DebugMode);
+        // КОПІЯ ПЕРЕД ЗБЕРІГАННЯМ. Цей пакет -- єдиний конверт ядра, який
+        // переживає свій розбір: він лежить у s_Payload цілу сесію, і КПК
+        // читає з нього і перелік сторінок, і додатки модів через хвилини.
+        // Корінь створив скрипт, тож прапорці цілі, а от Pages/Extras та
+        // їхні рядки виділив серіалізатор (шапка OZ_ConfigBase).
+        OZ_SyncPayload kept = p.Copy();
+
+        s_Payload = kept;
+        OZ_Log.SetDebug(kept.DebugMode);
 
         // Єдине місце, де вмикаються ворота прив'язки. Рішення серверне,
         // клієнт лише виконує.
-        OZ_LinkGate.FromSync(p.Linked, p.LinkRequired);
+        OZ_LinkGate.FromSync(kept.Linked, kept.LinkRequired);
 
-        string line = "sync received: pages=" + p.Pages.Count().ToString();
-        line += " debug=" + p.DebugMode;
-        line += " linked=" + p.Linked;
-        line += " gate=" + p.LinkRequired;
-        line += " extras=" + p.Extras.Count().ToString();
+        string line = "sync received: pages=" + kept.Pages.Count().ToString();
+        line += " debug=" + kept.DebugMode;
+        line += " linked=" + kept.Linked;
+        line += " gate=" + kept.LinkRequired;
+        line += " extras=" + kept.Extras.Count().ToString();
         OZ_Log.Info(line);
 
-        SyncWatch().Invoke(p);
+        SyncWatch().Invoke(kept);
     }
 
     // Відповідь на запит прив'язки. Веде її ВІКНО, а не цей клас: тут лише

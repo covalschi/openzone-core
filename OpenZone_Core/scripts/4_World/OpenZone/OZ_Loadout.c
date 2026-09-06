@@ -37,6 +37,38 @@ class OZ_LoadoutItem
     {
         Inside = new array<ref OZ_LoadoutItem>();
     }
+
+    // Копія в об'єкт, який зробив скрипт (шапка OZ_ConfigBase). Пресети живуть
+    // у конфігу мода фракцій увесь запуск сервера, а одягає з них ядро на
+    // кожній появі -- тобто через години після розбору файла. Рекурсія по
+    // Inside: вкладення теж виділив серіалізатор.
+    //
+    // ЦІНА, ЯКУ ЦЕ МАЄ: ключа, якого У ФАЙЛІ НЕМАЄ, копія переносить НУЛЕМ, а
+    // не значенням з ініціалізатора. Для Health01 і QuickBar нуль означає не
+    // те саме, що -1: «зіпсована річ» і «слот 0» замість «не чіпати». Файл,
+    // який пише сам мод, несе всі шість ключів, тож це стосується лише
+    // обрізаного вручну. Розрізнити «немає» і «нуль» може тільки лоадер --
+    // це та сама відкрита стаття, що лишилась на OZ_ConfigLoader.
+    OZ_LoadoutItem Copy()
+    {
+        OZ_LoadoutItem c = new OZ_LoadoutItem();
+        c.ClassName = ClassName;
+        c.SlotName  = SlotName;
+        c.Quantity  = Quantity;
+        c.Health01  = Health01;
+        c.QuickBar  = QuickBar;
+
+        if (Inside)
+        {
+            for (int i = 0; i < Inside.Count(); i++)
+            {
+                if (Inside[i])
+                    c.Inside.Insert(Inside[i].Copy());
+            }
+        }
+
+        return c;
+    }
 }
 
 class OZ_LoadoutPreset
@@ -47,6 +79,25 @@ class OZ_LoadoutPreset
     void OZ_LoadoutPreset()
     {
         Items = new array<ref OZ_LoadoutItem>();
+    }
+
+    // Тип оголошує ядро -- отже й Copy() до нього пише ядро, хоч користується
+    // ним конфіг мода фракцій (OZF_LoadoutsConfig.Validate).
+    OZ_LoadoutPreset Copy()
+    {
+        OZ_LoadoutPreset c = new OZ_LoadoutPreset();
+        c.Id = Id;
+
+        if (Items)
+        {
+            for (int i = 0; i < Items.Count(); i++)
+            {
+                if (Items[i])
+                    c.Items.Insert(Items[i].Copy());
+            }
+        }
+
+        return c;
     }
 }
 

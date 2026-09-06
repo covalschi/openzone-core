@@ -75,11 +75,17 @@ class OZ_MirrorFillReply : OZ_BridgeReply
             return;
         }
 
-        if (!ack.Ok)
+        // Знімаємо обидва поля до першої склейки рядка: конверт виділив
+        // серіалізатор, і читати з нього після виділення пам'яті вже не
+        // можна (шапка OZ_ConfigBase).
+        bool   ok  = ack.Ok;
+        string why = ack.Why;
+
+        if (!ok)
         {
-            OZ_Log.Warn("mirror: the bridge did not fill " + m_Kind + ": " + ack.Why);
+            OZ_Log.Warn("mirror: the bridge did not fill " + m_Kind + ": " + why);
             if (to)
-                OZ_Rpc.AdminRespond(to, OZ_AdminSect.CONFIG, m_Op, false, "", ack.Why);
+                OZ_Rpc.AdminRespond(to, OZ_AdminSect.CONFIG, m_Op, false, "", why);
             return;
         }
 

@@ -136,8 +136,10 @@ class OZ_SpawnsConfig : OZ_ConfigBase
         if (!Personal)
             Personal = new array<ref OZ_SpawnPersonal>();
 
-        // Може не бути в файлі зовсім -- тоді серіалізатор лишає null, а не
-        // порожній об'єкт.
+        // Розділу може не бути у файлі зовсім -- і тоді серіалізатор віддає
+        // його СТВОРЕНИМ І ОБНУЛЕНИМ, а не null (зміряно 2026-09-06, шапка
+        // OZ_ConfigBase). Перевірка на null лишається для випадку, коли
+        // кличуть не з лоадера, а з голого об'єкта.
         if (!Staging)
             Staging = new OZ_SpawnPlace();
         else
