@@ -85,7 +85,17 @@ class OZ_MirrorFillReply : OZ_BridgeReply
 
         // Залито -- тепер прапорець. Адмін міг вийти, поки міст працював:
         // прапорець пишеться однаково, бо операцію він уже замовив.
-        OZ_MirrorOps.Write(m_Kind, true);
+        //
+        // Історія при відмові запису лишається залитою, і це не біда: у
+        // гільдії з'явився архів, якого там не було, а дзеркало як було
+        // вимкнене, так і лишилось. Повторний виклик нічого не подвоїть --
+        // у кожного рядка стабільний власний id.
+        if (!OZ_MirrorOps.Write(m_Kind, true))
+        {
+            if (to)
+                OZ_Rpc.AdminRespond(to, OZ_AdminSect.CONFIG, m_Op, false, "", "STR_OZ_ERR_INTERNAL");
+            return;
+        }
 
         OZ_MirrorReport rep = new OZ_MirrorReport();
         rep.Pushed  = ack.Pushed;
@@ -211,7 +221,11 @@ class OZ_MirrorOps
 
         if (!on)
         {
-            Write(kind, false);
+            if (!Write(kind, false))
+            {
+                error = "STR_OZ_ERR_INTERNAL";
+                return "";
+            }
             rep.On   = false;
             if (kind == "roles")
                 rep.Note = "the bot stops touching Discord roles from the next poll; they stay as they are until the mirror is on again";
@@ -225,6 +239,15 @@ class OZ_MirrorOps
         if (!OZ_BridgeClient.Alive())
         {
             error = "STR_OZ_ERR_NO_BRIDGE";
+            return "";
+        }
+
+        // Питаємо ПЕРЕД заливкою: результат однаково не буде куди записати,
+        // а заливка історії -- найдорожча операція, яка тут узагалі є.
+        if (!OZ_Settings.Writable())
+        {
+            OZ_Log.Error("mirror: " + kind + " not switched on - Settings could not be read");
+            error = "STR_OZ_ERR_INTERNAL";
             return "";
         }
 
@@ -256,11 +279,30 @@ class OZ_MirrorOps
 
     // Прапорець у Settings і на диск. Список Mirrors їде мосту з кожним
     // опитом, тож окремого повідомлення не треба.
-    static void Write(string kind, bool on)
+    //
+    // Повертає false, коли писати не можна: тоді в пам'яті теж нічого не
+    // міняється, бо стан панелі й стан файла мусять збігатись.
+    static bool Write(string kind, bool on)
     {
         OZ_Settings s = OZ_Settings.Get();
         if (!s || !s.Bridge)
-            return;
+            return false;
+
+        // ФАЙЛ, ЯКОГО ЛОАДЕР НЕ ЗРОЗУМІВ, НЕ ПЕРЕЗАПИСУЄМО ОДНІЄЮ БУЛЕВОЮ.
+        //
+        // У пам'яті зараз дефолти, а на диску -- єдиний примірник із
+        // AdminIds, адресою й секретом моста. Запис поверх нього стер би все
+        // це заради тумблера в панелі, і .bak не оновлюється (нижче), тож
+        // відновлюватись було б нізвідки. Error, а не Warn: адмін натиснув
+        // кнопку й мусить дізнатись, що вона не спрацювала.
+        if (!OZ_Settings.Writable())
+        {
+            string no = "mirror: " + kind;
+            no += " not written - Settings could not be read and must not be overwritten with defaults";
+            OZ_Log.Error(no);
+            return false;
+        }
+
         if (!s.Bridge.Mirrors)
             s.Bridge.Mirrors = new array<ref OZ_KindMirror>();
 
@@ -296,6 +338,7 @@ class OZ_MirrorOps
         if (on)
             state = "on";
         OZ_Log.Info("mirror: " + kind + " is now " + state + " (Settings written)");
+        return true;
     }
 
     static string Json(OZ_MirrorReport rep)

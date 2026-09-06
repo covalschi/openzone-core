@@ -99,9 +99,28 @@ class OZ_Settings : OZ_ConfigBase
 
     private static ref OZ_Settings s_Inst;
 
+    // ЧИ МОЖНА ЦЕЙ ФАЙЛ ПИСАТИ ВЗАГАЛІ.
+    //
+    // false означає «на диску лежить єдиний примірник, якого лоадер не
+    // зрозумів і не зміг винести в карантин, або файл із новішої схеми»: у
+    // пам'яті тоді дефолти, і будь-який запис поверх стер би AdminIds, адресу
+    // й секрет моста та застарілий розділ "Faction", з якого мод фракцій
+    // читає свою межу при міграції. Один тумблер дзеркала в панелі VPP робив
+    // рівно це -- і .bak при ньому теж не оновлюється (backup=false), тож
+    // відновлюватись не було б звідки.
+    //
+    // OZ_Spawns тримає такий самий прапорець; тут він з'явився на файлі з
+    // найширшим радіусом ураження останнім.
+    private static bool s_Writable = true;
+
     static OZ_Settings Get()
     {
         return s_Inst;
+    }
+
+    static bool Writable()
+    {
+        return s_Writable;
     }
 
     override int LatestVersion()
@@ -240,7 +259,7 @@ class OZ_Settings : OZ_ConfigBase
         OZ_Json.EnsureTree();
 
         s_Inst = new OZ_Settings();
-        OZ_ConfigLoader<OZ_Settings>.Load(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s_Inst);
+        s_Writable = OZ_ConfigLoader<OZ_Settings>.Load(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s_Inst);
 
         OZ_Log.SetDebug(s_Inst.DebugMode);
     }
