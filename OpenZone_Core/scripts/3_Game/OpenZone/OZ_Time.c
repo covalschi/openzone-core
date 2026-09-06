@@ -107,7 +107,13 @@ class OZ_Time
         return res;
     }
 
-    private static int DaysIn(int year, int month)
+    // DaysIn І Pad2 -- ПУБЛІЧНІ, і це не послаблення інкапсуляції, а виправлення
+    // розходження. Обидва були приватні, тому кожен, кому вони знадобились,
+    // писав свої: у КПК їх виявилось ДВА примірники (OZ_LocalTime.DaysIn,
+    // OZ_PdaMenu.Pad2), і перший із них уже розійшовся з цим -- він не знає
+    // високосних років («Лютий тут завжди 28»), тобто 29 лютого показував
+    // 1 березня. Календар у серії має бути один.
+    static int DaysIn(int year, int month)
     {
         if (month == 2)
         {
@@ -126,7 +132,9 @@ class OZ_Time
         return 31;
     }
 
-    private static string Pad2(int v)
+    // Двоцифровий запис: "7" -> "07". Публічний з тієї самої причини, що й
+    // DaysIn вище.
+    static string Pad2(int v)
     {
         if (v < 10)
             return "0" + v.ToString();
