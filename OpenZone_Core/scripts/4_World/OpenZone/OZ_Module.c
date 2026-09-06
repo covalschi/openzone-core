@@ -38,12 +38,30 @@ class OZ_Module : CF_ModuleWorld
     private ref array<string> m_ReqPoison = new array<string>();
     private static const float FLUSH_INTERVAL = 30.0;
 
+    // Хто вже отримав своє попередження про переповнення. Один рядок на
+    // порушника за сеанс: без цього клієнт, що ллє частини без конверта,
+    // сам собі малює тисячу WARNING і топить у них чужі.
+    private ref array<string> m_ReqLoud = new array<string>();
+
     // Стелі проти зловмисних/обірваних частин. Легальний chunked-запит --
     // це список нотаток чи книжка чипа, десятки кілобайт щонайбільше, і
     // на сервер одночасно летить дай Боже одна-дві на гравця. Клієнт, що
     // шле частини без фінального конверта, інакше ріс би в пам'яті вічно.
-    private static const int REQPART_MAX_BYTES = 262144;  // 256 KB на ключ
-    private static const int REQPART_MAX_KEYS  = 64;       // усього в польоті
+    //
+    // СТЕЛІ НА ВІДПРАВНИКА, А НЕ НА ВЕСЬ СЕРВЕР, і це не тонкощі обліку.
+    // Спільна стеля на 64 ключі означала рівно те, що один підключений
+    // клієнт, шлючи частини без конвертів, наповнював мапу до краю -- і з
+    // тієї миті БУДЬ-ЯКИЙ довгий запит БУДЬ-ЯКОГО іншого гравця відхилявся
+    // з STR_OZ_ERR_TOO_LONG, поки нападник не вийде. Стеля на uid лишає
+    // йому можливість заморити голодом лише себе.
+    //
+    // Спільної стелі більше немає навмисно: відправник мусить бути
+    // ПІДКЛЮЧЕНИМ гравцем (без sender ми виходимо першим рядком), тож
+    // добуток «слоти сервера * REQPART_MAX_PER_UID» і є справжня межа, і
+    // вона не залежить від того, скільки хтось один устиг захопити.
+    private static const int REQPART_MAX_BYTES   = 262144;  // 256 KB на ключ
+    private static const int REQPART_MAX_PER_UID = 4;       // потоків у польоті на гравця
+    private static const int POISON_MAX_PER_UID  = 16;      // позначок на гравця
 
     override void OnInit()
     {
@@ -193,6 +211,32 @@ class OZ_Module : CF_ModuleWorld
         return who.GetPlainId() + "|" + msgId.ToString();
     }
 
+    // Скільки потоків цього гравця зараз у польоті.
+    private int KeysOf(string prefix)
+    {
+        int n = 0;
+        for (int i = 0; i < m_ReqParts.Count(); i++)
+        {
+            if (m_ReqParts.GetKey(i).IndexOf(prefix) == 0)
+                n++;
+        }
+        return n;
+    }
+
+    // Один рядок на порушника. Далі -- Dbg: сам факт уже сказано, а
+    // повторення лише топить у собі чужі попередження.
+    private void Loud(string uid, string what)
+    {
+        if (m_ReqLoud.Find(uid) != -1)
+        {
+            OZ_Log.Dbg("reqpart: " + what + " from " + uid);
+            return;
+        }
+
+        m_ReqLoud.Insert(uid);
+        OZ_Log.Warn("reqpart: " + what + " from " + uid);
+    }
+
     // Накопичити один шматок під ключем. Спільне для сторінок і для консолі:
     // стелі проти обірваного потоку мусять бути ОДНІ, інакше другий канал
     // тихо лишається без них.
@@ -203,15 +247,18 @@ class OZ_Module : CF_ModuleWorld
         if (m_ReqPoison.Find(key) != -1)
             return;
 
+        string uid    = sender.GetPlainId();
+        string prefix = uid + "|";
+
         string sofar = "";
         bool known = m_ReqParts.Find(key, sofar);
 
-        // Новий ключ у переповнену мапу не пускаємо: конверт, що склеює й
-        // чистить, для такого потоку може не прийти взагалі.
-        if (!known && m_ReqParts.Count() >= REQPART_MAX_KEYS)
+        // Новий ключ понад стелю ЦЬОГО гравця не пускаємо: конверт, що склеює
+        // й чистить, для такого потоку може не прийти взагалі.
+        if (!known && KeysOf(prefix) >= REQPART_MAX_PER_UID)
         {
-            OZ_Log.Warn("reqpart: too many in-flight keys, dropping from " + sender.GetPlainId());
-            Poison(key);
+            Loud(uid, "too many in-flight streams, dropping");
+            Poison(key, prefix);
             return;
         }
 
@@ -220,18 +267,40 @@ class OZ_Module : CF_ModuleWorld
         if (sofar.Length() + chunk.Length() > REQPART_MAX_BYTES)
         {
             m_ReqParts.Remove(key);
-            OZ_Log.Warn("reqpart: body over cap, dropped key from " + sender.GetPlainId());
-            Poison(key);
+            Loud(uid, "body over cap, dropped a key");
+            Poison(key, prefix);
             return;
         }
 
         m_ReqParts.Set(key, sofar + chunk);
     }
 
-    private void Poison(string key)
+    // Позначка «цей потік викинуто» -- і стеля на неї, теж на відправника.
+    //
+    // Без стелі список ріс без краю: кожен наступний номер повідомлення
+    // давав новий ключ, який одразу отруювався й лишався в масиві до
+    // дисконекту. Найстаріша позначка цього гравця йде першою -- її конверт
+    // або вже приїхав, або не приїде ніколи.
+    private void Poison(string key, string prefix)
     {
-        if (m_ReqPoison.Find(key) == -1)
-            m_ReqPoison.Insert(key);
+        if (m_ReqPoison.Find(key) != -1)
+            return;
+
+        int mine = 0;
+        int oldest = -1;
+        for (int i = 0; i < m_ReqPoison.Count(); i++)
+        {
+            if (m_ReqPoison[i].IndexOf(prefix) != 0)
+                continue;
+            mine++;
+            if (oldest == -1)
+                oldest = i;
+        }
+
+        if (mine >= POISON_MAX_PER_UID && oldest != -1)
+            m_ReqPoison.Remove(oldest);
+
+        m_ReqPoison.Insert(key);
     }
 
     // Забрати накопичене під ключем. Повертає false, коли потік був отруєний:
@@ -320,7 +389,8 @@ class OZ_Module : CF_ModuleWorld
         // 3. Розділ мусить існувати. Warn, а не Dbg: на відміну від сторінок,
         //    які клієнт питає раз на секунду, сюди приходять лише за
         //    натисканням, і невідоме ім'я означає розсинхрон збірок.
-        if (!OZ_AdminRegistry.Has(sectionId))
+        OZ_AdminSection section = OZ_AdminRegistry.Get(sectionId);
+        if (!section)
         {
             string w1 = "rejected admin section \"" + sectionId;
             w1 += "\" from " + sender.GetPlainId();
@@ -333,7 +403,7 @@ class OZ_Module : CF_ModuleWorld
         bool ok;
         string err;
 
-        string res = OZ_AdminRegistry.Get(sectionId).Handle(op, json, sender, ok, err);
+        string res = section.Handle(op, json, sender, ok, err);
 
         // Розділ міг піти по відповідь за межі сервера -- у міст, у Discord.
         // Тоді він відповість сам, коли та приїде.
@@ -365,6 +435,10 @@ class OZ_Module : CF_ModuleWorld
             if (m_ReqPoison[p].IndexOf(prefix) == 0)
                 m_ReqPoison.Remove(p);
         }
+
+        int loud = m_ReqLoud.Find(uid);
+        if (loud != -1)
+            m_ReqLoud.Remove(loud);
     }
 
     // Порядок перевірок нижче -- і є межа безпеки. Міняти його не можна.
@@ -397,8 +471,13 @@ class OZ_Module : CF_ModuleWorld
             return;
         }
 
-        // 2. Сторінка мусить існувати.
-        if (!OZ_PageRegistry.Has(pageId))
+        // 2. Сторінка мусить існувати -- І МАТИ ОБРОБНИКА. Одне звернення до
+        //    реєстру замість Has()+Get(), і null-перевірка на тому ж місці:
+        //    сторінка без обробника до реєстру більше не потрапляє (див.
+        //    OZ_PageRegistry.Register), але диспетчер, який тримає межу
+        //    безпеки, не має покладатись на це на слово.
+        OZ_PageEntry page = OZ_PageRegistry.Get(pageId);
+        if (!page || !page.Handler)
         {
             string w1 = "rejected page \"" + pageId;
             w1 += "\" from " + sender.GetPlainId();
@@ -442,7 +521,7 @@ class OZ_Module : CF_ModuleWorld
         bool ok;
         string err;
 
-        string res = OZ_PageRegistry.Get(pageId).Handler.Handle(op, json, sender, ok, err);
+        string res = page.Handler.Handle(op, json, sender, ok, err);
 
         // Сторінка могла піти по відповідь за межі сервера -- у міст, у
         // Discord. Тоді вона відповість сама, коли та приїде, а тут треба
@@ -500,24 +579,35 @@ class OZ_Module : CF_ModuleWorld
         if (!sender)
             return;
 
-        if (data.param1 != OZ_Const.SCHEMA_SETTINGS)
+        // ЗВІРКИ СХЕМИ ТУТ БІЛЬШЕ НЕМАЄ, і не тому, що вона зайва, а тому, що
+        // вона не могла спрацювати ЖОДНОГО разу. Сервер і клієнт крутять один
+        // і той самий pbo, а клієнт з іншою збіркою обов'язкового мода до
+        // сервера не приєднається взагалі (те саме сказано в OZ_Rpc про
+        // перейменування RPC). Число в конверті лишається як позначка форми:
+        // ctx.Read усе одно мусить чимось перевірити, що приїхав саме привіт.
+        string uid = sender.GetPlainId();
+
+        // ПРИВІТ -- ОДИН НА ВХІД, і повторювати його безкоштовно не можна.
+        //
+        // Кожен привіт гонить повний OZ_SyncSender.Send: читання файла
+        // гравця, обхід усіх сторінок, збірка JSON і гарантований RPC. Штатний
+        // клієнт вітається рівно раз (OZ_MissionGameplay), тож усе, що частіше,
+        // -- або баг, або безкоштовна для клієнта точка підсилення навантаження.
+        int now = GetGame().GetTime();
+        int servedAt;
+        if (m_HelloAt.Find(uid, servedAt) && (now - servedAt) < HELLO_GAP_MS)
         {
-            string mism = "client schema " + data.param1.ToString();
-            mism += " != server " + OZ_Const.SCHEMA_SETTINGS.ToString();
-            mism += " for " + sender.GetPlainId();
-            OZ_Log.Warn(mism);
+            OZ_Log.Dbg("hello: repeated within " + HELLO_GAP_MS.ToString() + " ms, ignored for " + uid);
+            return;
         }
+        m_HelloAt.Set(uid, now);
 
-        SendSync(sender);
+        OZ_SyncSender.Send(sender, "on request");
     }
 
-    // Складання й відправка -- в OZ_SyncSender: той самий пакет тепер їде не
-    // лише на вхід, а й посеред сесії (прив'язка з OZ_Link.Confirm, ТЗ-5
-    // R-C1.3), і другому відправникові потрібен той самий код, а не копія.
-    private void SendSync(PlayerIdentity to)
-    {
-        OZ_SyncSender.Send(to, "on request");
-    }
+    // Коли цьому гравцеві востаннє відповіли на привіт.
+    private ref map<string, int> m_HelloAt = new map<string, int>();
+    private static const int HELLO_GAP_MS = 3000;
 
     override void OnInvokeDisconnect(Class sender, CF_EventArgs args)
     {
@@ -531,6 +621,17 @@ class OZ_Module : CF_ModuleWorld
         CF_EventPlayerDisconnectedArgs dArgs = CF_EventPlayerDisconnectedArgs.Cast(args);
         if (!dArgs)
             return;
+
+        // ПОРОЖНІЙ UID -- НЕ ГРАВЕЦЬ. PathOf клеїть uid просто в дорогу, тож
+        // Load("") завів би під профілем сервера файл `players\.json` і носив
+        // би в ньому чиюсь дату виходу. CF віддає UID окремим полем саме
+        // тому, що особи на дисконекті може вже не бути, -- значить порожнє
+        // тут можливе, і мовчки перетворювати його на файл не можна.
+        if (dArgs.UID == "")
+        {
+            OZ_Log.Dbg("disconnect with no uid, nothing to write");
+            return;
+        }
 
         OZ_PlayerData d = OZ_PlayerStore.Load(dArgs.UID);
         d.LastSeen = OZ_Time.NowUtc();
@@ -552,6 +653,12 @@ class OZ_Module : CF_ModuleWorld
 
         // Недособрані частини довгих запитів цього гравця -- геть.
         ForgetReqParts(dArgs.UID);
+        if (m_HelloAt.Contains(dArgs.UID))
+            m_HelloAt.Remove(dArgs.UID);
+
+        // Опитування моста про його код привязки теж припиняємо: воно жило
+        // до десяти хвилин і не знало, що питати вже нема про кого.
+        OZ_Link.Forget(dArgs.UID);
 
         OZ_Log.Dbg("disconnect " + dArgs.UID);
     }

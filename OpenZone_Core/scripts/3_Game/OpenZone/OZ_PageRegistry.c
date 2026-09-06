@@ -59,6 +59,18 @@ class OZ_PageRegistry
     {
         Ensure();
 
+        // ПОРОЖНІЙ ОБРОБНИК -- ВІДМОВА В РЕЄСТРАЦІЇ.
+        //
+        // VisibleFor нижче від null уже боронився, а диспетчер запиту --
+        // ні: він брав Get(pageId).Handler і кликав Handle. Одруківка в
+        // реєстрації ЧУЖОГО мода ставала таким чином крашем сервера по NULL
+        // pointer, і дістати його міг будь-який клієнт звичайним запитом.
+        if (!handler)
+        {
+            OZ_Log.Error("page \"" + pageId + "\" registered with no handler, ignored");
+            return;
+        }
+
         if (s_Pages.Contains(pageId))
         {
             OZ_Log.Warn("page \"" + pageId + "\" registered twice, the second registration is ignored");
@@ -153,13 +165,10 @@ class OZ_PageAccess
     // сторінці -- і код нема куди ввести. Саме це й було на живому клієнті:
     // правильний пін відповідав «wrong code», бо до перевірки піна справа
     // не доходила зовсім.
-    static bool Allowed(PlayerIdentity who, string pageId, string op)
-    {
-        string ignored;
-        return Allowed(who, pageId, op, ignored);
-    }
-
-    // Те саме, але з ПРИЧИНОЮ.
+    //
+    // ФОРМИ БЕЗ `why` ТУТ БІЛЬШЕ НЕМАЄ: викликач був один (диспетчер у
+    // OZ_Module), і він завжди хотів причину. Мовчазна форма поруч із
+    // говіркою -- це запрошення викинути причину випадково.
     //
     // Гейт відмовляє з різних міркувань -- сторінки немає в профілі, модуль не
     // вставлений, пристрій замкнений, пристрій вимкнений, -- а гравець бачив

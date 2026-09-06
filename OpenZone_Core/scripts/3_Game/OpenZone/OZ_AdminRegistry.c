@@ -58,17 +58,10 @@ class OZ_AdminRegistry
         OZ_Log.Dbg("admin section registered: " + sectionId);
     }
 
-    static bool Has(string sectionId)
-    {
-        Ensure();
-        return s_Sections.Contains(sectionId);
-    }
-
-    static int Count()
-    {
-        Ensure();
-        return s_Sections.Count();
-    }
+    // Has() І Count() ТУТ БІЛЬШЕ НЕМАЄ. Диспетчер бере Get() і перевіряє
+    // результат на null -- одне звернення до мапи замість двох, -- а стартовий
+    // рядок називає розділи Describe(), бо «три» не каже, чи серед них той,
+    // якого адмін шукає. Викликачів у решти серії не було жодного.
 
     static OZ_AdminSection Get(string sectionId)
     {
