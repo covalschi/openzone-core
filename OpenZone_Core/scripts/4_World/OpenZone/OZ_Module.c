@@ -98,10 +98,10 @@ class OZ_Module : CF_ModuleWorld
         if (s.DebugMode)
             dbg = "on";
 
-        // Два оператори, а не один довгий ланцюжок «+»: компілятор Enforce має
-        // межу складності виразу й падає з «Formula too complex» -- у сусідньому
-        // моді це знайшли емпірично на восьмому доданку.
-        OZ_Perm.ServerInit();
+        // Probe() лінивий і його кличуть усі точки входу прав; тут -- щоб
+        // рядок про джерело прав стояв у лозі старту, а не з'явився при
+        // першому натисканні адміна.
+        OZ_Perm.Probe();
 
         OZ_Spawns.ServerLoad();
 
@@ -139,6 +139,9 @@ class OZ_Module : CF_ModuleWorld
         m_BridgeTimer = new Timer(CALL_CATEGORY_SYSTEM);
         m_BridgeTimer.Run(BRIDGE_START_DELAY, this, "StartBridge", NULL, false);
 
+        // РЯДОК ЗБИРАЄМО ПООПЕРАТОРНО, а не одним ланцюжком «+»: компілятор
+        // Enforce має межу складності виразу й падає з «Formula too complex»
+        // -- у сусідньому моді це знайшли емпірично на восьмому доданку.
         string summary = "core loaded: admins=" + s.AdminIds.Count();
         summary += " perms=" + OZ_Perm.Describe();
         summary += " pages=" + OZ_PageRegistry.Count().ToString();

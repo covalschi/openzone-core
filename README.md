@@ -35,7 +35,7 @@ repository.
 
 - [Community Framework](https://steamcommunity.com/sharedfiles/filedetails/?id=1559212036) (`JM_CF_Scripts`)
 
-Optional, detected at runtime: VPP Admin Tools, DayZ Expansion.
+Optional, detected at runtime: VPP Admin Tools.
 
 ## Mods built on it
 

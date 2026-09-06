@@ -34,9 +34,8 @@ class OZ_Notice
         OnAnswer.Invoke(op, ok, why);
     }
 
-    static string Op()  { return s_Op; }
-    static bool   Ok()  { return s_Ok; }
-    static string Why() { return s_Why; }
+    // Op()/Ok()/Why() ТУТ БІЛЬШЕ НЕМАЄ: викликачів у серії не було жодного,
+    // Text() читає ті самі поля напряму.
 
     // Готовий до показу рядок.
     //
@@ -62,7 +61,14 @@ class OZ_Notice
             if (s_Why.IndexOf("STR_") == 0)
                 return "#" + s_Why;
 
-            return "#STR_OZ_ROLE_DONE";
+            // НЕЙТРАЛЬНЕ «готово», а не рольове.
+            //
+            // Тут стояв STR_OZ_ROLE_DONE -- «Done. Discord has it.», -- і це
+            // формулювання про ролі фракцій, а не про те, що зробив
+            // спільний збірник звісток. Воно спливало на сторінці контактів
+            // КПК, коли поруч спрацьовувала рольова подія фракцій. Хто хоче
+            // сказати про ролі, той шле свій ключ у `why` явно.
+            return "#STR_OZ_DONE";
         }
 
         if (s_Why == "")

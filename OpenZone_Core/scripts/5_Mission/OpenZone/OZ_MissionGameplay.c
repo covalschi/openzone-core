@@ -60,13 +60,6 @@ modded class MissionGameplay
         {
             m_OZ_Greeted = true;
             OZ_Rpc.Hello();
-
-#ifdef OZ_SELFTEST
-            // Тимчасова перевірка межі безпеки: сторінки "ghost" не існує,
-            // сервер мусить відмовити й записати це в лог. Вмикається лише
-            // дефайном, у поставку не потрапляє.
-            OZ_Rpc.Request("ghost", "noop", "{}");
-#endif
         }
     }
 }

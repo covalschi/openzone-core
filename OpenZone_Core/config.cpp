@@ -34,16 +34,11 @@ class CfgMods
         version = "0.1.0";
         type = "mod";
 
-        // Must be > 0 or CF_ModStorage silently does nothing. Every future bump
-        // appends to the END of the stream and is read back behind a
-        // ctx.GetVersion() gate -- CF writes are positional, so inserting a field
-        // anywhere else shifts and eats every later mod's data.
+        // Kept > 0 for CF; the core itself stores nothing in CF_ModStorage --
+        // player data lives in $profile:OpenZone, see OZ_PlayerStore on why.
         storageVersion = 1;
 
         dependencies[] = {"Game", "World", "Mission"};
-        // OZ_SELFTEST вмикає тимчасові перевірки в клієнтському коді (див.
-        // OZ_MissionGameplay). У поставці його немає: рядок нижче лишається
-        // без нього, а дописується вручну на час перевірки.
         defines[] = {"OPENZONE_CORE"};
 
         class defs

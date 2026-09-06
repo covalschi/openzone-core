@@ -9,8 +9,9 @@ name = "openzone-core"
 # залежність від VPP (requiredAddons), і нести її в ядрі означало б вимагати
 # VPP від кожного сервера. Джерела в <root>/OpenZone_Core і <root>/OpenZone_VPP.
 #
-# Ядро володіє лише Settings.json. Profiles.json (профілі пристроїв) належить
-# КПК: конфіг-служба тут, а самі файли оголошує той мод, якому вони потрібні.
+# Ядро володіє OZ_Core_Settings.json і OZ_Core_Spawns.json. Profiles.json
+# (профілі пристроїв) належить КПК: конфіг-служба тут, а самі файли оголошує
+# той мод, якому вони потрібні.
 mods = ["OpenZone_Core", "OpenZone_VPP"]
 # The faction PBOs live in openzone-factions since 2026-09-04 (their own repository).
 

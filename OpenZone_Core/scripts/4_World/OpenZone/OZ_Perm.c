@@ -62,10 +62,9 @@ class OZ_Perm
         }
     }
 
-    static void ServerInit()
-    {
-        Probe();
-    }
+    // ServerInit() ТУТ БІЛЬШЕ НЕМАЄ: обгортка в один рядок навколо Probe(),
+    // з одним викликачем, при тому що Probe лінивий і його кличе кожна точка
+    // входу прав.
 
     static string Describe()
     {
