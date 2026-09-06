@@ -118,18 +118,8 @@ class OZ_ClientState
     // лишилось жодного. Права адміна тепер живуть лише на сервері, де вони
     // й вирішуються.
 
-    static OZ_SyncPageInfo PageInfo(string pageId)
-    {
-        if (!s_Payload)
-            return null;
-
-        for (int i = 0; i < s_Payload.Pages.Count(); i++)
-        {
-            if (s_Payload.Pages[i].PageId == pageId)
-                return s_Payload.Pages[i];
-        }
-        return null;
-    }
+    // PageInfo() ТУТ БІЛЬШЕ НЕМАЄ: викликачів у серії не було жодного, КПК
+    // читає Pages прямо з Get().
 
     // --- обробники CF: ім'я = рядок з AddRPC, чотири параметри, не static ---
 
@@ -138,13 +128,24 @@ class OZ_ClientState
         if (type != CallType.Client)
             return;
 
-        Param1<string> data;
+        Param2<int, string> data;
         if (!ctx.Read(data))
             return;
 
+        // Пакет тепер їде частинами так само, як відповіді сторінок: він
+        // сидів упритул до рушійної межі ~1024 байти, і перша ж нова
+        // сторінка будь-якого мода ламала б його мовчки.
+        string body = data.param2;
+        string sofar = "";
+        if (m_ResParts.Find(data.param1, sofar))
+        {
+            body = sofar + body;
+            m_ResParts.Remove(data.param1);
+        }
+
         string err;
         OZ_SyncPayload p = new OZ_SyncPayload();
-        if (!JsonFileLoader<OZ_SyncPayload>.LoadData(data.param1, p, err))
+        if (!JsonFileLoader<OZ_SyncPayload>.LoadData(body, p, err))
         {
             OZ_Log.Error("sync payload unreadable: " + err);
             return;
@@ -221,6 +222,11 @@ class OZ_ClientState
 
     // Частина довгої відповіді: рушійний RPC псує рядки понад ~1024 байти,
     // тому тіло їде шматками поперед свого конверта (OZ_Rpc.Respond).
+    //
+    // ОДИН ПРИЙМАЧ ЧАСТИН НА ВСЕ. Адмінська консоль мала власну пару
+    // OZ_AdminResPart із побайтово тим самим тілом і тією самою мапою; вона
+    // пішла разом зі своїм RPC (див. OZ_Rpc), бо номер повідомлення роздає
+    // один лічильник і перетнутись їм ні з чим.
     void OZ_ResPart(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
         if (type != CallType.Client)
@@ -235,6 +241,17 @@ class OZ_ClientState
         m_ResParts.Set(part.param1, sofar + part.param2);
     }
 
+    // Склеїти тіло конверта з частинами, які приїхали поперед нього.
+    private string Whole(int id, string tail)
+    {
+        string parts = "";
+        if (!m_ResParts.Find(id, parts))
+            return tail;
+
+        m_ResParts.Remove(id);
+        return parts + tail;
+    }
+
     void OZ_Res(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
         if (type != CallType.Client)
@@ -244,14 +261,7 @@ class OZ_ClientState
         if (!ctx.Read(data))
             return;
 
-        // Довге тіло приїхало частинами поперед конверта -- приклеїти.
-        string body = data.param5;
-        string parts = "";
-        if (m_ResParts.Find(data.param1, parts))
-        {
-            body = parts + body;
-            m_ResParts.Remove(data.param1);
-        }
+        string body = Whole(data.param1, data.param5);
 
         string line = "response page=" + data.param2;
         line += " op=" + data.param3;
@@ -267,23 +277,6 @@ class OZ_ClientState
             s_Watch.Invoke(data.param2, data.param3, data.param4, body, data.param6);
     }
 
-    // Частина довгої АДМІНСЬКОЇ відповіді. Ключ той самий, що й у сторінок --
-    // номер повідомлення, роздає відправник, -- тому окремої мапи не треба:
-    // номери не перетинаються, бо роздає їх один лічильник.
-    void OZ_AdminResPart(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
-    {
-        if (type != CallType.Client)
-            return;
-
-        Param2<int, string> part;
-        if (!ctx.Read(part))
-            return;
-
-        string sofar = "";
-        m_ResParts.Find(part.param1, sofar);
-        m_ResParts.Set(part.param1, sofar + part.param2);
-    }
-
     void OZ_AdminRes(CallType type, ParamsReadContext ctx, PlayerIdentity sender, Object target)
     {
         if (type != CallType.Client)
@@ -293,13 +286,7 @@ class OZ_ClientState
         if (!ctx.Read(data))
             return;
 
-        string body = data.param5;
-        string parts = "";
-        if (m_ResParts.Find(data.param1, parts))
-        {
-            body = parts + body;
-            m_ResParts.Remove(data.param1);
-        }
+        string body = Whole(data.param1, data.param5);
 
         string line = "admin response section=" + data.param2;
         line += " op=" + data.param3;

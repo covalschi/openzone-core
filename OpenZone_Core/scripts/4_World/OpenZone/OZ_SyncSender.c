@@ -19,7 +19,6 @@ class OZ_SyncSender
             return;
 
         OZ_SyncPayload p = new OZ_SyncPayload();
-        p.Schema    = OZ_Const.SCHEMA_SETTINGS;
         p.DebugMode = OZ_Settings.Get().DebugMode;
 
         // Прив'язка їде тим самим конвертом: на вході це найраніша мить, коли
@@ -45,7 +44,8 @@ class OZ_SyncSender
         OZ_Rpc.SendSync(to, json);
 
         string line = "sync: sent to " + to.GetPlainId() + " " + why;
-        line += " (extras=" + p.Extras.Count().ToString() + ")";
+        line += " (extras=" + p.Extras.Count().ToString();
+        line += ", " + json.Length().ToString() + " b)";
         OZ_Log.Dbg(line);
     }
 }

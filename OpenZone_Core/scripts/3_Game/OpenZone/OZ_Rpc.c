@@ -84,10 +84,16 @@ class OZ_Rpc
     //
     // Тіло їде частинами так само, як у сторінок: конфіг у кілька кілобайт --
     // звичайна відповідь цієї консолі, а рушійний RPC псує рядки понад ~1024.
+    //
+    // ЧАСТИНИ ЇДУТЬ СПІЛЬНИМИ RPC_REQ_PART/RPC_RES_PART, а не власною парою.
+    // Окремі OZ_AdminReqPart/OZ_AdminResPart несли той самий Param2<int,
+    // string>, копились у тій самій мапі й ключились тим самим номером від
+    // того самого лічильника -- тобто були побайтовим дублем. Межа прав
+    // перевіряється на рівні КОНВЕРТА (OZ_Perm.IsAdmin першим рядком
+    // OZ_AdminReq), а не шматка, тож об'єднання нічого не відчиняє: шматок
+    // без свого конверта нікуди не веде й раніше.
     static const string RPC_ADMIN_REQ      = "OZ_AdminReq";
     static const string RPC_ADMIN_RES      = "OZ_AdminRes";
-    static const string RPC_ADMIN_REQ_PART = "OZ_AdminReqPart";
-    static const string RPC_ADMIN_RES_PART = "OZ_AdminResPart";
 
     // «Покажи це» -- сервер клієнтові. Один рядок-команда, без корисного
     // навантаження.
@@ -114,7 +120,6 @@ class OZ_Rpc
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_REQ_PART, inst, SingleplayerExecutionType.Server);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_REQ, inst, SingleplayerExecutionType.Server);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ADMIN_REQ, inst, SingleplayerExecutionType.Server);
-        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ADMIN_REQ_PART, inst, SingleplayerExecutionType.Server);
     }
 
     // RegisterRoles ТУТ БІЛЬШЕ НЕМАЄ (2026-09-04). Прохання змінити роль
@@ -128,6 +133,9 @@ class OZ_Rpc
     // хук сервера спрацьовує раніше, ніж клієнт устигає зареєструвати свій
     // обробник, і пакет іде в нікуди. Тяга від клієнта не залежить від
     // порядку взагалі.
+    // Число в конверті -- ПОЗНАЧКА ФОРМИ, а не рукостискання: ctx.Read має
+    // чимось переконатись, що приїхав саме привіт. Порівнювати його на
+    // сервері нема з чим -- обидва кінці крутять один і той самий pbo.
     static void Hello()
     {
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_HELLO, new Param1<int>(OZ_Const.SCHEMA_SETTINGS), true);
@@ -141,15 +149,55 @@ class OZ_Rpc
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_LINK_RES, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_NOTICE, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ADMIN_RES, inst, SingleplayerExecutionType.Client);
-        GetRPCManager().AddRPC(OZ_Const.MOD, RPC_ADMIN_RES_PART, inst, SingleplayerExecutionType.Client);
         GetRPCManager().AddRPC(OZ_Const.MOD, RPC_SHOW, inst, SingleplayerExecutionType.Client);
     }
 
     // guaranteed за замовчуванням FALSE. Усе, що тут надсилається, має
     // значення, тому true передається явно скрізь.
+    //
+    // ПАКЕТ СИНХРОНІЗАЦІЇ ТЕЖ ЧАНКУЄТЬСЯ, і це не запас на майбутнє.
+    //
+    // Це був ЄДИНИЙ строковий RPC ядра без різака, хоч приймач псує рядок уже
+    // за ~1024 байти («String CORRUPTED»). При дев'яти сторінках і трьох
+    // extras тіло важило близько кілобайта -- тобто одна нова сторінка
+    // БУДЬ-ЯКОГО мода серії тихо ламала весь OZ_Sync: ані переліку сторінок,
+    // ані воріт прив'язки, ані прапорця відладки на клієнті, і жодного рядка
+    // про причину.
+    //
+    // Частини їдуть тим самим RPC_RES_PART, що й у сторінок: приймач у
+    // OZ_ClientState складає їх за НОМЕРОМ повідомлення, а номери роздає один
+    // лічильник на весь клас, тож переплутати їх ні з чим.
     static void SendSync(PlayerIdentity to, string json)
     {
-        GetRPCManager().SendRPC(OZ_Const.MOD, RPC_SYNC, new Param1<string>(json), true, to);
+        int id = NextId();
+        string last = SendChunked(RPC_RES_PART, id, json, to);
+        GetRPCManager().SendRPC(OZ_Const.MOD, RPC_SYNC, new Param2<int, string>(id, last), true, to);
+    }
+
+    // ОДИН РІЗАК НА ВЕСЬ ТРАНСПОРТ.
+    //
+    // Цикл нижче стояв учетверо -- у Request, Respond, AdminRequest і
+    // AdminRespond, -- а транспортом користуються понад двадцять файлів у
+    // КПК, фракціях і рації. Правку крайового випадку CutSafe довелось би
+    // вносити в чотири місця, і місце, у яке її не внесли, мовчало б.
+    //
+    // Повертає ХВІСТ -- те, що має поїхати в самому конверті.
+    private static string SendChunked(string partRpc, int id, string json, PlayerIdentity to = null)
+    {
+        int len = json.Length();
+        int off = 0;
+
+        while (len - off > OZ_Const.RPC_STR_CHUNK)
+        {
+            int cut = CutSafe(json, off, off + OZ_Const.RPC_STR_CHUNK);
+            Param2<int, string> part = new Param2<int, string>(id, json.Substring(off, cut - off));
+            GetRPCManager().SendRPC(OZ_Const.MOD, partRpc, part, true, to);
+            off = cut;
+        }
+
+        if (off == 0)
+            return json;
+        return json.Substring(off, len - off);
     }
 
     // Різати можна лише МІЖ символами: Length()/Substring() байтові, а тіло
@@ -187,21 +235,8 @@ class OZ_Rpc
     // зайві байти й другий спосіб помилитись.
     static void Request(string pageId, string op, string json)
     {
-        int id  = NextId();
-        int len = json.Length();
-        int off = 0;
-
-        while (len - off > OZ_Const.RPC_STR_CHUNK)
-        {
-            int cut = CutSafe(json, off, off + OZ_Const.RPC_STR_CHUNK);
-            Param2<int, string> part = new Param2<int, string>(id, json.Substring(off, cut - off));
-            GetRPCManager().SendRPC(OZ_Const.MOD, RPC_REQ_PART, part, true);
-            off = cut;
-        }
-
-        string last = json;
-        if (off > 0)
-            last = json.Substring(off, len - off);
+        int id = NextId();
+        string last = SendChunked(RPC_REQ_PART, id, json);
 
         Param4<int, string, string, string> p = new Param4<int, string, string, string>(id, pageId, op, last);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_REQ, p, true);
@@ -209,21 +244,8 @@ class OZ_Rpc
 
     static void Respond(PlayerIdentity to, string pageId, string op, bool ok, string json, string error)
     {
-        int id  = NextId();
-        int len = json.Length();
-        int off = 0;
-
-        while (len - off > OZ_Const.RPC_STR_CHUNK)
-        {
-            int cut = CutSafe(json, off, off + OZ_Const.RPC_STR_CHUNK);
-            Param2<int, string> part = new Param2<int, string>(id, json.Substring(off, cut - off));
-            GetRPCManager().SendRPC(OZ_Const.MOD, RPC_RES_PART, part, true, to);
-            off = cut;
-        }
-
-        string last = json;
-        if (off > 0)
-            last = json.Substring(off, len - off);
+        int id = NextId();
+        string last = SendChunked(RPC_RES_PART, id, json, to);
 
         Param6<int, string, string, bool, string, string> p =
             new Param6<int, string, string, bool, string, string>(id, pageId, op, ok, last, error);
@@ -241,21 +263,8 @@ class OZ_Rpc
 
     static void AdminRequest(string sectionId, string op, string json)
     {
-        int id  = NextId();
-        int len = json.Length();
-        int off = 0;
-
-        while (len - off > OZ_Const.RPC_STR_CHUNK)
-        {
-            int cut = CutSafe(json, off, off + OZ_Const.RPC_STR_CHUNK);
-            Param2<int, string> part = new Param2<int, string>(id, json.Substring(off, cut - off));
-            GetRPCManager().SendRPC(OZ_Const.MOD, RPC_ADMIN_REQ_PART, part, true);
-            off = cut;
-        }
-
-        string last = json;
-        if (off > 0)
-            last = json.Substring(off, len - off);
+        int id = NextId();
+        string last = SendChunked(RPC_REQ_PART, id, json);
 
         Param4<int, string, string, string> p = new Param4<int, string, string, string>(id, sectionId, op, last);
         GetRPCManager().SendRPC(OZ_Const.MOD, RPC_ADMIN_REQ, p, true);
@@ -263,21 +272,8 @@ class OZ_Rpc
 
     static void AdminRespond(PlayerIdentity to, string sectionId, string op, bool ok, string json, string error)
     {
-        int id  = NextId();
-        int len = json.Length();
-        int off = 0;
-
-        while (len - off > OZ_Const.RPC_STR_CHUNK)
-        {
-            int cut = CutSafe(json, off, off + OZ_Const.RPC_STR_CHUNK);
-            Param2<int, string> part = new Param2<int, string>(id, json.Substring(off, cut - off));
-            GetRPCManager().SendRPC(OZ_Const.MOD, RPC_ADMIN_RES_PART, part, true, to);
-            off = cut;
-        }
-
-        string last = json;
-        if (off > 0)
-            last = json.Substring(off, len - off);
+        int id = NextId();
+        string last = SendChunked(RPC_RES_PART, id, json, to);
 
         Param6<int, string, string, bool, string, string> p =
             new Param6<int, string, string, bool, string, string>(id, sectionId, op, ok, last, error);
