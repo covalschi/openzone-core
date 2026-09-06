@@ -907,10 +907,18 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         // поле лишалось порожнім, а APPLY слав порожній рядок як cfg_set.
         if (name == "Spawns")
         {
-            OZ_SpawnsConfig sc;
+            // СТВОРЮЄМО САМІ Й ОДРАЗУ ПЕРЕСАДЖУЄМО ВКЛАДЕНЕ.
+            //
+            // Панель тримає цей об'єкт, доки адмін дивиться на список зон, і
+            // читає з нього Role та Center на кожен клік -- тобто хвилинами
+            // після розбору. Усе, що виділив серіалізатор, стільки не живе
+            // (шапка OZ_ConfigBase); Validate тут і є та пересадка.
+            OZ_SpawnsConfig sc = new OZ_SpawnsConfig();
             string serr;
             if (JsonFileLoader<OZ_SpawnsConfig>.LoadData(body, sc, serr) && sc)
             {
+                int swarn;
+                sc.Validate(swarn);
                 m_SpawnsCfg = sc;
                 RebuildSpawnList();
             }

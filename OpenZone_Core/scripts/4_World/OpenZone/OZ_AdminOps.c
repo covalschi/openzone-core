@@ -233,7 +233,9 @@ class OZ_SpawnsCfgApplier : OZ_AdminCfgApplier
 {
     override bool Apply(string json)
     {
-        OZ_SpawnsConfig tmp;
+        // ОБ'ЄКТ СТВОРЮЄ СКРИПТ, а не серіалізатор: те, що виділив він, не
+        // має жодного ініціалізатора полів (шапка OZ_ConfigBase).
+        OZ_SpawnsConfig tmp = new OZ_SpawnsConfig();
         string err;
         if (!JsonFileLoader<OZ_SpawnsConfig>.LoadData(json, tmp, err) || !tmp)
         {

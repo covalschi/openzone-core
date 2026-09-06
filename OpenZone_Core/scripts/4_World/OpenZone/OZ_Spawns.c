@@ -34,6 +34,17 @@ class OZ_SpawnPlace
 {
     string Center;
     float  Radius;
+
+    // Копія у створений СКРИПТОМ об'єкт -- шапка OZ_ConfigBase. Цей конфіг
+    // живе в пам'яті весь час роботи сервера, тобто рівно той випадок, від
+    // якого копія й рятує: читання через годину після розбору.
+    OZ_SpawnPlace Copy()
+    {
+        OZ_SpawnPlace c = new OZ_SpawnPlace();
+        c.Center = Center;
+        c.Radius = Radius;
+        return c;
+    }
 }
 
 class OZ_SpawnZone
@@ -46,6 +57,18 @@ class OZ_SpawnZone
     // сталкерів, що з'явились в одній координаті, -- це купа тіл, а не табір.
     string Center;
     float  Radius;
+
+    // Копія у створений СКРИПТОМ об'єкт -- шапка OZ_ConfigBase. Role тут
+    // найдорожче: за ним зона знаходить свого господаря, і сира пам'ять у
+    // ньому означала б, що борговець з'явився в чужій зоні або в нічиїй.
+    OZ_SpawnZone Copy()
+    {
+        OZ_SpawnZone c = new OZ_SpawnZone();
+        c.Role   = Role;
+        c.Center = Center;
+        c.Radius = Radius;
+        return c;
+    }
 }
 
 // Особистий спавн ОДНОГО гравця -- поверх фракцій і будь-чого. Живе у файлі,
@@ -56,6 +79,16 @@ class OZ_SpawnPersonal
     string Uid;
     string Center;
     float  Radius;
+
+    // Копія у створений СКРИПТОМ об'єкт -- шапка OZ_ConfigBase.
+    OZ_SpawnPersonal Copy()
+    {
+        OZ_SpawnPersonal c = new OZ_SpawnPersonal();
+        c.Uid    = Uid;
+        c.Center = Center;
+        c.Radius = Radius;
+        return c;
+    }
 }
 
 class OZ_SpawnsConfig : OZ_ConfigBase
@@ -107,6 +140,31 @@ class OZ_SpawnsConfig : OZ_ConfigBase
         // порожній об'єкт.
         if (!Staging)
             Staging = new OZ_SpawnPlace();
+        else
+            Staging = Staging.Copy();
+
+        // ВКЛАДЕНЕ -- У СТВОРЕНЕ СКРИПТОМ (шапка OZ_ConfigBase). Тут це не
+        // теорія: s_Cfg живе весь сеанс сервера, і кожна поява читає ці
+        // об'єкти через години після розбору файла.
+        //
+        // Порожній елемент замість null заразом рятує обидва цикли нижче:
+        // вони читають поля елемента без перевірки, а зона без центру
+        // отримає своє зауваження й полагодить файл.
+        for (int zi = 0; zi < Zones.Count(); zi++)
+        {
+            if (Zones[zi])
+                Zones.Set(zi, Zones[zi].Copy());
+            else
+                Zones.Set(zi, new OZ_SpawnZone());
+        }
+
+        for (int pi = 0; pi < Personal.Count(); pi++)
+        {
+            if (Personal[pi])
+                Personal.Set(pi, Personal[pi].Copy());
+            else
+                Personal.Set(pi, new OZ_SpawnPersonal());
+        }
 
         if (Staging.Radius < 0)
             Staging.Radius = 0;

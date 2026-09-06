@@ -21,6 +21,17 @@ class OZ_FriendReq
     // Календарем, а не часом рушія: рушійний лічильник починається з нуля
     // після кожного рестарту, і саме тому строк узагалі не переживав його.
     string Until = "";
+
+    // Копія у створений СКРИПТОМ об'єкт -- шапка OZ_ConfigBase. Запис
+    // гравця, який зараз онлайн, лежить у кеші до дисконекту, тобто його
+    // пропозиції читають годинами після розбору файла.
+    OZ_FriendReq Copy()
+    {
+        OZ_FriendReq c = new OZ_FriendReq();
+        c.Key   = Key;
+        c.Until = Until;
+        return c;
+    }
 }
 
 class OZ_PlayerData : OZ_ConfigBase
@@ -254,6 +265,17 @@ class OZ_PlayerData : OZ_ConfigBase
             FriendReq = new array<ref OZ_FriendReq>();
         if (!NpcContacts)
             NpcContacts = new array<string>();
+
+        // ВКЛАДЕНЕ -- У СТВОРЕНЕ СКРИПТОМ (шапка OZ_ConfigBase). Порожній
+        // запис замість null: строк без ключа інертний, а null у списку валив
+        // би кожного, хто по ньому проходить.
+        for (int fi = 0; fi < FriendReq.Count(); fi++)
+        {
+            if (FriendReq[fi])
+                FriendReq.Set(fi, FriendReq[fi].Copy());
+            else
+                FriendReq.Set(fi, new OZ_FriendReq());
+        }
 
         // Файл, написаний до пермадесу, покоління не знає -- воно перше.
         if (Gen < 1)

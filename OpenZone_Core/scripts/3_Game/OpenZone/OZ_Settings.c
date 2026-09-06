@@ -15,6 +15,18 @@ class OZ_KindMirror
 {
     string Kind   = "";
     bool   Mirror = false;
+
+    // Копія у створений СКРИПТОМ об'єкт. Навіщо -- у шапці OZ_ConfigBase:
+    // елемент масиву виділяє серіалізатор, тобто `Mirror = false` вище на
+    // ньому не виконувалось, і рядок без ключа "Mirror" дав би дзеркало,
+    // увімкнене сирою пам'яттю.
+    OZ_KindMirror Copy()
+    {
+        OZ_KindMirror c = new OZ_KindMirror();
+        c.Kind   = Kind;
+        c.Mirror = Mirror;
+        return c;
+    }
 }
 
 class OZ_BridgeSettings
@@ -60,6 +72,44 @@ class OZ_BridgeSettings
     // означало лишитись без чату зовсім -- перемикач керував тим, ЩО
     // синхронізувати, а не тим, ДЕ дані лежать.
     ref array<ref OZ_KindMirror> Mirrors;
+
+    // Копія у створений СКРИПТОМ об'єкт -- разом з усім, що всередині.
+    // Шапка OZ_ConfigBase каже, навіщо; тут варто назвати ціну помилки:
+    // Enabled і Secret -- члени цього класу, і файл із розділом "Bridge" без
+    // ключа "Enabled" вмикав би міст сирою пам'яттю.
+    //
+    // Порожні елементи масиву дзеркал НЕ ВИКИДАЄМО: про них лає Validate, і
+    // саме те лайливе зауваження змушує лоадер переписати файл. Тихо
+    // прибраний null повертався б у файл кожного старту.
+    OZ_BridgeSettings Copy()
+    {
+        OZ_BridgeSettings c = new OZ_BridgeSettings();
+        c.Enabled  = Enabled;
+        c.Url      = Url;
+        c.ServerId = ServerId;
+        c.Secret   = Secret;
+
+        c.Kinds = new array<string>();
+        if (Kinds)
+        {
+            for (int i = 0; i < Kinds.Count(); i++)
+                c.Kinds.Insert(Kinds[i]);
+        }
+
+        c.Mirrors = new array<ref OZ_KindMirror>();
+        if (Mirrors)
+        {
+            for (int j = 0; j < Mirrors.Count(); j++)
+            {
+                if (Mirrors[j])
+                    c.Mirrors.Insert(Mirrors[j].Copy());
+                else
+                    c.Mirrors.Insert(null);
+            }
+        }
+
+        return c;
+    }
 }
 
 // ФРАКЦІЙНИХ МЕЖ ТУТ БІЛЬШЕ НЕМАЄ (рішення власника 2026-09-04).
@@ -176,8 +226,14 @@ class OZ_Settings : OZ_ConfigBase
 
         if (!AdminIds)
             AdminIds = new array<string>();
+
+        // ВКЛАДЕНЕ -- У СТВОРЕНЕ СКРИПТОМ, і саме тут: лоадер кличе Validate
+        // одразу після розбору, поки читання ще чесне (шапка OZ_ConfigBase).
         if (!Bridge)
             Bridge = new OZ_BridgeSettings();
+        else
+            Bridge = Bridge.Copy();
+
         if (!Bridge.Kinds)
             Bridge.Kinds = new array<string>();
         if (!Bridge.Mirrors)
