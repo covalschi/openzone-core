@@ -292,6 +292,14 @@ class OZ_Module : CF_ModuleWorld
     // давав новий ключ, який одразу отруювався й лишався в масиві до
     // дисконекту. Найстаріша позначка цього гравця йде першою -- її конверт
     // або вже приїхав, або не приїде ніколи.
+    //
+    // RemoveOrdered, А НЕ Remove. array.Remove затикає дірку ОСТАННІМ
+    // елементом і порядку не зберігає (1_Core/proto/enscript.c:463-470) --
+    // тобто після першої ж евікції масив переставав бути списком у порядку
+    // надходження, і «перший збіг = найстаріший» ставав неправдою. Тут це
+    // коштувало не коректності, а самого змісту слова «найстаріша»:
+    // викидалась довільна позначка гравця. Масив короткий (16 на гравця),
+    // тож повільніше видалення тут нічого не важить.
     private void Poison(string key, string prefix)
     {
         if (m_ReqPoison.Find(key) != -1)
@@ -309,7 +317,7 @@ class OZ_Module : CF_ModuleWorld
         }
 
         if (mine >= POISON_MAX_PER_UID && oldest != -1)
-            m_ReqPoison.Remove(oldest);
+            m_ReqPoison.RemoveOrdered(oldest);
 
         m_ReqPoison.Insert(key);
     }
@@ -321,7 +329,9 @@ class OZ_Module : CF_ModuleWorld
         int bad = m_ReqPoison.Find(key);
         if (bad != -1)
         {
-            m_ReqPoison.Remove(bad);
+            // Теж упорядковано: черга позначок має лишатись у порядку
+            // надходження, інакше евікція в Poison() бере не найстарішу.
+            m_ReqPoison.RemoveOrdered(bad);
             m_ReqParts.Remove(key);
             return false;
         }
@@ -430,10 +440,13 @@ class OZ_Module : CF_ModuleWorld
         for (int j = 0; j < doomed.Count(); j++)
             m_ReqParts.Remove(doomed[j]);
 
+        // Згори вниз і RemoveOrdered: індекси нижче за p від видалення не
+        // рухаються, а порядок решти гравців зберігається -- на нього
+        // спирається евікція в Poison().
         for (int p = m_ReqPoison.Count() - 1; p >= 0; p--)
         {
             if (m_ReqPoison[p].IndexOf(prefix) == 0)
-                m_ReqPoison.Remove(p);
+                m_ReqPoison.RemoveOrdered(p);
         }
 
         int loud = m_ReqLoud.Find(uid);

@@ -83,9 +83,25 @@ class OZ_Perm
         if (!identity)
             return false;
 
+        return IsAdminUid(identity.GetPlainId());
+    }
+
+    // ТЕ САМЕ ПИТАННЯ, АЛЕ БЕЗ ОСОБИ.
+    //
+    // Права й так рахуються по рядку: VerifyPermission бере uid рядком, а
+    // AdminIds -- це список рядків. Особа потрібна була лише для того, щоб
+    // дістати з неї той самий uid. Ворота прив'язки (OZ_Link.Gated) знають
+    // саме uid і питають про людину, яка може бути зараз офлайн.
+    static bool IsAdminUid(string uid)
+    {
+        if (uid == "")
+            return false;
+
         Probe();
 
-        string uid = identity.GetPlainId();
+        OZ_Settings s = OZ_Settings.Get();
+        if (!s)
+            return false;
 
 #ifdef AVPPAdminTools
         if (s_HasVpp)
@@ -93,12 +109,15 @@ class OZ_Perm
             // Чотири параметри: (id, permissionName, targetID, sendNotify).
             // targetID -- РЯДОК, не bool; sendNotify обов'язково false,
             // інакше кожна тиха перевірка плювала б гравцеві тост про відмову.
-            if (GetPermissionManager().VerifyPermission(uid, OZ_Settings.Get().VppPermission, "", false))
+            if (GetPermissionManager().VerifyPermission(uid, s.VppPermission, "", false))
                 return true;
         }
 #endif
 
-        array<string> ids = OZ_Settings.Get().AdminIds;
+        array<string> ids = s.AdminIds;
+        if (!ids)
+            return false;
+
         for (int i = 0; i < ids.Count(); i++)
         {
             if (ids[i] == uid)
