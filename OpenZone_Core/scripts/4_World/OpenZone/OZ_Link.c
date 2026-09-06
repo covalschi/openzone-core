@@ -92,37 +92,28 @@ class OZ_LinkStatusReply : OZ_BridgeReply
 
 class OZ_Link
 {
-    private static ref map<string, int> s_Waiting;
+    private static ref map<string, int> s_Waiting = new map<string, int>();
 
-    private static const int POLL_MS   = 5000;
     private static const int GIVEUP_MS = 600000;
+
+    // Як часто перепитувати міст про кожного, хто чекає код.
+    private static const float POLL_SECONDS = 5.0;
 
     private static ref Timer s_Timer;
     private static ref OZ_LinkTicker s_Ticker;
-    private static int s_NextAt = 0;
+
+    // Коли цей гравець востаннє просив код. Стеля -- нижче.
+    private static ref map<string, int> s_BeganAt = new map<string, int>();
+    private static const int BEGIN_GAP_MS = 10000;
 
     // Знайти живу особу за uid. Потрібно, бо відповідь моста приїжджає
     // ПІЗНІШЕ за запит, і особа, захоплена тоді, могла вже протухнути.
     static PlayerIdentity Online(string uid)
     {
-        if (uid == "")
+        Man m = OZ_Players.ManOf(uid);
+        if (!m)
             return null;
-
-        array<Man> players = new array<Man>();
-        GetGame().GetPlayers(players);
-
-        for (int i = 0; i < players.Count(); i++)
-        {
-            if (!players[i])
-                continue;
-
-            PlayerIdentity id = players[i].GetIdentity();
-            if (!id)
-                continue;
-            if (id.GetPlainId() == uid)
-                return id;
-        }
-        return null;
+        return m.GetIdentity();
     }
 
     static bool IsLinked(string uid)
@@ -190,6 +181,27 @@ class OZ_Link
             return;
         }
 
+        // ОДИН КОД НА ДЕСЯТЬ СЕКУНД, і це не ввічливість до моста.
+        //
+        // OP_BEGIN не троттлився ніяк, а кожен виклик означав HTTP до моста
+        // ПЛЮС повне скидання OZ_BridgeCache (дорога v1/link/begin не
+        // читальна й не нейтральна). Тобто будь-який клієнт міг натисканням
+        // однієї кнопки в циклі і вантажити бота, і тримати кеш новин та
+        // розмов усього сервера порожнім. Людина, яка справді йде в Discord,
+        // десяти секунд не помічає.
+        //
+        // Той, хто вже чекає, теж отримує відмову: код йому видано, і другий
+        // не додає нічого, крім другого рядка в базі бота.
+        int now = GetGame().GetTime();
+        int began;
+        if (s_Waiting.Contains(uid) || (s_BeganAt.Find(uid, began) && (now - began) < BEGIN_GAP_MS))
+        {
+            OZ_Log.Dbg("link: " + uid + " asked for a code again too soon");
+            OZ_Rpc.LinkRespond(who, OZ_LinkConst.OP_BEGIN, false, "", "STR_OZ_ERR_SLOW_DOWN");
+            return;
+        }
+        s_BeganAt.Set(uid, now);
+
         if (!OZ_BridgeClient.Alive())
         {
             OZ_Rpc.LinkRespond(who, OZ_LinkConst.OP_BEGIN, false, "", "STR_OZ_ERR_NO_BRIDGE");
@@ -236,9 +248,6 @@ class OZ_Link
         if (uid == "")
             return;
 
-        if (!s_Waiting)
-            s_Waiting = new map<string, int>();
-
         s_Waiting.Set(uid, GetGame().GetTime() + GIVEUP_MS);
         EnsureTimer();
     }
@@ -281,43 +290,61 @@ class OZ_Link
         }
     }
 
+    // Кличеться і з Confirm, і з дисконекту в OZ_Module: гравець, що вийшов,
+    // ще десять хвилин генерував HTTP v1/link/status раз на п'ять секунд про
+    // нікого.
     static void Forget(string uid)
     {
-        if (!s_Waiting)
-            return;
         if (!s_Waiting.Contains(uid))
             return;
 
         s_Waiting.Remove(uid);
+        StopIfIdle();
     }
 
     private static void EnsureTimer()
     {
         if (s_Timer)
+        {
+            s_Timer.Run(POLL_SECONDS, s_Ticker, "OZ_LinkTick", NULL, true);
             return;
+        }
 
         // Носія тримаємо ЖИВИМ у статичному полі: таймер зберігає слабке
         // посилання, і локальний примірник прибрався б одразу після виходу з
         // методу, а таймер тікав би в порожнечу.
         s_Ticker = new OZ_LinkTicker();
 
+        // П'ЯТЬ СЕКУНД САМИМ ТАЙМЕРОМ. Тікало раз на секунду, і перший рядок
+        // тіла троттлив себе назад до п'яти вручну через s_NextAt -- тобто
+        // чотири з п'яти викликів існували, щоб одразу вийти.
         s_Timer = new Timer(CALL_CATEGORY_SYSTEM);
-        s_Timer.Run(1.0, s_Ticker, "OZ_LinkTick", NULL, true);
+        s_Timer.Run(POLL_SECONDS, s_Ticker, "OZ_LinkTick", NULL, true);
+    }
+
+    // Нема кого чекати -- нема чого тікати. Таймер інакше жив до кінця місії
+    // після першого ж запиту коду за весь сеанс.
+    private static void StopIfIdle()
+    {
+        if (s_Waiting.Count() > 0)
+            return;
+        if (!s_Timer)
+            return;
+
+        s_Timer.Stop();
     }
 
     static void Tick()
     {
-        if (!s_Waiting)
-            return;
         if (s_Waiting.Count() == 0)
+        {
+            StopIfIdle();
             return;
+        }
         if (!OZ_BridgeClient.Alive())
             return;
 
         int now = GetGame().GetTime();
-        if (now < s_NextAt)
-            return;
-        s_NextAt = now + POLL_MS;
 
         // Знімаємо прострочених ОКРЕМИМ проходом: правити мапу, по якій
         // ітеруєш, -- та помилка, яку потім ловлять місяцями.
@@ -328,6 +355,14 @@ class OZ_Link
             string uid = s_Waiting.GetKey(i);
 
             if (now > s_Waiting.GetElement(i))
+            {
+                expired.Insert(uid);
+                continue;
+            }
+
+            // Вийшов -- більше не питаємо. Дисконект зве Forget сам, але
+            // сюди можна прийти й між подіями.
+            if (!Online(uid))
             {
                 expired.Insert(uid);
                 continue;
@@ -346,9 +381,11 @@ class OZ_Link
 
         for (int j = 0; j < expired.Count(); j++)
         {
-            OZ_Log.Dbg("link: gave up waiting for " + expired[j]);
+            OZ_Log.Dbg("link: stopped waiting for " + expired[j]);
             s_Waiting.Remove(expired[j]);
         }
+
+        StopIfIdle();
     }
 }
 

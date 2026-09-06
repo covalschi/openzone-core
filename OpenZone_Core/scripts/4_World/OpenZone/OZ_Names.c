@@ -46,3 +46,34 @@ class OZ_Names
         return found;
     }
 }
+
+// Знайти ЖИВЕ ТІЛО за Steam64 -- один обхід GetPlayers() на все ядро.
+//
+// Той самий цикл із тими самими null-перевірками стояв двічі: в
+// OZ_Link.Online (треба особа) і в OZ_SpawnSection.BodyOf (треба позиція).
+// Два написання того самого обходу -- це дві швидкості й два набори помилок,
+// а зникає розбіжність між ними мовчки.
+class OZ_Players
+{
+    static Man ManOf(string uid)
+    {
+        if (uid == "")
+            return null;
+
+        array<Man> players = new array<Man>();
+        GetGame().GetPlayers(players);
+
+        for (int i = 0; i < players.Count(); i++)
+        {
+            if (!players[i])
+                continue;
+
+            PlayerIdentity id = players[i].GetIdentity();
+            if (!id)
+                continue;
+            if (id.GetPlainId() == uid)
+                return players[i];
+        }
+        return null;
+    }
+}
