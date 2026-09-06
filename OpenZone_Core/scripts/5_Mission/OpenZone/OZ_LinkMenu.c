@@ -21,7 +21,10 @@ class OZ_LinkMenu : UIScriptedMenu
         layoutRoot = GetGame().GetWorkspace().CreateWidgets("OpenZone_Core/gui/layouts/oz_link.layout");
         if (!layoutRoot)
         {
-            OZ_Log.Error("link gate layout failed to load");
+            // Ворота вимикаються ЦІЛКОМ, а не просто відмовляють: без цього
+            // Tick відкривав це вікно знову наступного ж кадру, і рядок нижче
+            // писався щокадру до кінця сесії.
+            OZ_LinkGate.Disable("oz_link.layout failed to load");
             return null;
         }
 

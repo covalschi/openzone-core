@@ -14,6 +14,24 @@ class OZ_LinkGate
     private static bool s_Done;
     private static OZ_LinkMenu s_Menu;
 
+    // Розмітка воріт не завантажилась -- більше не пробуємо.
+    //
+    // Init() повертав null, OnShow закривав меню, а Tick наступного ж кадру
+    // відкривав його знову: Error у лог і можливе миготіння HUD ЩОКАДРУ, доки
+    // гравець не вб'є гру. Один невдалий CreateWidgets -- це назавжди (файл
+    // або є в pbo, або його немає), тож правильна відповідь на нього одна:
+    // сказати раз і замовкнути.
+    private static bool s_Broken;
+
+    static void Disable(string why)
+    {
+        if (s_Broken)
+            return;
+
+        s_Broken = true;
+        OZ_Log.Error("link gate disabled for this session: " + why);
+    }
+
     // Приїхав конверт синхронізації. Єдине місце, де ворота вмикаються.
     static void FromSync(bool linked, bool required)
     {
@@ -38,6 +56,10 @@ class OZ_LinkGate
         s_Required = false;
         s_Done     = false;
         s_Menu     = null;
+
+        // Зламану розмітку теж забуваємо: наступний сервер може роздати
+        // інший pbo, і судити його за чужою невдачею немає підстав.
+        s_Broken   = false;
     }
 
     // Прив'язались. Більше не відкриваємо.
@@ -63,6 +85,8 @@ class OZ_LinkGate
         if (!s_Required)
             return;
         if (s_Done)
+            return;
+        if (s_Broken)
             return;
 
         UIManager ui = GetGame().GetUIManager();
