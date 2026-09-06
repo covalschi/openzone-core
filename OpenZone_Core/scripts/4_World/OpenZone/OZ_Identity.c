@@ -87,21 +87,18 @@ class OZ_IdentityService
         return OrgOf(uid);
     }
 
-    string FactionShort(string id)
-    {
-        return "";
-    }
-
     int FactionColor(string id, int alpha)
     {
         return ARGB(alpha, 255, 255, 255);
     }
 
-    // Скільки фракцій узагалі існує, і які. Потрібно тим, хто малює вибір.
-    int FactionCount()
-    {
-        return 0;
-    }
+    // FactionShort І FactionCount ТУТ БІЛЬШЕ НЕМАЄ (2026-09-06).
+    //
+    // Обидва були контрактом без жодного питальника: мод фракцій сумлінно
+    // перекривав їх, а не питав їх ніхто в усій серії -- мертвий інтерфейс,
+    // оплачений двічі. Короткий тег фракції лишається полем у Factions.json
+    // і належить моду фракцій; хто малює вибір, бере перелік із FactionIds
+    // нижче й рахує його сам.
 
     void FactionIds(out array<string> outIds)
     {

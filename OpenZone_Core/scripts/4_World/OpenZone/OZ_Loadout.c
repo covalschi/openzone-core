@@ -50,20 +50,13 @@ class OZ_LoadoutPreset
     }
 }
 
-// Модифікатор -- за посадою чи міткою (R4.2). Replace -- за слотом,
-// останній у порядку конфігу виграє; Add -- накопичується.
-class OZ_LoadoutMod
-{
-    string Key = "";
-    ref array<ref OZ_LoadoutItem> Replace;
-    ref array<ref OZ_LoadoutItem> Add;
-
-    void OZ_LoadoutMod()
-    {
-        Replace = new array<ref OZ_LoadoutItem>();
-        Add     = new array<ref OZ_LoadoutItem>();
-    }
-}
+// МОДИФІКАТОРА ПРЕСЕТА (OZ_LoadoutMod) ТУТ БІЛЬШЕ НЕМАЄ (2026-09-06).
+//
+// Ключем у ньому був слаг ПОСАДИ або МІТКИ, тобто словник мода фракцій, а
+// ядро слова «фракція» не знає -- шапка цього файла обіцяє рівно це. Клас
+// переїхав до єдиного свого споживача як OZF_LoadoutMod
+// (openzone-factions/OZF_Loadouts.c); ядро й далі возить готовий
+// OZ_LoadoutPreset і в нього не заглядає.
 
 // Порожня реалізація: думки не має. Мод, який знає, підставляє свою.
 //
