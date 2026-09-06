@@ -34,20 +34,16 @@ class OZ_AdminSection
 
 class OZ_AdminRegistry
 {
-    private static ref map<string, ref OZ_AdminSection> s_Sections;
-
-    private static void Ensure()
-    {
-        if (!s_Sections)
-            s_Sections = new map<string, ref OZ_AdminSection>();
-    }
+    // Контейнер -- одразу при оголошенні. Ensure()/«if (!s_X) s_X = new ...»
+    // перед кожним зверненням повторювався у восьми класах ядра, хоч поруч
+    // (OZ_BridgeClient.s_UidProviders) статик уже ініціювався при оголошенні
+    // й працював.
+    private static ref map<string, ref OZ_AdminSection> s_Sections = new map<string, ref OZ_AdminSection>();
 
     // ПЕРШИЙ ВИГРАЄ, і про другого гучно кажемо (правило серії, ТЗ-5 §C1 R1).
     // Чужий мод не може тихо підмінити наш розділ.
     static void Register(string sectionId, OZ_AdminSection section)
     {
-        Ensure();
-
         if (s_Sections.Contains(sectionId))
         {
             OZ_Log.Warn("admin section \"" + sectionId + "\" registered twice, the second registration is ignored");
@@ -65,7 +61,6 @@ class OZ_AdminRegistry
 
     static OZ_AdminSection Get(string sectionId)
     {
-        Ensure();
         return s_Sections.Get(sectionId);
     }
 
@@ -73,8 +68,6 @@ class OZ_AdminRegistry
     // саме відповість йому консоль, не відкриваючи її.
     static string Describe()
     {
-        Ensure();
-
         string line = "";
         for (int i = 0; i < s_Sections.Count(); i++)
         {

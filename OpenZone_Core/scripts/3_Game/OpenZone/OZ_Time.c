@@ -9,20 +9,12 @@ class OZ_Time
     // Рядок ISO-подібного вигляду YYYY-MM-DD HH:MM:SS у UTC.
     // Зберігаємо саме рядком: він читається людиною в JSON без розшифровки,
     // а сортується лексикографічно так само, як хронологічно.
+    // «Зараз» -- це «через нуль секунд»: InUtc(0) читає той самий календар і
+    // складає той самий рядок, тож другий примірник читання й форматування
+    // тут існував рівно для того, щоб колись розійтися з першим.
     static string NowUtc()
     {
-        int y, mo, d, h, mi, s;
-        GetYearMonthDayUTC(y, mo, d);
-        GetHourMinuteSecondUTC(h, mi, s);
-
-        // out -- зарезервоване слово Enforce (out-параметри), змінною так не назвати.
-        string res = y.ToString();
-        res += "-" + Pad2(mo);
-        res += "-" + Pad2(d);
-        res += " " + Pad2(h);
-        res += ":" + Pad2(mi);
-        res += ":" + Pad2(s);
-        return res;
+        return InUtc(0);
     }
 
     // Той самий календар, зсунутий уперед на стільки секунд. Для строків, які
@@ -71,27 +63,36 @@ class OZ_Time
 
     // Чи момент `a` настав раніше за `b`. Обидва -- рядки цього ж класу.
     //
-    // Порівнюємо ЦИФРИ, а не рядки: у Enforce «менше» для string не
-    // визначене взагалі. Формат фіксованої ширини з нулями попереду, тож
-    // після викидання роздільників лишаються рівно чотирнадцять цифр, і
-    // посимвольне порівняння збігається з хронологічним.
+    // Порівнюємо ЧИСЛА, а не рядки: у Enforce «менше» для string не визначене
+    // взагалі. Формат фіксованої ширини, тож обидві половини лягають у int --
+    // дата це вісім цифр (20261231), час шість (235959), і жодна не близька
+    // до межі. Раніше тут ішло посимвольне порівняння чотирнадцяти цифр через
+    // допоміжний Digits(): та сама відповідь, удвадцятеро більше рядків.
     static bool Before(string a, string b)
     {
-        string da = Digits(a);
-        string db = Digits(b);
+        int da = Date(a);
+        int db = Date(b);
+        if (da != db)
+            return da < db;
 
-        if (da.Length() != db.Length())
-            return da.Length() < db.Length();
+        return Clock(a) < Clock(b);
+    }
 
-        for (int i = 0; i < da.Length(); i++)
-        {
-            int va = "0123456789".IndexOf(da.Get(i));
-            int vb = "0123456789".IndexOf(db.Get(i));
-            if (va != vb)
-                return va < vb;
-        }
+    // "YYYY-MM-DD HH:MM:SS" -> 20261231 і 235959. Порожній рядок дає нуль --
+    // тобто «давніший за будь-що», і це саме та відповідь, яку хоче той, хто
+    // порівнює строк, якого ще не ставили.
+    private static int Date(string s)
+    {
+        if (s.Length() < 10)
+            return 0;
+        return Digits(s.Substring(0, 10)).ToInt();
+    }
 
-        return false;
+    private static int Clock(string s)
+    {
+        if (s.Length() < 19)
+            return 0;
+        return Digits(s.Substring(11, 8)).ToInt();
     }
 
     private static string Digits(string s)

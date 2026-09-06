@@ -36,13 +36,14 @@ class OZ_AdminCfgEntry
 
 class OZ_AdminCfg
 {
-    private static ref array<ref OZ_AdminCfgEntry> s_All;
+    // Контейнер -- одразу при оголошенні. Ensure()/«if (!s_X) s_X = new ...»
+    // перед кожним зверненням повторювався у восьми класах ядра, хоч поруч
+    // (OZ_BridgeClient.s_UidProviders) статик уже ініціювався при оголошенні
+    // й працював.
+    private static ref array<ref OZ_AdminCfgEntry> s_All = new array<ref OZ_AdminCfgEntry>();
 
     static void Register(string name, string path, OZ_AdminCfgApplier applier, string owner = "core")
     {
-        if (!s_All)
-            s_All = new array<ref OZ_AdminCfgEntry>();
-
         OZ_AdminCfgEntry e = new OZ_AdminCfgEntry();
         e.Name    = name;
         e.Path    = path;
@@ -53,8 +54,6 @@ class OZ_AdminCfg
 
     static OZ_AdminCfgEntry Find(string name)
     {
-        if (!s_All)
-            return null;
         for (int i = 0; i < s_All.Count(); i++)
         {
             if (s_All[i].Name == name)
@@ -65,8 +64,6 @@ class OZ_AdminCfg
 
     static void Names(array<string> outNames, array<string> outOwners)
     {
-        if (!s_All)
-            return;
         for (int i = 0; i < s_All.Count(); i++)
         {
             outNames.Insert(s_All[i].Name);

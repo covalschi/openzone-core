@@ -44,21 +44,17 @@ class OZ_PageEntry
 
 class OZ_PageRegistry
 {
-    private static ref map<string, ref OZ_PageEntry> s_Pages;
-
-    private static void Ensure()
-    {
-        if (!s_Pages)
-            s_Pages = new map<string, ref OZ_PageEntry>();
-    }
+    // Контейнер -- одразу при оголошенні. Ensure()/«if (!s_X) s_X = new ...»
+    // перед кожним зверненням повторювався у восьми класах ядра, хоч поруч
+    // (OZ_BridgeClient.s_UidProviders) статик уже ініціювався при оголошенні
+    // й працював.
+    private static ref map<string, ref OZ_PageEntry> s_Pages = new map<string, ref OZ_PageEntry>();
 
     // Кличеться один раз, з OnMissionStart модуля-власника сторінки.
     // handler створює викликач: спроба зробити це з typename тут зайва --
     // власник і так знає свій конкретний тип.
     static void Register(string pageId, string titleKey, string icon, OZ_PageHandler handler)
     {
-        Ensure();
-
         // ПОРОЖНІЙ ОБРОБНИК -- ВІДМОВА В РЕЄСТРАЦІЇ.
         //
         // VisibleFor нижче від null уже боронився, а диспетчер запиту --
@@ -89,7 +85,6 @@ class OZ_PageRegistry
 
     static bool Has(string pageId)
     {
-        Ensure();
         return s_Pages.Contains(pageId);
     }
 
@@ -97,8 +92,6 @@ class OZ_PageRegistry
     // намалювати вкладку, за якою нікого немає, гірше, ніж не малювати її.
     static bool VisibleFor(string pageId, string uid)
     {
-        Ensure();
-
         OZ_PageEntry e;
         if (!s_Pages.Find(pageId, e))
             return false;
@@ -110,20 +103,16 @@ class OZ_PageRegistry
 
     static int Count()
     {
-        Ensure();
         return s_Pages.Count();
     }
 
     static OZ_PageEntry Get(string pageId)
     {
-        Ensure();
         return s_Pages.Get(pageId);
     }
 
     static void FillPayload(OZ_SyncPayload p)
     {
-        Ensure();
-
         for (int i = 0; i < s_Pages.Count(); i++)
         {
             OZ_PageEntry e = s_Pages.GetElement(i);

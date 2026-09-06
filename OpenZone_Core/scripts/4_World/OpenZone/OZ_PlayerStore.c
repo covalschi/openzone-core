@@ -562,13 +562,10 @@ class OZ_PlayerStore
     //
     // Читається рідко (лише коли в чиємусь записнику лишився старий
     // персонаж), тож кеш маленький і живе до кінця сеансу.
-    private static ref map<string, ref OZ_PlayerData> s_Frozen;
+    private static ref map<string, ref OZ_PlayerData> s_Frozen = new map<string, ref OZ_PlayerData>();
 
     static OZ_PlayerData FrozenOf(string key)
     {
-        if (!s_Frozen)
-            s_Frozen = new map<string, ref OZ_PlayerData>();
-
         if (s_Frozen.Contains(key))
             return s_Frozen.Get(key);
 
