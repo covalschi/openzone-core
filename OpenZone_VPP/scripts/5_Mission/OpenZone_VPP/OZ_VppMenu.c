@@ -41,31 +41,25 @@
 // на "-", i завести фракцiйну зону з вкладки не можна було взагалi.
 class OZ_VppFactionSlugs
 {
-    private static ref array<string> s_Slugs;
+    // ПУБЛІЧНИЙ статик: панель фракцій кладе сюди свої слаги зі свого pbo,
+    // а ядро про фракції не знає й знати не мусить.
+    static ref array<string> Slugs = new array<string>();
 
+    // Копію робимо СВОЮ: масив приходить із чужого pbo, і жити він може
+    // рівно доти, доки живе його панель.
     static void Set(array<string> slugs)
     {
-        s_Slugs = new array<string>();
+        Slugs.Clear();
         if (!slugs)
             return;
 
         for (int i = 0; i < slugs.Count(); i++)
-            s_Slugs.Insert(slugs[i]);
+            Slugs.Insert(slugs[i]);
     }
 
-    static int Count()
-    {
-        if (!s_Slugs)
-            return 0;
-        return s_Slugs.Count();
-    }
-
-    static string At(int i)
-    {
-        if (!s_Slugs || i < 0 || i >= s_Slugs.Count())
-            return "";
-        return s_Slugs[i];
-    }
+    // Count() І At() ТУТ БІЛЬШЕ НЕМАЄ: лічильник і захищений індекс навколо
+    // масиву, який сам має і Count(), і межі. Читач у цього списку один, і він
+    // за два рядки нижче.
 }
 
 modded class VPPAdminHud
@@ -235,7 +229,6 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     // міряв, тому LayoutTabs більше не читає розмір шаблону з m_TabBtns[0]
     // живцем: лише з цих двох полів, які раз записані вже не міняються.
     protected float m_TabW = 0;
-    protected float m_TabH = 0;
 
     // Перший вдалий прохід LayoutTabs ще не стався (сторож нижче): до нього
     // GetScreenSize повертає 0 і для смуги, і для щойно створеної кнопки, а
@@ -299,8 +292,11 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         // Розмір шаблону -- з ПЕРШОЇ кнопки, яка тут коли-небудь з'явилась,
         // до того, як LayoutTabs нижче встигне її стиснути (коментар біля
         // m_TabW вище).
+        // Висота нам не потрібна -- смуга її задає сама, -- але GetSize
+        // хоче обидва out-параметри, тож приймаємо її в локальну.
+        float tabH;
         if (m_TabW <= 0)
-            btn.GetSize(m_TabW, m_TabH);
+            btn.GetSize(m_TabW, tabH);
 
         m_PaneHints.Set(id, hintName);
 
@@ -318,7 +314,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     }
 
     // Вкладки ділять смугу. Кімната -- ЕКРАННА ширина самої смуги, ширина
-    // вкладки -- зі знятого один раз шаблону (m_TabW/m_TabH вище), зазор --
+    // вкладки -- зі знятого один раз шаблону (m_TabW вище), зазор --
     // TAB_GAP; коли всі не влазять, ширина ділиться на всіх, і кнопка з
     // дітьми вужчає (ShrinkTab).
     //
@@ -762,7 +758,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
                     else
                         m_CfgOwners.Insert("core");
                 }
-                OnCfgListChanged();
+                RebuildRawList();
             }
             return;
         }
@@ -948,10 +944,9 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             AskCfg("Spawns");
     }
 
-    protected void OnCfgListChanged()
-    {
-        RebuildRawList();
-    }
+    // OnCfgListChanged ТУТ БІЛЬШЕ НЕМАЄ: обгортка в один рядок навколо
+    // RebuildRawList, з одним викликачем і без жодного override у КПК,
+    // фракціях чи рації.
 
     // ---------------------------------------------------------- спавни
 
@@ -1053,15 +1048,15 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     {
         // Останнiй пункт циклу -- запасна зона "-". Без мода фракцiй перелiк
         // порожнiй, i вона лишається єдиним варiантом.
-        int n = OZ_VppFactionSlugs.Count();
+        int n = OZ_VppFactionSlugs.Slugs.Count();
         if (n == 0 || at >= n)
             return "-";
-        return OZ_VppFactionSlugs.At(at);
+        return OZ_VppFactionSlugs.Slugs[at];
     }
 
     protected void CycleSpawnFaction()
     {
-        int n = OZ_VppFactionSlugs.Count();
+        int n = OZ_VppFactionSlugs.Slugs.Count();
         m_SpFacAt = (m_SpFacAt + 1) % (n + 1);
         PaintSpawnCycler();
     }
@@ -1135,10 +1130,8 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         return super.OnItemSelected(w, x, y, row, column, oldRow, oldColumn);
     }
 
-    override bool OnChange(Widget w, int x, int y, bool finished)
-    {
-        return super.OnChange(w, x, y, finished);
-    }
+    // OnChange ТУТ БІЛЬШЕ НЕМАЄ: override, який лише кликав super, тобто
+    // рівно те, що станеться й без нього.
 
     override bool OnClick(Widget w, int x, int y, int button)
     {
@@ -1238,6 +1231,16 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             if (text.Trim() == "")
             {
                 Hint("the body is empty");
+                return true;
+            }
+
+            // Довге тіло відхиляємо ТУТ, з числом: сервер розбирає зібраний
+            // JSON через JsonFileLoader, а той ріже строкове значення на
+            // 1023 байтах мовчки -- тобто без цієї перевірки адмін бачив би
+            // «готово» на новину, яка поїхала в гільдію обрубком.
+            if (text.Length() >= OZ_NewsAdminAsk.BODY_MAX)
+            {
+                Hint("the body is " + text.Length().ToString() + " b, the limit is " + OZ_NewsAdminAsk.BODY_MAX.ToString());
                 return true;
             }
 

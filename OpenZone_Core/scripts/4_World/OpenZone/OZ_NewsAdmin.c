@@ -27,14 +27,28 @@ class OZ_NewsAdminAsk
     string Who   = "";
     string Title = "";
     string Body  = "";
+
+    // СТЕЛЯ НА ТІЛО, І ВОНА НЕ НАША -- РУШІЙНА.
+    //
+    // Клієнт возить тіло частинами без утрат, але сервер РОЗБИРАЄ зібраний
+    // JSON через JsonFileLoader.LoadData, а той мовчки ріже будь-яке строкове
+    // значення на 1023 байтах (зміряно, persistence-networking.md:520-522) --
+    // можливо, посеред символу UTF-8, і без жодного слова адмінові. Тобто
+    // довга новина доїжджала обрубком, і побачити це можна було тільки в
+    // гільдії.
+    //
+    // Тисяча -- те саме число, що вже стоїть у нотатках КПК
+    // (OZ_PdaConst.NOTE_BODY_MAX): запас у два десятки байтів до рушійної
+    // межі й одне правило на всю серію.
+    static const int BODY_MAX = 1000;
 }
 
+// Admin/Leader/Org ТУТ БІЛЬШЕ НЕМАЄ: міст їх шле, а читає з цієї відповіді
+// лише Self і Voices (OZ_VppMenu.OnNewsAnswer). JsonFileLoader мовчки
+// пропускає невідомі ключі, тож мостові про це знати не треба.
 class OZ_NewsAdminVoices
 {
     string Self   = "";
-    bool   Admin  = false;
-    bool   Leader = false;
-    string Org    = "";
     ref array<string> Voices;
 
     void OZ_NewsAdminVoices()
@@ -156,6 +170,16 @@ class OZ_NewsSection : OZ_AdminSection
             a.Who   = from.Who;
             a.Title = from.Title;
             a.Body  = from.Body;
+
+            // Тіло рівно на межі різака -- це або справді довга новина, або
+            // вже обрубана. Розрізнити їх ніяк, і мовчки постити половину
+            // речення не можна: відмовляємо й кажемо, скільки можна.
+            if (a.Body.Length() >= OZ_NewsAdminAsk.BODY_MAX)
+            {
+                OZ_Log.Warn("news: body of " + a.Body.Length().ToString() + " b from " + a.Uid + " is at or over the parser's limit, rejected");
+                error = "STR_OZ_ERR_TOO_LONG";
+                return "";
+            }
         }
 
         string letter;
