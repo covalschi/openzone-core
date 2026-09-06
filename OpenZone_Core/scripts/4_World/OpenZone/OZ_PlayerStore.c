@@ -314,6 +314,26 @@ class OZ_PlayerStore
         return OZ_Const.PLAYERS_DIR + "\\" + uid + ".json";
     }
 
+    // Чи можна взагалі клеїти цей uid у дорогу.
+    //
+    // PathOf підставляє його БЕЗ перевірок, тож порожній рядок давав файл
+    // `players\.json`, а рядок із роздільником -- запис куди завгодно під
+    // профілем сервера. Uid приходить від CF і від чужих модів; на 17 цифр
+    // не перевіряємо (псевдо-uid NPC і тестові акаунти стенду теж мають тут
+    // жити), а от роздільник шляху -- не uid у жодному написанні.
+    private static bool Nameable(string uid)
+    {
+        if (uid == "")
+            return false;
+        if (uid.IndexOf("\\") != -1)
+            return false;
+        if (uid.IndexOf("/") != -1)
+            return false;
+        if (uid.IndexOf("..") != -1)
+            return false;
+        return true;
+    }
+
     private static string GravePathOf(string uid, int gen)
     {
         return OZ_Const.PLAYERS_DIR + "\\" + uid + ".g" + gen.ToString() + ".json";
@@ -323,6 +343,16 @@ class OZ_PlayerStore
     {
         if (s_Cache.Contains(uid))
             return s_Cache.Get(uid);
+
+        // Непридатний uid НЕ КЕШУЄМО й на диск не носимо: віддаємо дефолти,
+        // щоб викликач не впав на null, і кажемо про це один раз.
+        if (!Nameable(uid))
+        {
+            OZ_Log.Warn("player store: refusing to touch a file for uid \"" + uid + "\"");
+            OZ_PlayerData empty = new OZ_PlayerData();
+            empty.LoadDefaults();
+            return empty;
+        }
 
         OZ_PlayerData d = new OZ_PlayerData();
         // backup=false: файлів гравців сотні, і копія кожного перед кожним
@@ -471,7 +501,7 @@ class OZ_PlayerStore
 
     static OZ_PlayerData Peek(string uid)
     {
-        if (uid == "")
+        if (!Nameable(uid))
             return null;
 
         if (s_Cache.Contains(uid))

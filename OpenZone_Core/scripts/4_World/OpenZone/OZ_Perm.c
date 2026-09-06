@@ -16,7 +16,11 @@ class OZ_Perm
     // CfgMods, а VPP оголошує себе як AVPPAdminTools -- перевірено в лозі
     // бута: у списку defines стоять саме OpenZone_Core і OPENZONE_CORE,
     // тобто ім'я класу CfgPatches і те, що в defines[].
-    private static void Probe()
+    //
+    // НЕ private: ліниву пробу кличуть усі точки входу прав, і старт ядра
+    // теж -- щоб рядок про джерело прав стояв у лозі бута, а не з'явився
+    // при першому натисканні адміна. Ідемпотентна.
+    static void Probe()
     {
         if (s_Probed)
             return;

@@ -212,12 +212,10 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     // змінюєш токен -- зміни й цю сталу.
     static const float TAB_GAP = 6;
 
-    // Колір напису вкладки: та сама пара ARGB, що в OZ_PdaMenu.c для
-    // активної/неактивної вкладки -- дзеркало color.accent і color.muted із
-    // ui/tokens.json (0.31 0.71 0.91 і 0.58 0.65 0.71, ×255, округлено).
-    // Рушій json не читає, тому, як і TAB_GAP вище, число живе двічі.
-    static const int TAB_TEXT_OPEN = ARGB(255, 79, 181, 232);
-    static const int TAB_TEXT_IDLE = ARGB(255, 148, 166, 181);
+    // Колір напису вкладки бере ПАЛІТРА ЯДРА (OZ_Palette), а не літерал тут.
+    // Та сама пара стояла й у OZ_PdaMenu.c, і в панелі фракцій: одне число в
+    // трьох репозиторіях розходиться мовчки, бо ніщо не звіряє його з
+    // ui/tokens.json.
 
     // Розмір шаблону вкладки в ЕКРАННИХ ПІКСЕЛЯХ (не в одиницях: GetSize на
     // віджеті точного розміру відповідає пікселями, зміряно 2026-09-06 --
@@ -465,9 +463,9 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             if (t)
             {
                 if (m_TabIds[i] == id)
-                    t.SetColor(TAB_TEXT_OPEN);
+                    t.SetColor(OZ_Palette.ACCENT);
                 else
-                    t.SetColor(TAB_TEXT_IDLE);
+                    t.SetColor(OZ_Palette.MUTED);
             }
         }
 
