@@ -85,7 +85,14 @@ class OZ_BridgeXfer : RestCallback
             return;
         }
 
-        OZ_Log.Warn("bridge: " + Route + " failed, code " + errorCode.ToString());
+        // ОДИН РЯДОК НА ПЕРЕХІД, а не на кожну спробу.
+        //
+        // Мертвий міст писав WARNING кожні п'ять секунд -- до семисот рядків
+        // за годину, -- і вердикт стенду (він рахує WARNING) залипав на
+        // «негідно» через сам лише вимкнений бот, ховаючи справжні
+        // попередження. Про те, що міст ліг, треба сказати ОДИН раз, і ще
+        // раз -- коли він повернувся.
+        OZ_BridgeClient.Fell(Route, errorCode);
 
         if (m_Reply)
             m_Reply.OnFail(errorCode);
@@ -111,14 +118,25 @@ class OZ_BridgePollReply : OZ_BridgeReply
     {
         // Міст відповів -- отже почув і про те, що ми свіжопіднялися.
         OZ_BridgeClient.Settled();
-        OZ_BridgeClient.Absorb(json);
+
+        // Пачка, яка нічого не привезла й не зрушила курсор, означає, що міст
+        // відповів МИТТЄВО й ні про що. Перепитувати таке в наступному кадрі
+        // -- це цикл без пауз; чекаємо секунду. Пачка з вмістом означає, що
+        // розмова триває, і там пауза не потрібна взагалі.
+        if (OZ_BridgeClient.Absorb(json))
+        {
+            OZ_BridgeClient.Again(OZ_BridgeClient.IDLE_GAP_MS);
+            return;
+        }
+
         OZ_BridgeClient.Again(0);
     }
 
     override void OnQuiet()
     {
         // Мостові не було чого сказати за цілий таймаут. Це і є звичайний хід
-        // речей, а не збій: питаємо знову негайно.
+        // речей, а не збій: питаємо знову негайно -- утримання вже й було
+        // паузою.
         //
         // Тиша теж означає, що міст нас почув, зокрема й про свіжий запуск.
         OZ_BridgeClient.Settled();
@@ -127,7 +145,7 @@ class OZ_BridgePollReply : OZ_BridgeReply
 
     override void OnFail(int code)
     {
-        OZ_BridgeClient.Again(OZ_BridgeClient.BACKOFF_MS);
+        OZ_BridgeClient.Again(OZ_BridgeClient.Backoff());
     }
 }
 
@@ -154,6 +172,16 @@ class OZ_BridgeUidProvider
 class OZ_BridgeClient
 {
     static const int BACKOFF_MS = 5000;
+
+    // Скільки чекати після НЕВДАЛОГО опиту. Росте вдвічі на кожній наступній
+    // невдачі до хвилини й падає назад, щойно міст відповів: п'ять секунд
+    // назавжди означали і сталий потік невдалих запитів, і сталий потік
+    // рядків у лозі про сервіс, якого зараз просто немає.
+    private static int s_Backoff = BACKOFF_MS;
+    private static const int BACKOFF_MAX_MS = 60000;
+
+    // Чи вважали ми міст живим, коли говорили про це востаннє.
+    private static bool s_SaidAlive = true;
 
     private static bool s_Running = false;
 
@@ -194,15 +222,11 @@ class OZ_BridgeClient
     private static RestContext s_Ctx;
 
 
-    static bool IsRunning()
-    {
-        return s_Running;
-    }
-
-    static int Cursor()
-    {
-        return s_Cursor;
-    }
+    // IsRunning() І Cursor() ТУТ БІЛЬШЕ НЕМАЄ. Обидва не мали викликачів у
+    // жодному репозиторії серії, а кожна згадка IsRunning у сусідніх файлах
+    // була коментарем «не питай це, питай Alive()»: s_Running означає лише
+    // «Start() відпрацював», тобто дублює Bridge.Enabled. Курсор -- приватний
+    // стан опиту, який опит і возить.
 
     // Хто читатиме листи цього роду. Кличеться до Start(): підписка після
     // першої пачки означала б, що ту пачку ніхто не почув.
@@ -304,23 +328,15 @@ class OZ_BridgeClient
 
     // Скільки родів справді дзеркаляться. Потрібно рівно там, де різниця
     // видима: «у гільдії тихо» -- це стан, про який треба сказати вголос.
+    //
+    // Через FillMirrors, а не власним циклом: два перебори того самого списку
+    // з тими самими null-перевірками розходяться мовчки, і сказати «нуль»,
+    // коли мосту їде три роди, було б найгіршою з можливих розбіжностей.
     static int MirrorCount()
     {
-        OZ_Settings s = OZ_Settings.Get();
-        if (!s || !s.Bridge || !s.Bridge.Enabled)
-            return 0;
-
-        array<ref OZ_KindMirror> list = s.Bridge.Mirrors;
-        if (!list)
-            return 0;
-
-        int n = 0;
-        for (int i = 0; i < list.Count(); i++)
-        {
-            if (list[i] && list[i].Mirror)
-                n++;
-        }
-        return n;
+        array<string> t = new array<string>();
+        FillMirrors(t);
+        return t.Count();
     }
 
     static void Start()
@@ -375,8 +391,14 @@ class OZ_BridgeClient
         //
         // Виклики лишаємо: вони нічого не коштують, а на іншому рушії
         // можуть і спрацювати.
-        GetRestApi().SetOption(ERestOption.ERESTOPTION_CONNECTION,    b.PollTimeoutSec);
-        GetRestApi().SetOption(ERestOption.ERESTOPTION_READOPERATION, b.PollTimeoutSec);
+        // Число тут -- ЛІТЕРАЛ, і настройки під нього більше немає.
+        //
+        // Bridge.PollTimeoutSec був параметром, який рушій ЗМІРЯНО ігнорує:
+        // асинхронний запит помирає рівно на десятій секунді, хоч би що тут
+        // стояло. Настройка, яка нічого не робить, гірша за її відсутність --
+        // адмін крутить її й пояснює собі наслідки, яких немає.
+        GetRestApi().SetOption(ERestOption.ERESTOPTION_CONNECTION,    OZ_Const.REST_TIMEOUT_SEC);
+        GetRestApi().SetOption(ERestOption.ERESTOPTION_READOPERATION, OZ_Const.REST_TIMEOUT_SEC);
 
         s_Ctx = GetRestApi().GetRestContext(Base());
         s_Ctx.SetHeader("application/json");
@@ -386,6 +408,8 @@ class OZ_BridgeClient
         s_Pump      = new OZ_BridgePump();
         s_Running   = true;
         s_Fresh     = true;
+        s_Backoff   = BACKOFF_MS;
+        s_SaidAlive = true;
 
         // Вважаємо міст живим, поки не доведено протилежне. Інакше в перші
         // секунди після старту, коли відповіді ще не було, він читався б як
@@ -394,7 +418,7 @@ class OZ_BridgeClient
 
         string line = "bridge: polling " + b.Url;
         line += " as \"" + b.ServerId;
-        line += "\", waiting up to " + b.PollTimeoutSec.ToString() + "s";
+        line += "\", the engine drops an async request at " + OZ_Const.REST_TIMEOUT_SEC.ToString() + "s";
         OZ_Log.Info(line);
 
         Poll();
@@ -457,6 +481,38 @@ class OZ_BridgeClient
     {
         s_Fresh    = false;
         s_LastOkAt = GetGame().GetTime();
+        s_Backoff  = BACKOFF_MS;
+
+        if (!s_SaidAlive)
+        {
+            s_SaidAlive = true;
+            OZ_Log.Info("bridge: answering again");
+        }
+    }
+
+    // Невдалий переліт. Один рядок на перехід «живий -> мертвий», далі Dbg.
+    static void Fell(string route, int errorCode)
+    {
+        string line = "bridge: " + route + " failed, code " + errorCode.ToString();
+
+        if (s_SaidAlive)
+        {
+            s_SaidAlive = false;
+            OZ_Log.Warn(line);
+            return;
+        }
+
+        OZ_Log.Dbg(line);
+    }
+
+    // Наступна пауза після невдачі -- і подвоєння для тієї, що буде далі.
+    static int Backoff()
+    {
+        int now = s_Backoff;
+        s_Backoff = s_Backoff * 2;
+        if (s_Backoff > BACKOFF_MAX_MS)
+            s_Backoff = BACKOFF_MAX_MS;
+        return now;
     }
 
     // Чи міст ЖИВИЙ, а не «чи ми ввімкнули опит».
@@ -476,6 +532,17 @@ class OZ_BridgeClient
             return false;
         return (GetGame().GetTime() - s_LastOkAt) < DEAD_MS;
     }
+
+    // ПАУЗА ПІСЛЯ ПОРОЖНЬОЇ ПАЧКИ.
+    //
+    // Темп опиту задає міст тим, що ТРИМАЄ відповідь, і поки він тримає,
+    // Again(0) означає «раз на вісім секунд». Але міст, який відповідає
+    // порожнечею миттєво -- свій зламаний, чужий, старої версії, -- крутив
+    // цикл на підлозі в чверть секунди, тобто чотири GetPlayers + JSON + HTTP
+    // на секунду на сервері з одним ядром, вічно й ні за що. Пачка, що
+    // НІЧОГО не привезла й не зрушила курсор, -- це і є «мостові нема чого
+    // сказати», і чекати після неї можна секунду.
+    static const int IDLE_GAP_MS = 1000;
 
     static void Poll()
     {
@@ -630,28 +697,49 @@ class OZ_BridgeClient
 
     // Пачка з моста. Ядро розкриває конверти й роздає їх за родом -- і на
     // цьому його знання про вміст закінчується.
-    static void Absorb(string json)
+    // Повертає true, коли пачка НІЧОГО не привезла й не зрушила курсор.
+    static bool Absorb(string json)
     {
         OZ_BridgeBatch batch;
         string err;
         if (!JsonFileLoader<OZ_BridgeBatch>.LoadData(json, batch, err))
         {
             OZ_Log.Error("bridge: batch is not readable: " + err);
-            return;
+            return false;
         }
 
         if (!batch)
-            return;
+            return false;
 
-        // Пачка з конвертами або з новим курсором -- світ змінився, кеш
-        // читань скидається цілком (ТЗ-2 R4.4). Порожня пачка зі старим
-        // курсором нічого не міняє й нічого не скидає.
+        // СКИДАЄМО КЕШ ПО РОДАХ, А НЕ ЦІЛКОМ (ТЗ-2 R4.4 у формі, яку вона
+        // мала на увазі).
+        //
+        // Було: будь-яка непорожня пачка або будь-який зсув курсора чистили
+        // ВЕСЬ кеш читань. Один чужий рядок у чаті викидав з нього новини й
+        // розмови всіх, хто зараз у Зоні, -- тобто на живому сервері кеш
+        // стояв порожній рівно тоді, коли він найпотрібніший.
+        //
+        // Курсор рухає ЛИШЕ стрічка повідомлень (міст рахує його по
+        // messagesSince), тож його зсув застарює саме чат -- зокрема й тоді,
+        // коли рядок був не для нас і в пачку не потрапив. Решту називають
+        // самі конверти своїм Kind.
         bool moved = batch.Cursor != s_Cursor;
-        bool carried = false;
-        if (batch.Items && batch.Items.Count() > 0)
-            carried = true;
-        if (moved || carried)
-            OZ_BridgeCache.Clear("poll cursor " + batch.Cursor.ToString());
+        bool carried = batch.Items && batch.Items.Count() > 0;
+
+        if (moved)
+            OZ_BridgeCache.Invalidate("chat", "poll cursor " + batch.Cursor.ToString());
+
+        for (int c = 0; batch.Items && c < batch.Items.Count(); c++)
+        {
+            OZ_BridgeEnvelope ce = batch.Items[c];
+            if (!ce)
+                continue;
+
+            // Рід, якого кеш не знає, міг зачепити що завгодно -- тоді
+            // скидаємо все, як і раніше.
+            if (!OZ_BridgeCache.Invalidate(ce.Kind, "poll item"))
+                OZ_BridgeCache.Clear("poll item of unknown kind \"" + ce.Kind + "\"");
+        }
 
         s_Cursor = batch.Cursor;
 
@@ -670,5 +758,7 @@ class OZ_BridgeClient
 
             sink.Deliver(e.Json);
         }
+
+        return !moved && !carried;
     }
 }

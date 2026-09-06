@@ -29,10 +29,8 @@ class OZ_BridgeCache
     static const int TTL_MS  = 60000;
     static const int MAX_KEYS = 512;
 
-    private static ref map<string, string> s_Body;
-    private static ref map<string, int>    s_At;
-    private static int s_Hits   = 0;
-    private static int s_Misses = 0;
+    private static ref map<string, string> s_Body = new map<string, string>();
+    private static ref map<string, int>    s_At   = new map<string, int>();
 
     // Лише те, що читає й нічого не змінює на мосту. Перелік короткий і
     // явний: дорога, якої тут немає, кеш не торкається -- і скидає його.
@@ -54,15 +52,30 @@ class OZ_BridgeCache
     {
         if (route == "v1/news/voices") return true;
         if (route == "v1/link/status") return true;
+
+        // ПРИВ'ЯЗКА НІЧОГО НЕ МІНЯЄ В ЛИСТУВАННІ. Запит коду -- питання про
+        // одну людину й одну мить; він не читальний (відповідь щоразу інша)
+        // і не пише нічого, що лежить у кеші. Без цього рядка кожне
+        // натискання «отримати код» гасило чат і новини всьому серверу.
+        if (route == "v1/link/begin") return true;
+
+        // РОСТЕР ролей теж: він відповідає про фракції, а кешуємо ми лише
+        // новини й розмови.
+        if (route == "v1/roles/roster") return true;
+
         return false;
     }
 
-    private static void Ensure()
+    // Роди, які кеш РОЗУМІЄ. Конверт незнайомого роду скидає кеш цілком: ми
+    // не знаємо, чого він торкнувся, і вгадувати тут не можна.
+    private static bool KnownKind(string kind)
     {
-        if (!s_Body)
-            s_Body = new map<string, string>();
-        if (!s_At)
-            s_At = new map<string, int>();
+        if (kind == "chat")   return true;
+        if (kind == "news")   return true;
+        if (kind == "roles")  return true;
+        if (kind == "roster") return true;
+        if (kind == "link")   return true;
+        return false;
     }
 
     private static string Key(string route, string letter)
@@ -72,43 +85,38 @@ class OZ_BridgeCache
 
     static bool Get(string route, string letter, out string json)
     {
-        Ensure();
-
         string k = Key(route, letter);
         int at;
         if (!s_At.Find(k, at))
-        {
-            s_Misses++;
             return false;
-        }
 
         if (GetGame().GetTime() - at > TTL_MS)
         {
             s_Body.Remove(k);
             s_At.Remove(k);
-            s_Misses++;
             return false;
         }
 
         if (!s_Body.Find(k, json))
-        {
-            s_Misses++;
             return false;
-        }
 
-        s_Hits++;
-        OZ_Log.Dbg("bridge cache: hit " + route + " (" + Stat() + ")");
+        OZ_Log.Dbg("bridge cache: hit " + route);
         return true;
     }
 
     // Відмову не кешуємо: {"Error": ...} -- це відповідь про мить, а не про
     // світ, і наступний запит має право отримати іншу.
+    //
+    // ПО ФОРМІ, А НЕ ПО ПІДРЯДКУ. Пошук лапкового "error" будь-де в тілі
+    // означав, що звичайне повідомлення чи новина зі словом error у тексті
+    // гасила кеш цілої сторінки. Міст ставить відмову ПЕРШИМ ключем
+    // ({"Error":"no_chat"}), і саме це ми й питаємо.
     static void Put(string route, string letter, string json)
     {
-        if (json == "" || json.IndexOf("\"Error\"") != -1 || json.IndexOf("\"error\"") != -1)
+        if (json == "")
             return;
-
-        Ensure();
+        if (json.IndexOf("{\"Error\"") == 0)
+            return;
 
         if (s_Body.Count() >= MAX_KEYS)
             Clear("full");
@@ -118,19 +126,54 @@ class OZ_BridgeCache
         s_At.Set(k, GetGame().GetTime());
     }
 
+    // Скинути ЛИШЕ те, що належить цьому родові.
+    //
+    // Кеш скидався ЦІЛКОМ на будь-яку непорожню пачку опиту -- тобто одне
+    // чуже повідомлення в чаті викидало з кеша новини й розмови всіх
+    // вісімдесяти гравців, і наступне відкриття будь-якої сторінки знову
+    // йшло по HTTP. Ключ несе дорогу, дорога починається з "v1/<рід>/", тож
+    // рід із конверта прямо називає, що саме застаріло.
+    //
+    // Повертає false для роду, якого ми не знаємо: тоді викликач скидає все.
+    static bool Invalidate(string kind, string why)
+    {
+        if (kind == "" || !KnownKind(kind))
+            return false;
+
+        if (s_Body.Count() == 0)
+            return true;
+
+        string prefix = "v1/" + kind + "/";
+
+        array<string> doomed = new array<string>();
+        for (int i = 0; i < s_Body.Count(); i++)
+        {
+            string k = s_Body.GetKey(i);
+            if (k.IndexOf(prefix) == 0)
+                doomed.Insert(k);
+        }
+
+        if (doomed.Count() == 0)
+            return true;
+
+        for (int j = 0; j < doomed.Count(); j++)
+        {
+            s_Body.Remove(doomed[j]);
+            s_At.Remove(doomed[j]);
+        }
+
+        OZ_Log.Dbg("bridge cache: dropped " + doomed.Count().ToString() + " of " + prefix + " (" + why + ")");
+        return true;
+    }
+
     static void Clear(string why)
     {
-        if (!s_Body || s_Body.Count() == 0)
+        if (s_Body.Count() == 0)
             return;
 
         OZ_Log.Dbg("bridge cache: cleared " + s_Body.Count().ToString() + " (" + why + ")");
         s_Body.Clear();
         s_At.Clear();
-    }
-
-    static string Stat()
-    {
-        return "hits=" + s_Hits.ToString() + " misses=" + s_Misses.ToString();
     }
 }
 
