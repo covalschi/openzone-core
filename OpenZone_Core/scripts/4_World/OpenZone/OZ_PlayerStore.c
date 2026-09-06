@@ -58,7 +58,7 @@ class OZ_PlayerData : OZ_ConfigBase
     string SeenBase    = "";
     string SeenOrg     = "";
     string SeenRank    = "";
-    // Внутрiфракцiйне звання -- окрема вiсь вiд SeenRank (сталкерського).
+    // Внутріфракційне звання -- окрема вісь від SeenRank (сталкерського).
     string SeenFRank   = "";
     ref array<string> SeenPosts;
     ref array<string> SeenTraits;
