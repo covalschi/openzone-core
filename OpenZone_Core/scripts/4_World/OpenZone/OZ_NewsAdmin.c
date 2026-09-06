@@ -93,7 +93,10 @@ class OZ_NewsAdminReply : OZ_BridgeReply
         if (!to)
             return;
 
-        OZ_NewsAdminAnswer a;
+        // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+        // Error і Who, яких у відповіді немає, інакше читаються з сирої
+        // пам'яті, а перший з них вирішує, чи це відмова.
+        OZ_NewsAdminAnswer a = new OZ_NewsAdminAnswer();
         string err;
         if (!JsonFileLoader<OZ_NewsAdminAnswer>.LoadData(json, a, err) || !a)
         {
@@ -169,7 +172,10 @@ class OZ_NewsSection : OZ_AdminSection
 
         if (json != "")
         {
-            OZ_NewsAdminAsk from;
+            // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+            // Who, Title і Body, яких у листі клієнта немає, інакше їдуть на
+            // міст із сирої пам'яті, а по Body ще й міряється межа різака.
+            OZ_NewsAdminAsk from = new OZ_NewsAdminAsk();
             string perr;
             if (!JsonFileLoader<OZ_NewsAdminAsk>.LoadData(json, from, perr) || !from)
             {

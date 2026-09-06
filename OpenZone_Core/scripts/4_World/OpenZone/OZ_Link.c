@@ -35,7 +35,10 @@ class OZ_LinkBeginReply : OZ_BridgeReply
         if (!to)
             return;
 
-        OZ_LinkGrant g;
+        // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+        // інакше Code, якого у відповіді немає, читається з сирої пам'яті --
+        // а саме він вирішує, чи вважати початок прив'язки вдалим.
+        OZ_LinkGrant g = new OZ_LinkGrant();
         string err;
         if (!JsonFileLoader<OZ_LinkGrant>.LoadData(json, g, err) || !g || g.Code == "")
         {
@@ -72,7 +75,10 @@ class OZ_LinkStatusReply : OZ_BridgeReply
 
     override void OnBody(string json)
     {
-        OZ_LinkState st;
+        // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+        // Linked без цього -- сира пам'ять, а він відкриває Confirm, тобто
+        // прив'язку облікового запису Discord до цього гравця.
+        OZ_LinkState st = new OZ_LinkState();
         string err;
         if (!JsonFileLoader<OZ_LinkState>.LoadData(json, st, err) || !st)
             return;

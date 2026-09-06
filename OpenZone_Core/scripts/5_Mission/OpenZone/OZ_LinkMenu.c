@@ -124,7 +124,10 @@ class OZ_LinkMenu : UIScriptedMenu
                 return;
             }
 
-            OZ_LinkGrant g;
+            // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+            // без цього Code на відповіді без такого поля -- сира пам'ять, і
+            // на екран поїхав би чужий рядок замість коду.
+            OZ_LinkGrant g = new OZ_LinkGrant();
             string err;
             if (JsonFileLoader<OZ_LinkGrant>.LoadData(json, g, err) && g && g.Code != "")
                 m_Code = g.Code;
@@ -136,7 +139,9 @@ class OZ_LinkMenu : UIScriptedMenu
         if (op != OZ_LinkConst.OP_STATE)
             return;
 
-        OZ_LinkState st;
+        // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+        // Linked без цього -- сира пам'ять, а він закриває вікно прив'язки.
+        OZ_LinkState st = new OZ_LinkState();
         string serr;
         if (!JsonFileLoader<OZ_LinkState>.LoadData(json, st, serr) || !st)
             return;

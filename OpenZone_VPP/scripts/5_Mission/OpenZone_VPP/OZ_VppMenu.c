@@ -679,7 +679,10 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         if (op == "mirror_list")
         {
-            OZ_MirrorState mst;
+            // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+            // тоді Mirrors на відповіді без цього поля лишається нулем, а не
+            // сирою пам'яттю, і перевірка нижче має що перевіряти.
+            OZ_MirrorState mst = new OZ_MirrorState();
             string merr;
             // Копії не треба: цикл нижче лише знімає з конверта прапорці у
             // власні поля вікна й нічого між читаннями не виділяє.
@@ -705,7 +708,10 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         if (op.IndexOf("mirror_set:") == 0)
         {
-            OZ_MirrorReport mrep;
+            // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+            // без цього Note й лічильники, яких у звіті немає, читаються з
+            // сирої пам'яті ще до знімання в локальні змінні нижче.
+            OZ_MirrorReport mrep = new OZ_MirrorReport();
             string rerr;
             m_MirrorArmed = false;
             m_RolesArmed  = false;
@@ -830,7 +836,10 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         if (op == OZ_NewsOp.VOICES)
         {
-            OZ_NewsAdminVoices v;
+            // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+            // Self без цього -- сира пам'ять, а Voices мусить лишитись нулем,
+            // щоб перевірка нижче мала що перевіряти.
+            OZ_NewsAdminVoices v = new OZ_NewsAdminVoices();
             string verr;
             if (!JsonFileLoader<OZ_NewsAdminVoices>.LoadData(json, v, verr) || !v)
             {
@@ -862,7 +871,10 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         if (op == OZ_NewsOp.POST)
         {
-            OZ_NewsAdminAnswer a;
+            // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+            // Who їде просто в підказку адміну, і без цього на відповіді без
+            // такого поля туди поїхав би шматок чужої сторінки.
+            OZ_NewsAdminAnswer a = new OZ_NewsAdminAnswer();
             string aerr;
             string who = "";
             if (JsonFileLoader<OZ_NewsAdminAnswer>.LoadData(json, a, aerr) && a)

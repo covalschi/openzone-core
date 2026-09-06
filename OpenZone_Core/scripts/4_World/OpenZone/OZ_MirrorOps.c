@@ -65,7 +65,10 @@ class OZ_MirrorFillReply : OZ_BridgeReply
     {
         PlayerIdentity to = OZ_Link.Online(m_AdminUid);
 
-        OZ_MirrorFillAck ack;
+        // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+        // Ok, якого у відповіді немає, інакше читається з сирої пам'яті -- і
+        // саме він вирішує, чи вважати наповнення дзеркала вдалим.
+        OZ_MirrorFillAck ack = new OZ_MirrorFillAck();
         string err;
         if (!JsonFileLoader<OZ_MirrorFillAck>.LoadData(json, ack, err) || !ack)
         {
