@@ -129,6 +129,11 @@ class OZ_Link
     // причиною, а не мовчазний розрив).
     private static ref array<string> s_KickTold = new array<string>();
 
+    // Чи вже сказали, що міст мовчить і тому нікого не виводимо. Один рядок
+    // на перехід, а не на кожен тік: тік раз на п'ять секунд, а міст лежить
+    // годинами.
+    private static bool s_ToldBridgeDown = false;
+
     // Знайти живу особу за uid. Потрібно, бо відповідь моста приїжджає
     // ПІЗНІШЕ за запит, і особа, захоплена тоді, могла вже протухнути.
     static PlayerIdentity Online(string uid)
@@ -452,9 +457,9 @@ class OZ_Link
 
     static void Tick()
     {
-        // Ворота дивимось ЗАВЖДИ, навіть коли міст мовчить: рішення про кік
-        // спирається на Gated(), а той сам ураховує і мертвий міст, і
-        // AllowPlayWhenBridgeDown.
+        // Ворота дивимось ЗАВЖДИ, навіть коли міст мовчить: саме там
+        // вирішується, що при мовчазному мості нікого не виводять, а
+        // годинник іде з початку.
         Gate();
 
         if (s_Waiting.Count() == 0)
@@ -506,9 +511,54 @@ class OZ_Link
     private static void Gate()
     {
         if (s_KickAt.Count() == 0)
+        {
+            s_ToldBridgeDown = false;
             return;
+        }
 
         int now = GetGame().GetTime();
+
+        // ПРИ СУМНІВІ ДВЕРІ ВІДЧИНЕНІ.
+        //
+        // Кик -- для того, про кого міст СКАЗАВ «не прив'язаний». Міст, який
+        // не відповідає, не каже нічого: коду він не видає, статусу не
+        // підтверджує, і прив'язка, що сталася поза грою хвилину тому, до нас
+        // не доїхала. Вивести за це з сервера означає покарати гравця за чужу
+        // аварію.
+        //
+        // НЕЗАЛЕЖНО ВІД AllowPlayWhenBridgeDown, і це не суперечність: та
+        // настройка вирішує, чи ГРАТИ неприв'язаному при мертвому боті
+        // (ворота лишаються на екрані), а не чи ВИКИДАТИ його з сервера.
+        // Жорсткий адмін отримує вікно, яке не відпускає, -- і це найгірше,
+        // що ядро має право зробити, поки не знає відповіді.
+        //
+        // Годинник при цьому не просто стоїть, а йде з початку: гравець,
+        // якого міст не міг обслужити п'ять хвилин, мусить отримати свої
+        // п'ять хвилин після того, як міст ожив, -- інакше на першому ж
+        // тікові після відновлення вилетіли б усі одразу.
+        if (!OZ_BridgeClient.Alive())
+        {
+            if (!s_ToldBridgeDown)
+            {
+                s_ToldBridgeDown = true;
+                OZ_Log.Warn("link: the bridge is not answering - nobody is kicked while the link cannot be checked");
+            }
+
+            array<string> held = new array<string>();
+            for (int h = 0; h < s_KickAt.Count(); h++)
+                held.Insert(s_KickAt.GetKey(h));
+
+            for (int g = 0; g < held.Count(); g++)
+                s_KickAt.Set(held[g], now + GATE_GRACE_MS);
+
+            return;
+        }
+
+        if (s_ToldBridgeDown)
+        {
+            s_ToldBridgeDown = false;
+            OZ_Log.Info("link: the bridge answers again - the gate clock starts over");
+        }
 
         array<string> done = new array<string>();
         array<string> kick = new array<string>();
