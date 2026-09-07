@@ -845,6 +845,30 @@ class OZ_VppAdminMenu : AdminHudSubMenu
 
         if (!ok)
         {
+            // ВІДМОВА «НЕ ТВОЯ ПЕРСОНА» НЕСЕ ПЕРЕЛІК (ТЗ-6 R1.3, приймання
+            // 5.3), і панель його домальовує: сказати адмінові, що ім'я не
+            // його, і не сказати, які його, -- це відповідь, після якої йдуть
+            // читати вихідники. Та сама поведінка, що на сторінці КПК.
+            if (error == "not_your_voice" && json != "")
+            {
+                // Корінь створює скрипт, а не серіалізатор (шапка
+                // OZ_ConfigBase): без цього Allowed на відповіді без такого
+                // поля читався б із сирої пам'яті.
+                OZ_NewsAdminAnswer f = new OZ_NewsAdminAnswer();
+                string ferr;
+                if (JsonFileLoader<OZ_NewsAdminAnswer>.LoadData(json, f, ferr) && f && f.Allowed && f.Allowed.Count() > 0)
+                {
+                    // Склеюємо після розбору й один раз: кожна склейка --
+                    // виділення, а конверт розібрав серіалізатор.
+                    string names = f.Allowed[0];
+                    for (int fi = 1; fi < f.Allowed.Count(); fi++)
+                        names = names + ", " + f.Allowed[fi];
+
+                    Hint(op + ": " + Words(error) + " - yours are: " + names);
+                    return;
+                }
+            }
+
             Hint(op + ": " + Words(error));
             return;
         }

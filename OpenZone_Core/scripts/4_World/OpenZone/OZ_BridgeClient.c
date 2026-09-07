@@ -179,6 +179,43 @@ class OZ_BridgeUidProvider
     void Fill(array<string> uids) {}
 }
 
+// ЧИ Є В МОСТА БОТ -- питання окремим запитом (ТЗ-2 R2.6).
+//
+// /v1/ping -- єдина дорога моста без секрета й без стану: вона існує рівно
+// щоб довести, що гра до нього дістає. Відтепер вона несе ще й `discord`, і
+// цим одним полем гра розрізняє «міст лежить» (жодної відповіді) і «міст
+// живий, але Discord у нього не налаштований». Друге -- не збій: без бота
+// міст обслуговує чат, новини, фракції і вайп зі своєї бази, просто в
+// гільдії нікого немає.
+//
+// Це GET, а не POST, тому й колбек свій: OZ_BridgeXfer тримає тіло запиту,
+// якого тут немає зовсім.
+class OZ_BridgePong
+{
+    bool ok      = false;
+    bool discord = false;
+}
+
+class OZ_BridgePing : RestCallback
+{
+    override void OnSuccess(string data, int dataSize)
+    {
+        OZ_BridgeClient.Pinged(data);
+    }
+
+    override void OnError(int errorCode)
+    {
+        // Мовчки: про мертвий міст скаже опит, а гадати про бота по
+        // невдалому пінгу -- це вигадати стан, якого ми не бачили.
+        OZ_Log.Dbg("bridge: ping failed, code " + errorCode.ToString());
+    }
+
+    override void OnTimeout()
+    {
+        OZ_Log.Dbg("bridge: ping went quiet");
+    }
+}
+
 class OZ_BridgeClient
 {
     static const int BACKOFF_MS = 5000;
@@ -217,6 +254,19 @@ class OZ_BridgeClient
     private static ref map<string, ref OZ_BridgeSink> s_Sinks = new map<string, ref OZ_BridgeSink>();
     private static ref OZ_BridgePollReply s_PollReply;
     private static ref OZ_BridgePump s_Pump;
+
+    // Відповідь /v1/ping. Тримаємо в сильному посиланні: рушій кличе колбек
+    // пізніше, ніж повертається GET, і зібраний колбек нікуди не приїде.
+    private static ref OZ_BridgePing s_Ping;
+
+    // ЩО МИ ЗНАЄМО ПРО БОТА НА ТОМУ БОЦІ (ТЗ-2 R2.6).
+    //
+    // Три стани, а не два: «не питали», «є бот», «бота немає». Поки не
+    // питали, поводимось як раніше -- інакше кожен бут між Start() і
+    // відповіддю читався б як «Discord вимкнено», а це рівно та мовчазна
+    // різниця, яку R2.6 і прибирає.
+    private static bool s_DiscordKnown = false;
+    private static bool s_Discord      = true;
 
     // Контекст беремо ОДИН раз і тримаємо, а не питаємо на кожен запит.
     //
@@ -559,6 +609,56 @@ class OZ_BridgeClient
         return t.Count();
     }
 
+    // «DISCORD НЕ НАЛАШТОВАНИЙ» -- ТОЙ САМИЙ ВИПАДОК, ЩО «НУЛЬ ДЗЕРКАЛ»
+    // (ТЗ-2 R2.6, останній абзац; R2.4).
+    //
+    // Не окрема гілка й не окреме правило: сервіс, у який ми пишемо, у
+    // гільдії не з'являється ні тоді, ні тоді, а решта -- чат, новини,
+    // фракції, вайп -- працює однаково. Тому питання одне: «чи є сенс
+    // тримати ворота прив'язки», і відповідь на нього дає Silent().
+    static bool DiscordOff()
+    {
+        return s_DiscordKnown && !s_Discord;
+    }
+
+    // Чи в гільдії тихо -- з будь-якої з двох причин.
+    static bool Silent()
+    {
+        return DiscordOff() || MirrorCount() == 0;
+    }
+
+    // Відповідь на /v1/ping. Один рядок у лог на перехід, і тільки коли бота
+    // немає: «бот є» -- це звичайний стан, про який казати нема чого.
+    static void Pinged(string json)
+    {
+        // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase).
+        OZ_BridgePong p = new OZ_BridgePong();
+        string err;
+        if (!JsonFileLoader<OZ_BridgePong>.LoadData(json, p, err) || !p)
+            return;
+
+        bool was      = s_Discord;
+        bool wasKnown = s_DiscordKnown;
+
+        s_Discord      = p.discord;
+        s_DiscordKnown = true;
+
+        if (!s_Discord && (!wasKnown || was))
+            OZ_Log.Info("bridge: Discord is not configured on the bridge - the bot works, the guild stays quiet");
+        else if (s_Discord && wasKnown && !was)
+            OZ_Log.Info("bridge: the bridge has a Discord bot again");
+    }
+
+    // Спитати міст, чи є в нього бот. Кличеться на буті й ще раз щоразу, як
+    // міст повертається до життя: міст могли перезапустити з токеном.
+    static void Ping()
+    {
+        if (!s_Running || !s_Ctx)
+            return;
+
+        s_Ctx.GET(s_Ping, "v1/ping");
+    }
+
     static void Start()
     {
         OZ_BridgeSettings b = OZ_Settings.Get().Bridge;
@@ -626,6 +726,7 @@ class OZ_BridgeClient
         s_InFlight  = new array<ref OZ_BridgeXfer>();
         s_PollReply = new OZ_BridgePollReply();
         s_Pump      = new OZ_BridgePump();
+        s_Ping      = new OZ_BridgePing();
         s_Running   = true;
         s_Fresh     = true;
         s_Backoff   = BACKOFF_MS;
@@ -641,6 +742,10 @@ class OZ_BridgeClient
         line += "\", the engine drops an async request at " + OZ_Const.REST_TIMEOUT_SEC.ToString() + "s";
         OZ_Log.Info(line);
 
+        // Питаємо про бота ДО першого опиту: рядок «Discord не налаштований»
+        // мусить стояти поруч із рядком про дзеркала, а не через хвилину
+        // після нього (ТЗ-2 R2.6).
+        Ping();
         Poll();
     }
 
@@ -655,7 +760,13 @@ class OZ_BridgeClient
         s_InFlight  = NULL;
         s_PollReply = NULL;
         s_Pump      = NULL;
+        s_Ping      = NULL;
         s_Ctx       = NULL;
+
+        // Про чужу конфігурацію після зупинки ми знову не знаємо нічого:
+        // наступний Start() може дивитись уже на інший міст.
+        s_DiscordKnown = false;
+        s_Discord      = true;
     }
 
     // Наступний опит через delay мілісекунд. Нуль -- у наступному кадрі, а не
@@ -707,6 +818,11 @@ class OZ_BridgeClient
         {
             s_SaidAlive = true;
             OZ_Log.Info("bridge: answering again");
+
+            // Міст повернувся -- можливо, вже з токеном або вже без нього.
+            // Перепитуємо саме на переході, а не за таймером: конфігурація
+            // моста змінюється тільки разом із його перезапуском.
+            Ping();
         }
     }
 

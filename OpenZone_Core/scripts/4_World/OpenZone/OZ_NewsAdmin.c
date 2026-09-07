@@ -65,6 +65,17 @@ class OZ_NewsAdminAnswer
     bool   ok    = false;
     string Who   = "";
     string Error = "";
+
+    // ЧИМ ЖЕ ТОДІ МОЖНА ПІДПИСАТИ (ТЗ-6 R1.3, приймання 5.3). Їде разом із
+    // відмовою not_your_voice; на решті відмов порожній. Поле знімали у
+    // фазі D саме через те, що жоден ігровий тип його не оголошував --
+    // ось воно, і панель його малює.
+    ref array<string> Allowed;
+
+    void OZ_NewsAdminAnswer()
+    {
+        Allowed = new array<string>();
+    }
 }
 
 // Відповідь моста -> адмінові, тим самим конвертом, що й решта розділу.
@@ -116,7 +127,10 @@ class OZ_NewsAdminReply : OZ_BridgeReply
         if (refused != "")
         {
             OZ_Log.Warn("news: " + m_Op + " refused by the bridge: " + refused);
-            OZ_Rpc.AdminRespond(to, OZ_AdminSect.NEWS, m_Op, false, "", refused);
+            // Тіло їде РАЗОМ із відмовою: у ньому перелік доступних персон
+            // (ТЗ-6 R1.3), і панель домалює його до причини. Порожнім воно
+            // було, поки відмова несла саме лише слово.
+            OZ_Rpc.AdminRespond(to, OZ_AdminSect.NEWS, m_Op, false, json, refused);
             return;
         }
 
