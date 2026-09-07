@@ -46,26 +46,22 @@ class OZ_BridgeSettings
     // живе на мості (POLL_HOLD_SECONDS < OZ_Const.REST_TIMEOUT_SEC), і поле,
     // яке лишилось у чиємусь файлі, JsonFileLoader просто пропустить.
 
-    // ЩО САМЕ синхронізувати з Discord, по родах. Порожній список означає
-    // «все, що моди попросять» -- саме так поводився міст до появи цього
-    // поля, і мовчки міняти поведінку наявних серверів не можна.
+    // KINDS[] ТУТ БІЛЬШЕ НЕМАЄ (ТЗ-5 R-C1.4).
     //
-    // НАВІЩО ПО РОДАХ, А НЕ ОДНИМ ПЕРЕМИКАЧЕМ. Enabled -- це «є міст чи
-    // немає», і він або забирає інтеграцію цілком, або дає всю. Адмінові ж
-    // потрібне середнє: чат у Discord хочу, а фракціями керую в грі; або
-    // навпаки -- фракції з бота, а чат хай лишається ігровим. Рішення
-    // власника 2026-08-31.
+    // Це був другий рубильник із майже тим самим ім'ям, що й Mirrors нижче, і
+    // з іншим змістом: один вирішував, ЩО возити мостом, другий -- що з
+    // возимого показувати в гільдії. Саме з такої пари й береться помилка,
+    // якою можна непомітно вимкнути пермадес. Підписки тепер виводяться з
+    // того, які роди оголосили самі моди (OZ_BridgeClient.Subscribe), і
+    // третього джерела правди для них немає.
     //
-    // Роди оголошують САМІ МОДИ, а не ядро: воно не знає й не мусить знати,
-    // що чат зветься "chat", а ролі -- "roles". Тому перевірка -- по рядку,
-    // а список у файлі веде адмін.
-    ref array<string> Kinds;
+    // Ключ, що лишився в живому файлі, серіалізатор просто пропускає -- про
+    // нього один раз каже OZ_Settings.WarnLegacyKinds.
 
     // ДЕ ДАНІ ЖИВУТЬ І ДЕ ВОНИ ВИДНІ -- РІЗНІ ПИТАННЯ (ТЗ-2 §3).
     //
-    // Kinds вище -- про підписки: що взагалі возити мостом. Mirrors -- про
-    // ПОВЕРХНЮ: чи показувати цей рід у гільдії. Дім роду не змінює ні те,
-    // ні інше: чат живе в боті хоч із дзеркалом, хоч без.
+    // Mirrors -- про ПОВЕРХНЮ: чи показувати цей рід у гільдії. Дім роду не
+    // змінює нічого: чат живе в боті хоч із дзеркалом, хоч без.
     //
     // «Discord опціональний» означає рівно «дзеркала вимкнені»: бот працює,
     // база працює, гра працює, у гільдії тихо. Раніше вимкнути Discord
@@ -88,13 +84,6 @@ class OZ_BridgeSettings
         c.Url      = Url;
         c.ServerId = ServerId;
         c.Secret   = Secret;
-
-        c.Kinds = new array<string>();
-        if (Kinds)
-        {
-            for (int i = 0; i < Kinds.Count(); i++)
-                c.Kinds.Insert(Kinds[i]);
-        }
 
         c.Mirrors = new array<ref OZ_KindMirror>();
         if (Mirrors)
@@ -191,11 +180,8 @@ class OZ_Settings : OZ_ConfigBase
         RequireDiscordLink      = true;
         AllowPlayWhenBridgeDown = true;
 
-        // Порожньо -- «все, що попросять». Див. OZ_BridgeSettings.Kinds.
         if (Bridge)
         {
-            Bridge.Kinds = new array<string>();
-
             // ПОРОЖНЬО -- ЦЕ «ВСІ ДЗЕРКАЛА ВИМКНЕНІ», а не «всі ввімкнені»
             // (ТЗ-2 R3.2, правило 2). Тут стояла зворотна сумісність із
             // живими серверами; власник зняв її 2026-09-01 -- мод живе лише
@@ -234,8 +220,6 @@ class OZ_Settings : OZ_ConfigBase
         else
             Bridge = Bridge.Copy();
 
-        if (!Bridge.Kinds)
-            Bridge.Kinds = new array<string>();
         if (!Bridge.Mirrors)
             Bridge.Mirrors = new array<ref OZ_KindMirror>();
 
@@ -318,5 +302,55 @@ class OZ_Settings : OZ_ConfigBase
         s_Writable = OZ_ConfigLoader<OZ_Settings>.Load(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s_Inst);
 
         OZ_Log.SetDebug(s_Inst.DebugMode);
+
+        WarnLegacyKinds();
+    }
+
+    // ПРО ЗНЯТИЙ КЛЮЧ КАЖУТЬ УГОЛОС, А НЕ МОВЧКИ ПРОПУСКАЮТЬ.
+    //
+    // Bridge.Kinds пішов із класу (ТЗ-5 R-C1.4), і серіалізатор тепер просто
+    // не має куди покласти цей ключ -- файл читається як раніше, тиша повна.
+    // Але адмін, який колись вимкнув ним рід, побачив би лише те, що рід
+    // раптом їде мостом, і причини в лозі не знайшов би. Тому читаємо файл
+    // текстом РІВНО ЗАРАДИ ЦЬОГО ОДНОГО СЛОВА.
+    //
+    // Рядок у лог не потрапляє НІКОЛИ: у цьому файлі лежить секрет моста, і
+    // сюди приходить сама лише відповідь «так/ні».
+    private static void WarnLegacyKinds()
+    {
+        if (!FileExist(OZ_Const.SETTINGS))
+            return;
+
+        // `handle == 0` -- ванільна перевірка (jsonfileloader.c:114): тип
+        // FileHandle -- int[], і `!f` на ньому не те, що тут потрібно.
+        FileHandle f = OpenFile(OZ_Const.SETTINGS, FileMode.READ);
+        if (f == 0)
+            return;
+
+        bool seen = false;
+        string line;
+        while (FGets(f, line) >= 0)
+        {
+            if (line.IndexOf("\"Kinds\"") != -1)
+            {
+                seen = true;
+                break;
+            }
+        }
+        CloseFile(f);
+
+        if (!seen)
+            return;
+
+        string w = "Bridge.Kinds is no longer read and the key is ignored";
+        w += " - subscriptions follow the kinds mods register; use Bridge.Mirrors to decide what the guild sees";
+        OZ_Log.Warn(w);
+
+        // ОДИН РАЗ, А НЕ ЩОБУТУ. Файл переписуємо тут-таки, і ключ із нього
+        // зникає разом із рештою знятих полів; наступний старт мовчить.
+        // Не переписуємо лише те, чого лоадер не зрозумів: у пам'яті тоді
+        // дефолти, і запис коштував би адмінові адресу з секретом.
+        if (s_Writable)
+            OZ_ConfigLoader<OZ_Settings>.Save(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s_Inst);
     }
 }

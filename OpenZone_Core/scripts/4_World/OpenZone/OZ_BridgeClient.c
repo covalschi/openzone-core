@@ -240,17 +240,15 @@ class OZ_BridgeClient
 
     // Хто читатиме листи цього роду. Кличеться до Start(): підписка після
     // першої пачки означала б, що ту пачку ніхто не почув.
+    //
+    // ПІДПИСКУ БІЛЬШЕ НІЩО НЕ ФІЛЬТРУЄ (ТЗ-5 R-C1.4). Тут стояла перевірка по
+    // Bridge.Kinds -- другий рубильник із майже тим самим ім'ям, що й
+    // Bridge.Mirrors, і з іншим змістом. Рід возиться тому, що його оголосив
+    // мод; чи видно його в гільдії, вирішує Mirrors, і рубильник на це один.
     static void Subscribe(string kind, OZ_BridgeSink sink)
     {
-        // АДМІН ВИРІШУЄ, ЩО СИНХРОНІЗУВАТИ. Мод просить -- сервер дозволяє
-        // або ні, і відмова тут не помилка мода, а налаштування сервера.
-        // Тому Dbg, а не Warn: у лозі має бути видно, що рід свідомо
-        // вимкнений, і не має бути схоже на поломку.
-        if (!KindAllowed(kind))
-        {
-            OZ_Log.Dbg("bridge: kind \"" + kind + "\" is off in settings, not subscribed");
+        if (kind == "" || !sink)
             return;
-        }
 
         s_Sinks.Set(kind, sink);
         OZ_Log.Dbg("bridge: sink for \"" + kind + "\"");
@@ -266,22 +264,6 @@ class OZ_BridgeClient
 
         for (int i = 0; i < s_Sinks.Count(); i++)
             outKinds.Insert(s_Sinks.GetKey(i));
-    }
-
-    // Порожній список у налаштуваннях -- «все, що попросять»: саме так міст
-    // поводився до появи цього поля, і мовчки змінити це наявним серверам
-    // не можна.
-    static bool KindAllowed(string kind)
-    {
-        OZ_Settings s = OZ_Settings.Get();
-        if (!s || !s.Bridge)
-            return true;
-
-        array<string> want = s.Bridge.Kinds;
-        if (!want || want.Count() == 0)
-            return true;
-
-        return want.Find(kind) != -1;
     }
 
     // ЧИ ВИДНО ЦЕЙ РІД У ГІЛЬДІЇ. Перше спрацьоване правило вирішує
