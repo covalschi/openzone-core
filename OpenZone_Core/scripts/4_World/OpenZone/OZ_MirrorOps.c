@@ -24,9 +24,44 @@ class OZ_MirrorState
 {
     ref array<ref OZ_KindMirror> Mirrors;
 
+    // Що станеться, коли натиснути, -- по реченню на рід, у тому самому
+    // порядку, що й Mirrors. Речення складає САМ МОД роду
+    // (OZ_BridgeSink.MirrorNote): панель у ядрі не знає, чим чат
+    // відрізняється від ролей, і мала для них два жорстких тексти.
+    ref array<string> Notes;
+
     void OZ_MirrorState()
     {
         Mirrors = new array<ref OZ_KindMirror>();
+        Notes   = new array<string>();
+    }
+
+    // Копія у створений СКРИПТОМ об'єкт (шапка OZ_ConfigBase). Панель VPP
+    // розбирає цей конверт і складає з нього власні списки -- тобто виділяє
+    // пам'ять МІЖ читаннями полів, а конверт виділив серіалізатор. Копія
+    // робиться до першого такого виділення, поки читання ще чесне.
+    OZ_MirrorState Copy()
+    {
+        OZ_MirrorState c = new OZ_MirrorState();
+
+        if (Mirrors)
+        {
+            for (int i = 0; i < Mirrors.Count(); i++)
+            {
+                if (Mirrors[i])
+                    c.Mirrors.Insert(Mirrors[i].Copy());
+                else
+                    c.Mirrors.Insert(new OZ_KindMirror());
+            }
+        }
+
+        if (Notes)
+        {
+            for (int j = 0; j < Notes.Count(); j++)
+                c.Notes.Insert(Notes[j]);
+        }
+
+        return c;
     }
 }
 
@@ -169,6 +204,9 @@ class OZ_MirrorOps
             copy.Kind   = kinds[k];
             copy.Mirror = OZ_BridgeClient.Mirrored(kinds[k]);
             st.Mirrors.Insert(copy);
+
+            // Речення про НАТИСКАННЯ, тобто про протилежний стан.
+            st.Notes.Insert(OZ_BridgeClient.MirrorNote(kinds[k], !copy.Mirror));
         }
 
         string outJson;
@@ -236,10 +274,11 @@ class OZ_MirrorOps
                 return "";
             }
             rep.On   = false;
-            if (kind == "roles")
-                rep.Note = "the bot stops touching Discord roles from the next poll; they stay as they are until the mirror is on again";
-            else
-                rep.Note = "the bot stops writing " + kind + " to Discord from the next poll; the threads stay as an archive";
+
+            // РЕЧЕННЯ ПРО РІД КАЖЕ САМ МОД (дизайн платформи §4). Тут стояло
+            // `if (kind == "roles")` з текстом про ролі Discord -- словник
+            // мода фракцій усередині ядра.
+            rep.Note = OZ_BridgeClient.MirrorNote(kind, false);
             OZ_Log.Info("mirror: " + kind + " switched off by " + sender.GetPlainId());
             ok = true;
             return Json(rep);

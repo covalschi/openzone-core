@@ -251,7 +251,177 @@ class OZ_BridgeClient
             return;
 
         s_Sinks.Set(kind, sink);
+
+        // Таблиця доріг збирається з підписок, тож нова підписка робить її
+        // застарілою. Скидаємо, а не доповнюємо: доповнення мусило б знати
+        // про другий прохід (застарювання чужих родів) і повторювати його.
+        s_RouteRole = NULL;
+        s_Stale     = NULL;
+
         OZ_Log.Dbg("bridge: sink for \"" + kind + "\"");
+    }
+
+    // ---------------------------------------------------- ДОРОГИ РОДІВ
+    //
+    // «Читальна / нейтральна / записувальна» і «що застаріває від конверта
+    // цього роду» -- дві таблиці, зібрані з ТОГО, ЩО ОГОЛОСИЛИ САМІ МОДИ
+    // (OZ_BridgeSink.Reads/Neutral/Stales). У ядрі тут стояли їхні імена
+    // списком -- "chat", "news", "roles", "roster", "wipe" -- усупереч
+    // дизайну платформи §4; третій мод зі своїм родом не мав жодного способу
+    // потрапити в цей список, і кожен його конверт скидав чужий кеш цілком.
+    //
+    // Ліниво й зі скиданням на підписці: підписки приходять з OnInit різних
+    // модів, і моменту «всі вже підписались» ядро не знає.
+    static const int ROUTE_WRITE   = 0;
+    static const int ROUTE_READ    = 1;
+    static const int ROUTE_NEUTRAL = 2;
+
+    private static ref map<string, int> s_RouteRole;
+    private static ref map<string, ref array<string>> s_Stale;
+
+    private static void BuildRoutes()
+    {
+        if (s_RouteRole)
+            return;
+
+        s_RouteRole = new map<string, int>();
+        s_Stale     = new map<string, ref array<string>>();
+
+        // ВЛАСНІ ДОРОГИ ЯДРА -- єдині імена, які воно має право знати.
+        // Прив'язка нічого не міняє в листуванні: і статус, і запит коду --
+        // питання про одну людину й одну мить, а не про світ. Без цього
+        // кожне натискання «отримати код» гасило чат і новини всьому серверу.
+        s_RouteRole.Set("v1/link/status", ROUTE_NEUTRAL);
+        s_RouteRole.Set("v1/link/begin",  ROUTE_NEUTRAL);
+
+        int i;
+        int j;
+
+        for (i = 0; i < s_Sinks.Count(); i++)
+        {
+            OZ_BridgeSink sink = s_Sinks.GetElement(i);
+            if (!sink)
+                continue;
+
+            array<string> reads = new array<string>();
+            sink.Reads(reads);
+            for (j = 0; j < reads.Count(); j++)
+                s_RouteRole.Set(reads[j], ROUTE_READ);
+
+            // Рід застарює ВЛАСНІ читальні дороги -- це і є звичайний
+            // випадок, який раніше вгадувався префіксом "v1/<рід>/".
+            s_Stale.Set(s_Sinks.GetKey(i), reads);
+
+            array<string> quiet = new array<string>();
+            sink.Neutral(quiet);
+            for (j = 0; j < quiet.Count(); j++)
+            {
+                // Читальна дорога сильніша за нейтральну: якщо мод назвав
+                // її двічі, кеш має право її тримати.
+                if (!s_RouteRole.Contains(quiet[j]))
+                    s_RouteRole.Set(quiet[j], ROUTE_NEUTRAL);
+            }
+        }
+
+        // ДРУГИМ ПРОХОДОМ -- винятки. Рід, який переписує чуже (вайп чистить
+        // склад розмов), забирає читальні дороги того роду собі. Саме другим:
+        // на першому списки інших родів ще не були відомі.
+        for (i = 0; i < s_Sinks.Count(); i++)
+        {
+            OZ_BridgeSink other = s_Sinks.GetElement(i);
+            if (!other)
+                continue;
+
+            array<string> named = new array<string>();
+            other.Stales(named);
+            if (named.Count() == 0)
+                continue;
+
+            array<string> mine = s_Stale.Get(s_Sinks.GetKey(i));
+            if (!mine)
+                continue;
+
+            for (j = 0; j < named.Count(); j++)
+            {
+                array<string> theirs = s_Stale.Get(named[j]);
+                if (!theirs)
+                    continue;
+
+                for (int k = 0; k < theirs.Count(); k++)
+                {
+                    if (mine.Find(theirs[k]) == -1)
+                        mine.Insert(theirs[k]);
+                }
+            }
+        }
+    }
+
+    // Чим ця дорога є для кеша. Незнайома -- запис: не знаємо, чого вона
+    // торкнеться, і вгадувати тут не можна.
+    static int RouteRole(string route)
+    {
+        BuildRoutes();
+
+        int role;
+        if (!s_RouteRole.Find(route, role))
+            return ROUTE_WRITE;
+        return role;
+    }
+
+    // Дороги, які застарює конверт цього роду -- у БУФЕР ВИКЛИКАЧА.
+    //
+    // Не через out-контейнер: виміряно 2026-08-02, що контейнер, повернутий
+    // із функції через не-ref out, знищується, і той, хто питав, читає
+    // звільнену пам'ять.
+    //
+    // false -- роду ніхто не оголошував: тоді викликач не вгадує й скидає все.
+    static bool StaleRoutes(string kind, notnull array<string> found)
+    {
+        found.Clear();
+
+        BuildRoutes();
+
+        if (!s_Sinks.Contains(kind))
+            return false;
+
+        array<string> mine = s_Stale.Get(kind);
+        if (!mine)
+            return true;
+
+        for (int i = 0; i < mine.Count(); i++)
+            found.Insert(mine[i]);
+        return true;
+    }
+
+    // Курсор опиту зрушив. Застаріває рід, якому той потік належить -- і
+    // каже про це він сам (OZ_BridgeSink.FollowsCursor). Ядро тут писало
+    // "chat" літералом: воно возить курсор і не читає його змісту.
+    private static void CursorMoved(int cursor)
+    {
+        for (int i = 0; i < s_Sinks.Count(); i++)
+        {
+            OZ_BridgeSink sink = s_Sinks.GetElement(i);
+            if (!sink)
+                continue;
+            if (!sink.FollowsCursor())
+                continue;
+
+            OZ_BridgeCache.Invalidate(s_Sinks.GetKey(i), "poll cursor " + cursor.ToString());
+        }
+    }
+
+    // Речення про перемикання дзеркала цього роду -- від самого мода.
+    // Рід без підписки (адмін увімкнув його колись, а мод зараз знято)
+    // отримує загальне речення порожньої реалізації.
+    private static ref OZ_BridgeSink s_PlainSink = new OZ_BridgeSink();
+
+    static string MirrorNote(string kind, bool on)
+    {
+        OZ_BridgeSink sink;
+        if (s_Sinks.Find(kind, sink) && sink)
+            return sink.MirrorNote(kind, on);
+
+        return s_PlainSink.MirrorNote(kind, on);
     }
 
     // Роди, які на цьому сервері хтось справді читає. Ядро їх не знає
@@ -743,15 +913,16 @@ class OZ_BridgeClient
         // розмови всіх, хто зараз у Зоні, -- тобто на живому сервері кеш
         // стояв порожній рівно тоді, коли він найпотрібніший.
         //
-        // Курсор рухає ЛИШЕ стрічка повідомлень (міст рахує його по
-        // messagesSince), тож його зсув застарює саме чат -- зокрема й тоді,
-        // коли рядок був не для нас і в пачку не потрапив. Решту називають
-        // самі конверти своїм Kind.
+        // Курсор рухає ЛИШЕ один потік моста (він рахує його по
+        // messagesSince), тож його зсув застарює саме той рід -- зокрема й
+        // тоді, коли рядок був не для нас і в пачку не потрапив. Який це рід,
+        // каже сам мод (FollowsCursor); решту називають самі конверти своїм
+        // Kind.
         bool moved = batch.Cursor != s_Cursor;
         bool carried = batch.Items && batch.Items.Count() > 0;
 
         if (moved)
-            OZ_BridgeCache.Invalidate("chat", "poll cursor " + batch.Cursor.ToString());
+            CursorMoved(batch.Cursor);
 
         for (int c = 0; batch.Items && c < batch.Items.Count(); c++)
         {

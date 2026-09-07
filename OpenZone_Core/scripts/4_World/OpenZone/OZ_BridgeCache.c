@@ -32,78 +32,39 @@ class OZ_BridgeCache
     private static ref map<string, string> s_Body = new map<string, string>();
     private static ref map<string, int>    s_At   = new map<string, int>();
 
-    // Лише те, що читає й нічого не змінює на мосту. Перелік короткий і
-    // явний: дорога, якої тут немає, кеш не торкається -- і скидає його.
+    // ЖОДНОГО ЧУЖОГО ІМЕНІ В ЦЬОМУ ФАЙЛІ (дизайн платформи §4).
+    //
+    // Тут стояли три списки літералів: читальні дороги ("v1/news/list",
+    // "v1/chat/open"...), нейтральні ("v1/roles/roster") і роди, які кеш
+    // «розуміє» ("chat", "news", "roles", "roster", "wipe") -- тобто словник
+    // КПК і мода фракцій усередині ядра. Третій мод зі своїм родом не мав
+    // способу туди потрапити: кожен його конверт скидав кеш цілком, а кожна
+    // його дорога вважалась записом.
+    //
+    // Тепер усе це каже сам мод -- OZ_BridgeSink.Reads/Neutral/Stales, --
+    // а ядро лише питає (OZ_BridgeClient.RouteRole/StaleRoutes). Мовчазний
+    // мод нічого не ламає: його дороги вважаються записувальними, тобто
+    // консервативно, як і будь-яка незнайома дорога.
+
+    // Лише те, що читає й нічого не змінює на мосту.
     static bool Readable(string route)
     {
-        if (route == "v1/news/list")  return true;
-        if (route == "v1/news/open")  return true;
-        if (route == "v1/chat/list")  return true;
-        if (route == "v1/chat/open")  return true;
-        if (route == "v1/chat/older") return true;
-        return false;
+        return OZ_BridgeClient.RouteRole(route) == OZ_BridgeClient.ROUTE_READ;
     }
 
-    // Ні читання листування, ні його зміна: питання про права й про стан
-    // привязки. Такі не кешуються (відповідь -- про мить), але й кеш не
-    // скидають: зміряно, що сторінка новин просить список і голоси разом, і
-    // без цього списку в кеші не жив довше одного запиту.
+    // Ні читання листування, ні його зміна: питання про права, про стан
+    // прив'язки, про голоси новин. Такі не кешуються (відповідь -- про мить),
+    // але й кеш не скидають: сторінка новин просить список і голоси разом, і
+    // без цього список у кеші не жив довше одного запиту.
     static bool Neutral(string route)
     {
-        if (route == "v1/news/voices") return true;
-        if (route == "v1/link/status") return true;
-
-        // ПРИВ'ЯЗКА НІЧОГО НЕ МІНЯЄ В ЛИСТУВАННІ. Запит коду -- питання про
-        // одну людину й одну мить; він не читальний (відповідь щоразу інша)
-        // і не пише нічого, що лежить у кеші. Без цього рядка кожне
-        // натискання «отримати код» гасило чат і новини всьому серверу.
-        if (route == "v1/link/begin") return true;
-
-        // РОСТЕР ролей теж: він відповідає про фракції, а кешуємо ми лише
-        // новини й розмови.
-        if (route == "v1/roles/roster") return true;
-
-        return false;
+        return OZ_BridgeClient.RouteRole(route) == OZ_BridgeClient.ROUTE_NEUTRAL;
     }
 
-    // Роди, які кеш РОЗУМІЄ. Конверт незнайомого роду скидає кеш цілком: ми
-    // не знаємо, чого він торкнувся, і вгадувати тут не можна.
-    private static bool KnownKind(string kind)
-    {
-        if (kind == "chat")   return true;
-        if (kind == "news")   return true;
-        if (kind == "roles")  return true;
-        if (kind == "roster") return true;
-
-        // ВАЙП -- ЖИВИЙ РІД, і його тут бракувало: міст шле його
-        // (openzone-bridge/src/index.js:881,1498), мод фракцій на нього
-        // підписаний (OZF_Module.c:68), а кеш читав у лозі «poll item of
-        // unknown kind "wipe"» і скидався ЦІЛКОМ. Скидання цілком було
-        // випадково правильним, і саме тому небезпечним: додати рід у цей
-        // список і нічого більше означало б тихо перетворити його на
-        // порожню дію -- доріг "v1/wipe/" не існує. Що він застарює
-        // насправді -- у PrefixOf нижче.
-        if (kind == "wipe")   return true;
-
-        // "link" ТУТ БІЛЬШЕ НЕМАЄ: такого конверта не шле ніхто (у мості
-        // жодного kind: 'link'), і не читає теж ніхто.
-        return false;
-    }
-
-    // Що саме застаріває від конверта цього роду.
-    //
-    // Зазвичай -- дорога того самого імені: "news" застарює "v1/news/".
-    // Виняток один, і він мовчазний: вайп гравця переписує СКЛАД РОЗМОВ
-    // (openzone-bridge/src/index.js, wipePlayer чистить c.members і архівує
-    // приватний тред), тобто застарює чат -- при тому, що дороги "v1/wipe/"
-    // не існує зовсім.
-    private static string PrefixOf(string kind)
-    {
-        if (kind == "wipe")
-            return "v1/chat/";
-
-        return "v1/" + kind + "/";
-    }
+    // Дороги, які застарює конверт цього роду. Буфер один на весь клас:
+    // Absorb питає його по конверту на кожну пачку опиту.
+    private static ref array<string> s_Doomed = new array<string>();
+    private static ref array<string> s_Stale  = new array<string>();
 
     private static string Key(string route, string letter)
     {
@@ -158,38 +119,54 @@ class OZ_BridgeCache
     // Кеш скидався ЦІЛКОМ на будь-яку непорожню пачку опиту -- тобто одне
     // чуже повідомлення в чаті викидало з кеша новини й розмови всіх
     // вісімдесяти гравців, і наступне відкриття будь-якої сторінки знову
-    // йшло по HTTP. Ключ несе дорогу, дорога починається з "v1/<рід>/", тож
-    // рід із конверта прямо називає, що саме застаріло.
+    // йшло по HTTP. Ключ несе дорогу, а дороги роду називає сам мод, тож рід
+    // із конверта прямо каже, що саме застаріло.
     //
-    // Повертає false для роду, якого ми не знаємо: тоді викликач скидає все.
+    // ДОРОГА ЦІЛКОМ, А НЕ ПРЕФІКС: список читальних доріг у нас тепер точний,
+    // і збіг по префіксу "v1/<рід>/" був лише здогадом про те, як мод назвав
+    // свої дороги.
+    //
+    // Повертає false для роду, якого ніхто не оголошував: тоді викликач
+    // скидає все.
     static bool Invalidate(string kind, string why)
     {
-        if (kind == "" || !KnownKind(kind))
+        if (kind == "")
+            return false;
+
+        if (!OZ_BridgeClient.StaleRoutes(kind, s_Stale))
             return false;
 
         if (s_Body.Count() == 0)
             return true;
+        if (s_Stale.Count() == 0)
+            return true;
 
-        string prefix = PrefixOf(kind);
-
-        array<string> doomed = new array<string>();
+        s_Doomed.Clear();
         for (int i = 0; i < s_Body.Count(); i++)
         {
             string k = s_Body.GetKey(i);
-            if (k.IndexOf(prefix) == 0)
-                doomed.Insert(k);
+            for (int r = 0; r < s_Stale.Count(); r++)
+            {
+                // Ключ -- "дорога|лист", тож порівнюємо з дорогою плюс риска:
+                // інакше "v1/chat/list" збігся б і з "v1/chat/listen".
+                if (k.IndexOf(s_Stale[r] + "|") == 0)
+                {
+                    s_Doomed.Insert(k);
+                    break;
+                }
+            }
         }
 
-        if (doomed.Count() == 0)
+        if (s_Doomed.Count() == 0)
             return true;
 
-        for (int j = 0; j < doomed.Count(); j++)
+        for (int j = 0; j < s_Doomed.Count(); j++)
         {
-            s_Body.Remove(doomed[j]);
-            s_At.Remove(doomed[j]);
+            s_Body.Remove(s_Doomed[j]);
+            s_At.Remove(s_Doomed[j]);
         }
 
-        OZ_Log.Dbg("bridge cache: dropped " + doomed.Count().ToString() + " of " + prefix + " (" + why + ")");
+        OZ_Log.Dbg("bridge cache: dropped " + s_Doomed.Count().ToString() + " of " + kind + " (" + why + ")");
         return true;
     }
 

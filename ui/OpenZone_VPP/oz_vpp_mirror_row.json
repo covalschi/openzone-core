@@ -1,0 +1,12 @@
+{
+  "layout": "oz_vpp_mirror_row",
+  "note": "One Discord mirror toggle of the RAW JSON pane, instantiated once per mirrorable kind into MirrorStrip. THE KIND NAMES ARE NOT HERE and must never be: they come from the mods that registered the kinds (OZ_MirrorOps.List), so the core neither names another mod's kind nor caps how many there may be. The script writes the caption -- '<KIND>: ON', '<KIND>: OFF', 'PRESS AGAIN' -- into MirrorRowBtnText, lays the rows along the strip and shrinks them when they no longer fit; the name MirrorRowBtnText is a contract with OZ_VppMenu.c. A button ROOT holds page content instead of the Edge/Bg/Text idiom a nested button gets, so the three children are written out here -- with the names that idiom would have given them, which is what ShrinkTab walks.",
+  "root": {"button": {"name": "MirrorRowBtn", "size": [180, 30], "children": [
+    {"panel": {"name": "MirrorRowBtnEdge", "at": [-1, -1], "size": [182, 32], "color": "$edge", "priority": 0,
+      "note": "One unit outside the button on every side: 180x30 plus two."}},
+    {"panel": {"name": "MirrorRowBtnBg", "size": [180, 30], "color": "$raised", "priority": 1}},
+    {"label": {"name": "MirrorRowBtnText", "size": [180, 30], "text": "", "font": "small", "color": "$accent",
+      "align": "center", "priority": 2,
+      "note": "Empty: the caption is the kind and its state, written by PaintMirror."}}
+  ]}}
+}

@@ -152,6 +152,10 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         m_NwVoices = new array<string>();
         m_NwPick   = 0;
         m_NwSelf   = "";
+        m_MirrorKinds = new array<string>();
+        m_MirrorOn    = new array<int>();
+        m_MirrorNotes = new array<string>();
+        m_MirrorBtns  = new array<Widget>();
 
         AddOwnPane("spawns", "SPAWNS",   "SpawnHint");
         AddOwnPane("raw",    "RAW JSON", "RawHint");
@@ -189,19 +193,33 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     // МІСТ (news_voices); панель його лише малює й по колу перебирає. Вона
     // не вирішує прав і не вигадує імен: список -- підказка, грант -- факт,
     // і маршрут запису перевіряє це ще раз (R3.2).
-    // Дзеркало чату (ТЗ-2 §8): стан приходить mirror_list, перемикання --
+    // Дзеркала Discord (ТЗ-2 §8): стан приходить mirror_list, перемикання --
     // mirror_set у два натискання, бо вмикання заливає в Discord усю
     // історію, а це дія назовні.
+    //
+    // ПО РЯДКУ НА РІД, І РОДИ ПРИХОДЯТЬ ІЗ СЕРВЕРА (дизайн платформи §4).
+    // Тут стояли два жорстких перемикачі -- BtnMirror для "chat" і
+    // BtnMirrorRoles для "roles", -- обидва названі за родами ЧУЖИХ модів:
+    // чат реєструє КПК, ролі -- фракції. Сервер без фракцій показував
+    // тумблер для роду, якого в нього немає, а третій мод зі своїм родом не
+    // з'явився б у панелі ніколи. Тепер кнопки будуються з відповіді
+    // mirror_list, а вона -- з того, що моди зареєстрували.
     protected bool m_MirrorKnown = false;
-    protected bool m_MirrorOn    = false;
-    protected bool m_MirrorArmed = false;
 
-    // Дзеркало ролей (ТЗ-2 §15): той самий перемикач у два натискання для
-    // роду "roles". Увімкнення змушує бота переписати ролі Discord зі своїх
-    // таблиць -- дія назовні, як i заливка чату.
-    protected bool m_RolesKnown = false;
-    protected bool m_RolesOn    = false;
-    protected bool m_RolesArmed = false;
+    // Паралельні списки: рід, його стан, речення «що буде, як натиснути» і
+    // сама кнопка. Клік шукається по кнопці, тобто рід їде разом із рядком,
+    // а не зашитий в ім'я віджета.
+    protected ref array<string> m_MirrorKinds;
+    protected ref array<int>    m_MirrorOn;
+    protected ref array<string> m_MirrorNotes;
+    protected ref array<Widget> m_MirrorBtns;
+
+    // Який рядок зведений на друге натискання. -1 -- жоден.
+    protected int m_MirrorArmed = -1;
+
+    // Ширина шаблону рядка -- з першої створеної кнопки, до того як
+    // LayoutMirror її стисне. Те саме, що m_TabW для вкладок.
+    protected float m_MirrorW = 0;
 
     protected ref array<string> m_NwVoices;
     protected int               m_NwPick;
@@ -484,8 +502,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         if (id == "raw")
         {
             Ask(OZ_AdminSect.CONFIG, "cfg_list", "{}");
-            m_MirrorArmed = false;
-            m_RolesArmed  = false;
+            m_MirrorArmed = -1;
             PaintMirror();
             Ask(OZ_AdminSect.CONFIG, "mirror_list", "{}");
         }
@@ -669,8 +686,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
                 CfgDone(op.Substring(8, op.Length() - 8));
             if (op.IndexOf("mirror_set:") == 0)
             {
-                m_MirrorArmed = false;
-                m_RolesArmed  = false;
+                m_MirrorArmed = -1;
                 PaintMirror();
             }
             Hint("#" + error);
@@ -682,26 +698,18 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
             // тоді Mirrors на відповіді без цього поля лишається нулем, а не
             // сирою пам'яттю, і перевірка нижче має що перевіряти.
-            OZ_MirrorState mst = new OZ_MirrorState();
+            OZ_MirrorState parsed = new OZ_MirrorState();
             string merr;
-            // Копії не треба: цикл нижче лише знімає з конверта прапорці у
-            // власні поля вікна й нічого між читаннями не виділяє.
-            if (JsonFileLoader<OZ_MirrorState>.LoadData(json, mst, merr) && mst && mst.Mirrors)
+            if (JsonFileLoader<OZ_MirrorState>.LoadData(json, parsed, merr) && parsed && parsed.Mirrors)
             {
+                // КОПІЯ ПЕРЕД РОЗБОРОМ (шапка OZ_ConfigBase ядра): нижче
+                // будуються віджети й складаються рядки, тобто пам'ять
+                // виділяється МІЖ читаннями конверта, який виділив
+                // серіалізатор. Раніше цикл лише знімав два прапорці й обходився.
+                OZ_MirrorState mst = parsed.Copy();
+
                 m_MirrorKnown = true;
-                m_MirrorOn    = false;
-                m_RolesKnown  = true;
-                m_RolesOn     = false;
-                for (int mi = 0; mi < mst.Mirrors.Count(); mi++)
-                {
-                    if (!mst.Mirrors[mi])
-                        continue;
-                    if (mst.Mirrors[mi].Kind == "chat")
-                        m_MirrorOn = mst.Mirrors[mi].Mirror;
-                    if (mst.Mirrors[mi].Kind == "roles")
-                        m_RolesOn = mst.Mirrors[mi].Mirror;
-                }
-                PaintMirror();
+                BuildMirrorRows(mst);
             }
             return;
         }
@@ -713,8 +721,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             // сирої пам'яті ще до знімання в локальні змінні нижче.
             OZ_MirrorReport mrep = new OZ_MirrorReport();
             string rerr;
-            m_MirrorArmed = false;
-            m_RolesArmed  = false;
+            m_MirrorArmed = -1;
             if (JsonFileLoader<OZ_MirrorReport>.LoadData(json, mrep, rerr) && mrep)
             {
                 // ЗНІМАЄМО ВСЕ ВІДРАЗУ, а вже тоді складаємо рядок. Складання
@@ -728,16 +735,19 @@ class OZ_VppAdminMenu : AdminHudSubMenu
                 int    failed  = mrep.Failed;
                 string note    = mrep.Note;
 
-                if (kind == "roles")
-                {
-                    m_RolesKnown = true;
-                    m_RolesOn    = on;
-                }
-                else
+                // Рядок цього роду -- по імені, а не по гілці «ролі чи все
+                // інше»: рід приходить з відповіді, і панель не мусить знати
+                // жодного імені наперед.
+                int row = m_MirrorKinds.Find(kind);
+                if (row != -1)
                 {
                     m_MirrorKnown = true;
-                    m_MirrorOn    = on;
+                    if (on)
+                        m_MirrorOn.Set(row, 1);
+                    else
+                        m_MirrorOn.Set(row, 0);
                 }
+
                 string line = kind + " mirror ";
                 if (on)
                     line += "ON";
@@ -752,6 +762,11 @@ class OZ_VppAdminMenu : AdminHudSubMenu
                 Hint(line);
             }
             PaintMirror();
+
+            // Речення «що буде, як натиснути» складає СЕРВЕР і воно щойно
+            // застаріло -- стан протилежний. Перепитуємо: дія рідка, лист
+            // порожній, а підказка інакше обіцяла б те, що вже сталося.
+            Ask(OZ_AdminSect.CONFIG, "mirror_list", "{}");
             return;
         }
 
@@ -1295,15 +1310,12 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             return true;
         }
 
-        if (nm == "BtnMirror")
+        // ДЗЕРКАЛА -- ПО ВІДЖЕТУ, А НЕ ПО ІМЕНІ. Рядки згенеровані, і всі
+        // їхні кнопки звуться однаково (MirrorRowBtn): рід везе сам рядок.
+        int mrow = m_MirrorBtns.Find(w);
+        if (mrow != -1)
         {
-            MirrorClick("chat");
-            return true;
-        }
-
-        if (nm == "BtnMirrorRoles")
-        {
-            MirrorClick("roles");
+            MirrorClick(mrow);
             return true;
         }
 
@@ -1333,113 +1345,191 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         return super.OnClick(w, x, y, button);
     }
 
-    protected void PaintMirror()
+    // Порожня смуга з розмітки панелі -- дім згенерованих рядків. Немає її
+    // (стара .layout поруч із новим скриптом) -- рядки лишаються дітьми
+    // панелі: гірше на вигляд, але не порожньо. Той самий прийом, що й у
+    // TabStrip().
+    protected Widget MirrorStrip()
     {
         if (!M_SUB_WIDGET)
+            return null;
+
+        Widget strip = M_SUB_WIDGET.FindAnyWidget("MirrorStrip");
+        if (strip)
+            return strip;
+
+        return M_SUB_WIDGET;
+    }
+
+    // Рядки будуються З ВІДПОВІДІ СЕРВЕРА, а не з розмітки: скільки родів
+    // зареєстрували моди, стільки й кнопок.
+    protected void BuildMirrorRows(OZ_MirrorState st)
+    {
+        Widget strip = MirrorStrip();
+        if (!strip || !st || !st.Mirrors)
             return;
 
-        TextWidget lbl = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("MirrorLabel"));
-        if (lbl)
+        // Старі рядки знімаємо руками: Unlink() на кожному, бо смуга живе
+        // далі й наступний mirror_list інакше домалював би другий комплект.
+        for (int d = 0; d < m_MirrorBtns.Count(); d++)
         {
-            if (!m_MirrorKnown)
-                lbl.SetText("chat mirror: ?");
-            else if (m_MirrorOn)
-                lbl.SetText("chat mirror: ON");
+            if (m_MirrorBtns[d])
+                m_MirrorBtns[d].Unlink();
+        }
+        m_MirrorBtns.Clear();
+        m_MirrorKinds.Clear();
+        m_MirrorOn.Clear();
+        m_MirrorNotes.Clear();
+        m_MirrorArmed = -1;
+
+        for (int i = 0; i < st.Mirrors.Count(); i++)
+        {
+            OZ_KindMirror km = st.Mirrors[i];
+            if (!km || km.Kind == "")
+                continue;
+
+            Widget row = GetGame().GetWorkspace().CreateWidgets("OpenZone_VPP/gui/layouts/oz_vpp_mirror_row.layout", strip);
+            if (!row)
+            {
+                OZ_Log.Error("vpp mirror: layout failed to load: " + km.Kind);
+                continue;
+            }
+
+            if (m_MirrorW <= 0)
+            {
+                float rowH;
+                row.GetSize(m_MirrorW, rowH);
+            }
+
+            m_MirrorKinds.Insert(km.Kind);
+            if (km.Mirror)
+                m_MirrorOn.Insert(1);
             else
-                lbl.SetText("chat mirror: OFF");
+                m_MirrorOn.Insert(0);
+
+            if (st.Notes && i < st.Notes.Count())
+                m_MirrorNotes.Insert(st.Notes[i]);
+            else
+                m_MirrorNotes.Insert("");
+
+            m_MirrorBtns.Insert(row);
         }
 
-        TextWidget bt = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnMirrorText"));
-        if (bt)
-        {
-            if (m_MirrorArmed)
-                bt.SetText("PRESS AGAIN");
-            else if (m_MirrorKnown && m_MirrorOn)
-                bt.SetText("MIRROR OFF");
-            else
-                bt.SetText("MIRROR ON");
-        }
+        LayoutMirror();
+        PaintMirror();
+    }
 
-        TextWidget rl = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("MirrorRolesLabel"));
-        if (rl)
-        {
-            if (!m_RolesKnown)
-                rl.SetText("roles mirror: ?");
-            else if (m_RolesOn)
-                rl.SetText("roles mirror: ON");
-            else
-                rl.SetText("roles mirror: OFF");
-        }
+    // Рядки вздовж смуги, і вужчають, коли перестають уміщатись. Арифметика
+    // та сама, що в LayoutTabs, тільки без сторожа на перший кадр: смуга вже
+    // на екрані, коли приходить відповідь mirror_list.
+    protected void LayoutMirror()
+    {
+        int n = m_MirrorBtns.Count();
+        Widget strip = MirrorStrip();
+        if (n == 0 || !strip)
+            return;
 
-        TextWidget rb = TextWidget.Cast(M_SUB_WIDGET.FindAnyWidget("BtnMirrorRolesText"));
-        if (rb)
+        float room, striph;
+        strip.GetScreenSize(room, striph);
+
+        int scrW, scrH;
+        GetScreenSize(scrW, scrH);
+        float scrHf = scrH;
+
+        if (room <= 0 || m_MirrorW <= 0 || scrHf <= 0)
+            return;
+
+        float s    = scrHf / 1080.0;
+        float gap  = TAB_GAP * s;
+        float want = m_MirrorW;
+        if (want * n + gap * (n - 1) > room)
+            want = (room - gap * (n - 1)) / n;
+
+        for (int i = 0; i < n; i++)
         {
-            if (m_RolesArmed)
-                rb.SetText("PRESS AGAIN");
-            else if (m_RolesKnown && m_RolesOn)
-                rb.SetText("ROLES OFF");
-            else
-                rb.SetText("ROLES ON");
+            Widget b = m_MirrorBtns[i];
+            b.SetPos(i * (want + gap), 0);
+
+            float bw, bh;
+            b.GetScreenSize(bw, bh);
+            if (bw > want)
+                ShrinkTab(b, want);
         }
     }
 
-    // Один перемикач, два роди. Перше натискання каже, що саме станеться,
-    // друге робить (R5.2).
-    protected void MirrorClick(string kind)
+    // Напис кнопки несе ВСЕ: рід, стан і зведеність. Мітки поруч більше
+    // немає -- при п'яти родах на неї просто немає ширини, а «CHAT: ON»
+    // читається так само, як «chat mirror: ON» читалось раніше.
+    protected void PaintMirror()
     {
-        bool known = m_MirrorKnown;
-        bool on    = m_MirrorOn;
-        bool armed = m_MirrorArmed;
-        if (kind == "roles")
+        for (int i = 0; i < m_MirrorBtns.Count(); i++)
         {
-            known = m_RolesKnown;
-            on    = m_RolesOn;
-            armed = m_RolesArmed;
-        }
+            Widget row = m_MirrorBtns[i];
+            if (!row)
+                continue;
 
-        if (!known)
+            TextWidget t = TextWidget.Cast(row.FindAnyWidget("MirrorRowBtnText"));
+            if (!t)
+                continue;
+
+            if (i == m_MirrorArmed)
+            {
+                t.SetText("PRESS AGAIN");
+                continue;
+            }
+
+            string cap = m_MirrorKinds[i];
+            cap.ToUpper();
+            if (!m_MirrorKnown)
+                t.SetText(cap + ": ?");
+            else if (m_MirrorOn[i] == 1)
+                t.SetText(cap + ": ON");
+            else
+                t.SetText(cap + ": OFF");
+        }
+    }
+
+    // Один перемикач на рід. Перше натискання каже, що саме станеться,
+    // друге робить (R5.2). Речення про наслідок складає СЕРВЕР -- панель у
+    // ядрі не знає, чим чат відрізняється від ролей (дизайн платформи §4).
+    protected void MirrorClick(int row)
+    {
+        if (row < 0 || row >= m_MirrorKinds.Count())
+            return;
+
+        string kind = m_MirrorKinds[row];
+        bool   on   = m_MirrorOn[row] == 1;
+
+        if (!m_MirrorKnown)
         {
             Hint("the mirror state has not arrived yet");
             Ask(OZ_AdminSect.CONFIG, "mirror_list", "{}");
             return;
         }
 
-        if (!armed)
+        if (m_MirrorArmed != row)
         {
-            SetMirrorArmed(kind, true);
+            m_MirrorArmed = row;
             PaintMirror();
-            if (kind == "roles")
-            {
-                if (on)
-                    Hint("turning the roles mirror OFF: the bot stops touching Discord roles, its tables stay the home - press again to confirm");
-                else
-                    Hint("turning the roles mirror ON: the bot creates the roles and rewrites every linked member's roles from its tables - press again to confirm");
-            }
-            else
-            {
-                if (on)
-                    Hint("turning the chat mirror OFF: the bot stops writing, the Discord threads stay as an archive - press again to confirm");
-                else
-                    Hint("turning the chat mirror ON: the whole chat history goes into Discord threads first - press again to confirm");
-            }
+
+            string what = m_MirrorNotes[row];
+            if (what == "")
+                what = "switching the " + kind + " mirror";
+
+            string verb = "turning the " + kind + " mirror ON: ";
+            if (on)
+                verb = "turning the " + kind + " mirror OFF: ";
+            Hint(verb + what + " - press again to confirm");
             return;
         }
 
-        SetMirrorArmed(kind, false);
+        m_MirrorArmed = -1;
         PaintMirror();
         Hint("switching the " + kind + " mirror...");
         if (on)
             Ask(OZ_AdminSect.CONFIG, "mirror_set:" + kind + ":off", "{}");
         else
             Ask(OZ_AdminSect.CONFIG, "mirror_set:" + kind + ":on", "{}");
-    }
-
-    protected void SetMirrorArmed(string kind, bool armed)
-    {
-        if (kind == "roles")
-            m_RolesArmed = armed;
-        else
-            m_MirrorArmed = armed;
     }
 
     // ---------------------------------------------------------- дрібне

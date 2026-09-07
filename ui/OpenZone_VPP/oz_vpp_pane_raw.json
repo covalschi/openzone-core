@@ -1,6 +1,6 @@
 {
   "layout": "oz_vpp_pane_raw",
-  "note": "RAW JSON pane of the admin window: the core's own server configs by name on the left, the file itself in an editor on the right, the two Discord mirror switches under it and RELOAD/APPLY at the bottom. Created by OZ_VppMenu.OnCreate under OZ_VppRoot at [0, vpp.paneY]. Names RawList, RawEdit, MirrorLabel, MirrorRolesLabel, RawHint, BtnMirrorText, BtnMirrorRolesText and the four button names are read by OZ_VppMenu.c.",
+  "note": "RAW JSON pane of the admin window: the core's own server configs by name on the left, the file itself in an editor on the right, the Discord mirror switches under it -- one per mirrorable kind, generated -- and RELOAD/APPLY at the bottom. Created by OZ_VppMenu.OnCreate under OZ_VppRoot at [0, vpp.paneY]. Names RawList, RawEdit, MirrorStrip, RawHint, BtnRawReload and BtnRawApply are read by OZ_VppMenu.c.",
   "root": {"frame": {"name": "PaneRaw", "size": "$vpp.pane", "at": [0, "$vpp.paneY"], "inset": "$vpp.inset",
     "hidden": true, "priority": 2,
     "note": "Hidden: ShowPane shows the open tab's pane and hides the rest.",
@@ -14,13 +14,8 @@
           {"vbox": {"name": "RawSide", "w": 750, "gap": 8, "children": [
             {"field": {"name": "RawEdit", "h": "fill", "lines": 19,
               "note": "The whole file, as text. 19 lines is what the 336-unit box holds at the fixed 14-point field face."}},
-            {"hbox": {"name": "RawMirror", "h": "$size.button", "gap": "$space.gap", "children": [
-              {"label": {"name": "MirrorLabel", "w": 180, "font": "small", "color": "$muted"}},
-              {"button": {"name": "BtnMirror", "w": 150, "text": "MIRROR ON"}},
-              {"gap": {"w": "$space.column"}},
-              {"label": {"name": "MirrorRolesLabel", "w": 180, "font": "small", "color": "$muted"}},
-              {"button": {"name": "BtnMirrorRoles", "w": 150, "text": "ROLES ON"}}
-            ]}},
+            {"frame": {"name": "MirrorStrip", "h": "$size.button",
+              "note": "Empty: OZ_VppMenu fills it with one oz_vpp_mirror_row per kind mirror_list reports, so no mod's kind name lives in this repository. Here stood a fixed pair of switches named after the PDA's chat and the factions' roles -- a server with a third mod's kind could not reach it, and a server without the factions was offered a switch for a kind it does not have."}},
             {"hbox": {"name": "RawActions", "h": "$size.button", "children": [
               {"button": {"name": "BtnRawReload", "w": 150, "text": "RELOAD"}},
               {"gap": {"w": "fill"}},
