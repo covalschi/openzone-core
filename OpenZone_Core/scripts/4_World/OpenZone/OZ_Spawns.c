@@ -13,8 +13,12 @@
 //      прив'язався. Ворота прив'язки тримають його на місці, тож місце має
 //      бути таким, де стояти не соромно.
 //
-// Порядок: особиста -> зона ролі -> стейджинґ -> запасна -> те, що дав
-// рушій. Конкретне перебиває загальне. Нічого не налаштовано -- нічого й не
+//   4. ОДНОРАЗОВА ТОЧКА -- слово ЧУЖОГО мода про ЦЮ появу: «підняти там, де
+//      впав». Живе тільки в пам'яті сервера, з'їдається першою ж появою й
+//      перебиває все інше, бо вона -- про подію, а решта -- про долю.
+//
+// Порядок: одноразова -> особиста -> зона ролі -> стейджинґ -> запасна -> те,
+// що дав рушій. Конкретне перебиває загальне. Нічого не налаштовано -- нічого й не
 // змінюється: ванільна поведінка лишається недоторканою, і це умова того,
 // щоб мод можна було просто поставити.
 //
@@ -252,22 +256,33 @@ class OZ_Spawns
     // адміна назавжди.
     private static bool s_Writable = true;
 
+    // Одноразові точки від чужих модів: uid -> позиція рядком.
+    //
+    // ЛИШЕ В ПАМ'ЯТІ СЕРВЕРА, і це сказано прямим текстом (ТЗ-5 R-A2.3):
+    // рестарт між смертю й появою точку втрачає, і персонаж іде драбиною.
+    // Черги на диск немає навмисно -- вона обіцяла б гарантію, якої тут
+    // не буває.
+    private static ref map<string, string> s_Once;
+
+    // Коли одноразова точка перестає бути правдою. Ключ той самий, що й у
+    // s_Once, значення -- час рушія в мілісекундах.
+    private static ref map<string, int> s_OnceUntil;
+
+    // Рішення одноразової точки про НАБІР (ТЗ-3 R5.1): "" -- не сказано,
+    // OZ_Loadout.NONE -- нічого не надягати, інакше id пресета. Живе разом
+    // із точкою і з'їдається тим самим Resolve (R2.5); те, що він з'їв,
+    // чекає в s_OnceDecided, поки OZ_Loadout.OnSpawn не забере.
+    private static ref map<string, string> s_OnceLoadout;
+    private static ref map<string, string> s_OnceDecided;
+
     // Скільки метрів розкиду ще має сенс, і скільки разів шукати сушу.
     private static const float MAX_RADIUS = 1000;
     private static const int   TRIES      = 10;
 
-    // ОДНОРАЗОВОЇ ТОЧКИ ТУТ БІЛЬШЕ НЕМАЄ (2026-09-06).
-    //
-    // Механізм жив на випадок чужого мода -- дефібрилятора, медика, квесту:
-    // «підняти там, де впав», разом із рішенням про набір. Продюсера в нього
-    // не з'явилось за весь час існування серії: grep по всіх шести
-    // репозиторіях знаходив рівно один зовнішній виклик -- ClearNextSpawn на
-    // вайпі у фракціях, тобто скасування точки, якої ніхто не ставив.
-    // Півтори сотні рядків підтримували гілку, у яку не заходили ніколи.
-    //
-    // Повернути його дешево: порядок «одноразова -> особиста -> зона ролі»
-    // описаний у шапці цього файла, а OZ_LoadoutService.Preset -- частина
-    // контракту, яку мод фракцій уже реалізує, -- лишилась на місці.
+    // Скільки живе одноразова точка (ТЗ-5 R-A2.2). П'ять хвилин: між смертю
+    // й появою минають секунди, і рівно стільки триває ситуація, заради якої
+    // точку ставлять.
+    private static const int ONCE_TTL_MS = 300000;
 
     static void ServerLoad()
     {
@@ -504,13 +519,123 @@ class OZ_Spawns
         OZ_Log.Info("spawns: written, " + Count().ToString() + " zone(s)");
     }
 
-    // ЗОВНІШНЬОГО API ТУТ БІЛЬШЕ НЕМАЄ. SetNextSpawn/ClearNextSpawn/
-    // HasNextSpawn/TakeOnceLoadout возили одноразову точку чужого мода, і
-    // жоден мод серії її не ставив; див. шапку класу.
+    // ------------------------------------------------- для чужих модів
+
+    // Наступний спавн цього гравця -- ТУТ. Одноразово.
     //
-    // Порожня заглушка ClearNextSpawn дожила до 2026-09-06 рівно тому, що
-    // мод фракцій кликав її на вайпі: імені, якого немає, Enforce не
-    // пробачає навіть у мертвій гілці. Виклик знято, заглушку прибрано.
+    // НАЗВАНИЙ ЗАКАЗНИК -- ДЕФІБРИЛЯТОР (ТЗ-5 R-A2.1): мод оживляє персонажа
+    // й повертає його туди, де той помер. Медик і квест -- те саме одним
+    // механізмом. Мод не мусить пам'ятати, коли скасувати -- точка зникає,
+    // щойно спрацювала. Другий виклик до спавну просто замінює першу.
+    //
+    // Порожня позиція СКАСОВУЄ раніше поставлену: так у мода є чим передумати.
+    //
+    // `loadout` -- що надягти на цій появі (ТЗ-3 R5.1): "" -- нічого не
+    // сказано, драбина мода фракцій вирішує сама; OZ_Loadout.NONE -- голим;
+    // інакше id пресета, який розгортає мод фракцій, а не ядро (R5.3).
+    static void SetNextSpawn(string uid, vector pos, string reason, string loadout)
+    {
+        if (!GetGame().IsServer())
+            return;
+        if (uid == "")
+            return;
+
+        if (!s_Once)
+            s_Once = new map<string, string>();
+        if (!s_OnceLoadout)
+            s_OnceLoadout = new map<string, string>();
+
+        if (pos == vector.Zero)
+        {
+            ClearNextSpawn(uid);
+            return;
+        }
+
+        s_Once.Set(uid, pos.ToString(false));
+        s_OnceLoadout.Set(uid, loadout);
+
+        // СТРОК ПРИДАТНОСТІ.
+        //
+        // Точка «підняти там, де впав» правдива хвилини дві, поки медик
+        // стоїть над тілом. Але зникала вона тільки коли спрацьовувала -- а
+        // якщо гравець вирішив не відроджуватись і вийшов, вона лишалась у
+        // пам'яті сервера НАЗАВЖДИ. Через тиждень він гине на іншому кінці
+        // карти й прокидається там, де його колись намагався підняти медик,
+        // і зрозуміти це неможливо ні йому, ні адмінові.
+        if (!s_OnceUntil)
+            s_OnceUntil = new map<string, int>();
+
+        s_OnceUntil.Set(uid, GetGame().GetTime() + ONCE_TTL_MS);
+
+        string m = "spawn: next spawn for " + uid;
+        m += " set to " + pos.ToString(false);
+        if (reason != "")
+            m += " (" + reason + ")";
+        OZ_Log.Info(m);
+    }
+
+    static void ClearNextSpawn(string uid)
+    {
+        if (s_OnceUntil && s_OnceUntil.Contains(uid))
+            s_OnceUntil.Remove(uid);
+        if (s_OnceLoadout && s_OnceLoadout.Contains(uid))
+            s_OnceLoadout.Remove(uid);
+
+        if (!s_Once)
+            return;
+        if (!s_Once.Contains(uid))
+            return;
+        s_Once.Remove(uid);
+    }
+
+    static bool HasNextSpawn(string uid)
+    {
+        if (!s_Once)
+            return false;
+        if (!s_Once.Contains(uid))
+            return false;
+
+        return !Expired(uid);
+    }
+
+    // Рішення одноразової точки про набір, з'їдене останнім Resolve цього
+    // гравця. true -- точка була, і `spec` -- її слово ("" = не сказано).
+    // Забирається один раз: наступна поява починає з чистого.
+    static bool TakeOnceLoadout(string uid, out string spec)
+    {
+        spec = "";
+        if (!s_OnceDecided)
+            return false;
+        if (!s_OnceDecided.Find(uid, spec))
+            return false;
+        s_OnceDecided.Remove(uid);
+        return true;
+    }
+
+    // Чи вийшов строк. Прострочену прибираємо ТУТ САМІ: питання «чи є точка»
+    // й «чи вона ще правдива» -- одне питання, і два різних відповіді на нього
+    // розійшлись би першої ж миті.
+    private static bool Expired(string uid)
+    {
+        if (!s_OnceUntil)
+            return false;
+
+        int until;
+        if (!s_OnceUntil.Find(uid, until))
+            return false;
+
+        if (GetGame().GetTime() < until)
+            return false;
+
+        s_OnceUntil.Remove(uid);
+        if (s_Once && s_Once.Contains(uid))
+            s_Once.Remove(uid);
+        if (s_OnceLoadout && s_OnceLoadout.Contains(uid))
+            s_OnceLoadout.Remove(uid);
+
+        OZ_Log.Info("spawn: one-shot for " + uid + " expired unused");
+        return true;
+    }
 
     // ------------------------------------------------------- розв'язання
 
@@ -523,7 +648,39 @@ class OZ_Spawns
 
         string uid = who.GetPlainId();
 
-        // 1. Особиста точка -- найконкретніше, що ми знаємо про цю людину.
+        // 1. Одноразова -- З'ЇДАЄТЬСЯ. Знімаємо ДО перевірок нижче: точка,
+        //    яка не спрацювала через криву координату, все одно мусить
+        //    зникнути, інакше вона чекала б наступної смерті.
+        if (s_Once && !Expired(uid))
+        {
+            string once;
+            if (s_Once.Find(uid, once))
+            {
+                s_Once.Remove(uid);
+                if (s_OnceUntil && s_OnceUntil.Contains(uid))
+                    s_OnceUntil.Remove(uid);
+
+                // Рішення про набір іде разом із точкою -- і тоді, коли
+                // координата крива й точка не спрацює (ТЗ-3 R2.5).
+                string spec = "";
+                if (s_OnceLoadout && s_OnceLoadout.Find(uid, spec))
+                    s_OnceLoadout.Remove(uid);
+                if (!s_OnceDecided)
+                    s_OnceDecided = new map<string, string>();
+                s_OnceDecided.Set(uid, spec);
+
+                vector p = once.ToVector();
+                if (p != vector.Zero)
+                {
+                    Told(uid, p, "one-shot");
+                    return p;
+                }
+            }
+        }
+
+        // 2. Особиста точка. Нижче одноразової НАВМИСНО (ТЗ-5 R-A2.4):
+        //    дефібрилятор каже про ЦЮ смерть, а особиста -- про долю взагалі,
+        //    і конкретне мусить перебивати загальне.
         vector personal = PersonalFor(uid);
         if (personal != vector.Zero)
         {
@@ -531,7 +688,7 @@ class OZ_Spawns
             return personal;
         }
 
-        // 2. Зона ролі або стейджинґ.
+        // 3. Зона ролі або стейджинґ.
         string why;
         vector zoned = ZoneFor(uid, why);
         if (zoned != vector.Zero)
@@ -540,7 +697,7 @@ class OZ_Spawns
             return zoned;
         }
 
-        // 3. Рушій.
+        // 4. Рушій.
         Told(uid, fallback, "engine");
         return fallback;
     }
