@@ -78,6 +78,35 @@ class OZ_Perm
         return "adminids";
     }
 
+    // СПИСОК АДМІНІВ -- МОСТОВІ (ТЗ-6 R3.2, опит OZ_BridgePoll.AdminIds).
+    //
+    // Той самий Settings.AdminIds, що читає IsAdminUid нижче: не новий рядок
+    // довіри, а той самий файл власника, сказаний уголос тому, хто без
+    // гільдії не має звідки його взяти.
+    //
+    // VPP СЮДИ НЕ ПОТРАПЛЯЄ, і це не забуто. Дозволи VPP -- питання
+    // (VerifyPermission за uid), а не перелік: спитати «чи адмін ось цей»
+    // можна, а «назви всіх» -- ні. Тому на сервері з VPP міст знає рівно тих,
+    // хто виписаний у Settings.json; решта лишається адмінами В ГРІ, як і
+    // була, і втрачає саме одне -- підпис новини чужою персоною при мертвому
+    // боті. Дублювати такого адміна в AdminIds -- один рядок у файлі.
+    static void FillAdmins(array<string> outIds)
+    {
+        if (!outIds)
+            return;
+        outIds.Clear();
+
+        OZ_Settings s = OZ_Settings.Get();
+        if (!s || !s.AdminIds)
+            return;
+
+        for (int i = 0; i < s.AdminIds.Count(); i++)
+        {
+            if (s.AdminIds[i] != "")
+                outIds.Insert(s.AdminIds[i]);
+        }
+    }
+
     static bool IsAdmin(PlayerIdentity identity)
     {
         if (!identity)

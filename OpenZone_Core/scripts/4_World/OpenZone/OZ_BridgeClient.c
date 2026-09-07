@@ -913,6 +913,9 @@ class OZ_BridgeClient
         p.Fresh    = s_Fresh;
         FillMirrors(p.Mirrors);
         FillOnline(p.Uids);
+        // Хто тут адмін -- разом із дзеркалами й з тієї самої причини: міст
+        // без гільдії не має звідки це взяти (ТЗ-6 R3.2, OZ_BridgePoll).
+        OZ_Perm.FillAdmins(p.AdminIds);
 
         s_LastPollAt = GetGame().GetTime();
 
