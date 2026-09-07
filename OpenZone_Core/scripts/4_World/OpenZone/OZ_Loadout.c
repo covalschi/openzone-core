@@ -43,13 +43,22 @@ class OZ_LoadoutItem
     // кожній появі -- тобто через години після розбору файла. Рекурсія по
     // Inside: вкладення теж виділив серіалізатор.
     //
-    // ЦІНА, ЯКУ ЦЕ МАЄ: ключа, якого У ФАЙЛІ НЕМАЄ, копія переносить НУЛЕМ, а
-    // не значенням з ініціалізатора. Для Health01 і QuickBar нуль означає не
-    // те саме, що -1: «зіпсована річ» і «слот 0» замість «не чіпати». Файл,
-    // який пише сам мод, несе всі шість ключів, тож це стосується лише
-    // обрізаного вручну. Розрізнити «немає» і «нуль» може тільки лоадер --
-    // це та сама відкрита стаття, що лишилась на OZ_ConfigLoader.
-    OZ_LoadoutItem Copy()
+    // ВІДСУТНІЙ КЛЮЧ КАЖЕ ПРО СЕБЕ ВГОЛОС (ТЗ-3 R4.2).
+    //
+    // Ключа, якого У ФАЙЛІ НЕМАЄ, копія переносить НУЛЕМ, а не значенням з
+    // ініціалізатора. Для Health01 і QuickBar нуль означає не те саме, що
+    // -1: «зіпсована річ» і «перший слот» замість «не чіпати». Тобто
+    // обрізаний рукою запис видавав гравцеві вбиту куртку -- мовчки, і
+    // причини в лозі не було жодної.
+    //
+    // Відрізнити «ключа немає» від «у ключі нуль» не може ніхто, крім
+    // лоадера, тож ці два ключі стають ОБОВ'ЯЗКОВИМИ: нуль у них
+    // відхиляється як «ключа немає», предмет отримує оголошене -1, і про
+    // кожен такий запис у лозі стоїть рядок. Ціна названа в README: попросити
+    // з файла вбиту річ або НУЛЬОВИЙ слот панелі більше не можна -- пишеться
+    // 0.001 і слоти 1..9. Файл, який пише сам мод, несе всі шість ключів, тож
+    // це стосується лише обрізаного вручну.
+    OZ_LoadoutItem Copy(string where = "")
     {
         OZ_LoadoutItem c = new OZ_LoadoutItem();
         c.ClassName = ClassName;
@@ -58,16 +67,37 @@ class OZ_LoadoutItem
         c.Health01  = Health01;
         c.QuickBar  = QuickBar;
 
+        if (c.Health01 == 0)
+        {
+            OZ_Log.Warn(Missing(where, "Health01") + " - the item is left as the class makes it; write -1 for that, or 0.001 for a ruined one");
+            c.Health01 = -1;
+        }
+
+        if (c.QuickBar == 0)
+        {
+            OZ_Log.Warn(Missing(where, "QuickBar") + " - no quick slot is assigned; write -1 for that, or 1..9 for a slot");
+            c.QuickBar = -1;
+        }
+
         if (Inside)
         {
             for (int i = 0; i < Inside.Count(); i++)
             {
                 if (Inside[i])
-                    c.Inside.Insert(Inside[i].Copy());
+                    c.Inside.Insert(Inside[i].Copy(where));
             }
         }
 
         return c;
+    }
+
+    private string Missing(string where, string field)
+    {
+        string m = "loadout";
+        if (where != "")
+            m += " " + where;
+        m += ": " + ClassName + " has no " + field;
+        return m;
     }
 }
 
@@ -92,8 +122,11 @@ class OZ_LoadoutPreset
         {
             for (int i = 0; i < Items.Count(); i++)
             {
+                // Id -- щоб рядок про відсутній ключ називав ПРЕСЕТ, а не
+                // саму лише назву класу: у файлі їх десятки, і «немає
+                // Health01 у Hoodie_Blue» без пресета не знаходиться.
                 if (Items[i])
-                    c.Items.Insert(Items[i].Copy());
+                    c.Items.Insert(Items[i].Copy(c.Id));
             }
         }
 

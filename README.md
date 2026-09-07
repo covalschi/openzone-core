@@ -65,6 +65,17 @@ initialiser, so `Validate()` supplies the real defaults it cares about
 copies — `OZ_BridgeSettings`, `OZ_KindMirror`, `OZ_SpawnPlace`, `OZ_SpawnZone`,
 `OZ_SpawnPersonal`, `OZ_FriendReq` — are the worked example.
 
+**Where zero is a real value, the key becomes required.** Nothing below the
+loader can tell "the file had no `Health01`" from "the file said `0`", and for a
+loadout item those mean opposite things — untouched versus ruined on spawn. So
+`OZ_LoadoutItem` (the type any mod's loadout presets are written in) refuses the
+ambiguous zero out loud: a zero `Health01` or `QuickBar` is reported as a missing
+key, naming the preset and the class, and the declared `-1` ("do not touch", "no
+quick slot") is used instead. The price is that a hand-written file can no longer
+ask for a ruined item with a bare `0` — write `0.001` — nor for quick slot `0`;
+slots are `1..9`. A file the mod itself writes carries all six keys, so this only
+ever fires on one trimmed by hand.
+
 The same holds outside `OZ_ConfigLoader` for any `JsonFileLoader.LoadData` whose
 result outlives the call: a bridge envelope kept in a cache, a config a screen
 paints from between refreshes. Copy it in the sink. A value read in the same call
