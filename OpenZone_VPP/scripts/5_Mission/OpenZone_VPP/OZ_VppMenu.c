@@ -869,6 +869,24 @@ class OZ_VppAdminMenu : AdminHudSubMenu
                 }
             }
 
+            // ЗАДОВГЕ ТІЛО -- ЧИСЛОМ МОСТА (розбіжність 96). Перевірка перед
+            // надсиланням каже наше число, а це -- те, яке справді
+            // застосували: якщо вони колись розійдуться, адмін побачить межу,
+            // об яку насправді спіткнувся.
+            if (error == "body_too_long" && json != "")
+            {
+                // Корінь створює скрипт, а не серіалізатор (шапка
+                // OZ_ConfigBase): без цього Max на відповіді без такого поля
+                // читався б із сирої пам'яті.
+                OZ_NewsAdminAnswer tl = new OZ_NewsAdminAnswer();
+                string terr;
+                if (JsonFileLoader<OZ_NewsAdminAnswer>.LoadData(json, tl, terr) && tl && tl.Max > 0)
+                {
+                    Hint(op + ": the body is over the ceiling of " + tl.Max.ToString() + " b");
+                    return;
+                }
+            }
+
             Hint(op + ": " + Words(error));
             return;
         }
@@ -1310,9 +1328,13 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             // JSON через JsonFileLoader, а той ріже строкове значення на
             // 1023 байтах мовчки -- тобто без цієї перевірки адмін бачив би
             // «готово» на новину, яка поїхала в гільдію обрубком.
-            if (text.Length() >= OZ_NewsAdminAsk.BODY_MAX)
+            //
+            // СТРОГО БІЛЬШЕ: рівно тисяча тут відхилялась, а на сторінці КПК
+            // проходила (розбіжність 96). Останнє слово однаково за мостом --
+            // він відповідає body_too_long і возить власну стелю.
+            if (text.Length() > OZ_Const.NEWS_BODY_MAX)
             {
-                Hint("the body is " + text.Length().ToString() + " b, the limit is " + OZ_NewsAdminAsk.BODY_MAX.ToString());
+                Hint("the body is " + text.Length().ToString() + " b, the limit is " + OZ_Const.NEWS_BODY_MAX.ToString());
                 return true;
             }
 
