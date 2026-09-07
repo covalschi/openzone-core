@@ -298,12 +298,20 @@ class OZ_Settings : OZ_ConfigBase
     {
         OZ_Json.EnsureTree();
 
+        // ПРОБА -- ДО ЗАВАНТАЖЕННЯ, і саме тут її й забули з першого разу
+        // (зміряно на стенді 2026-09-07). Load сам переписує файл, коли
+        // Validate щось полагодив, -- а на цьому стенді він лагодить завжди
+        // (Bridge.Url не https). Проба після Load читала вже переписаний
+        // файл, знятого ключа в ньому не бачила й мовчала на кожному буті.
+        bool legacyKinds = HasLegacyKinds();
+
         s_Inst = new OZ_Settings();
         s_Writable = OZ_ConfigLoader<OZ_Settings>.Load(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s_Inst);
 
         OZ_Log.SetDebug(s_Inst.DebugMode);
 
-        WarnLegacyKinds();
+        if (legacyKinds)
+            SayKindsAreGone();
     }
 
     // ПРО ЗНЯТИЙ КЛЮЧ КАЖУТЬ УГОЛОС, А НЕ МОВЧКИ ПРОПУСКАЮТЬ.
@@ -314,18 +322,18 @@ class OZ_Settings : OZ_ConfigBase
     // раптом їде мостом, і причини в лозі не знайшов би. Тому читаємо файл
     // текстом РІВНО ЗАРАДИ ЦЬОГО ОДНОГО СЛОВА.
     //
-    // Рядок у лог не потрапляє НІКОЛИ: у цьому файлі лежить секрет моста, і
-    // сюди приходить сама лише відповідь «так/ні».
-    private static void WarnLegacyKinds()
+    // Рядок файла в лог не потрапляє НІКОЛИ: тут лежить секрет моста, і
+    // звідси виходить сама лише відповідь «так/ні».
+    private static bool HasLegacyKinds()
     {
         if (!FileExist(OZ_Const.SETTINGS))
-            return;
+            return false;
 
         // `handle == 0` -- ванільна перевірка (jsonfileloader.c:114): тип
         // FileHandle -- int[], і `!f` на ньому не те, що тут потрібно.
         FileHandle f = OpenFile(OZ_Const.SETTINGS, FileMode.READ);
         if (f == 0)
-            return;
+            return false;
 
         bool seen = false;
         string line;
@@ -339,9 +347,11 @@ class OZ_Settings : OZ_ConfigBase
         }
         CloseFile(f);
 
-        if (!seen)
-            return;
+        return seen;
+    }
 
+    private static void SayKindsAreGone()
+    {
         string w = "Bridge.Kinds is no longer read and the key is ignored";
         w += " - subscriptions follow the kinds mods register; use Bridge.Mirrors to decide what the guild sees";
         OZ_Log.Warn(w);
