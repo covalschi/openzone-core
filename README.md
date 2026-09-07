@@ -65,16 +65,23 @@ initialiser, so `Validate()` supplies the real defaults it cares about
 copies — `OZ_BridgeSettings`, `OZ_KindMirror`, `OZ_SpawnPlace`, `OZ_SpawnZone`,
 `OZ_SpawnPersonal`, `OZ_FriendReq` — are the worked example.
 
-**Where zero is a real value, the key becomes required.** Nothing below the
-loader can tell "the file had no `Health01`" from "the file said `0`", and for a
-loadout item those mean opposite things — untouched versus ruined on spawn. So
-`OZ_LoadoutItem` (the type any mod's loadout presets are written in) refuses the
-ambiguous zero out loud: a zero `Health01` or `QuickBar` is reported as a missing
-key, naming the preset and the class, and the declared `-1` ("do not touch", "no
-quick slot") is used instead. The price is that a hand-written file can no longer
-ask for a ruined item with a bare `0` — write `0.001` — nor for quick slot `0`;
-slots are `1..9`. A file the mod itself writes carries all six keys, so this only
-ever fires on one trimmed by hand.
+**Where zero is a real value, the file's own text decides.** Nothing below the
+loader can tell "the file had no `Health01`" from "the file said `0`" — the
+serializer writes zero for both — and for a loadout item those mean opposite
+things. Both zeroes are legal values and neither has a substitute:
+`Health01: 0` is a **ruined** item (`GetHealthLevelValue` returns the cutoff of a
+health level, and the cutoff of `GameConstants.STATE_RUINED` is `0.0`; vanilla's
+own `+0.001` is the epsilon that lands *above* a cutoff, so `0.001` is badly
+damaged), and `QuickBar: 0` is the **first** quick slot — the bar is ten slots
+indexed `0..9`, and vanilla passes `0` itself. So absence is settled where it is
+written, not guessed: `OZ_ConfigLoader` names the file it is validating
+(`OZ_ConfigFile`, for the length of `Validate()` and only when the object really
+came from that file), and `OZ_LoadoutItem.Copy()` reads that file's raw text once
+— the same idiom `OZ_Settings` uses for a removed key — to see which item entries
+carry the two keys. An entry without them gets the declared `-1` ("do not touch",
+"no quick slot"); an entry with a written zero keeps it. A hand-written file
+needs no ceremony: leave the key out for "untouched", write `0` when you mean a
+ruined item or slot zero.
 
 The same holds outside `OZ_ConfigLoader` for any `JsonFileLoader.LoadData` whose
 result outlives the call: a bridge envelope kept in a cache, a config a screen

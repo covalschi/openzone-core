@@ -48,6 +48,52 @@
 // файлі так і зроблено (Bridge.ServerId, Staging.Radius, Zones[i].Center).
 // ------------------------------------------------------------------------
 
+// ЯКИЙ САМЕ ФАЙЛ ЗАРАЗ ПЕРЕВІРЯЮТЬ -- і навіщо це комусь знати.
+//
+// Після розбору «ключа у файлі немає» й «у ключі нуль» -- один і той самий
+// нуль (шапка вище), а бувають ключі, де ці два означають протилежне:
+// Health01 предмета спорядження -- «не чіпати» проти «вбита річ». Розсудити
+// їх може лише сирий текст того самого файла, а шлях до нього знає єдиний
+// тут -- лоадер.
+//
+// Тому лоадер називає файл рівно на час Validate(), і лише тоді, коли об'єкт
+// у пам'яті справді прочитаний із НЬОГО (на дефолтах текст файла описує не
+// те, що лежить у пам'яті). Поза цим вікном Path() порожній, і той, хто
+// питає, нічого не домислює.
+//
+// Читає це сьогодні одне місце -- OZ_LoadoutKeys у 4_World; тут стоїть сама
+// лише поличка, бо 4_World для 3_Game ще не існує.
+class OZ_ConfigFile
+{
+    private static string s_Path = "";
+
+    // Покоління: те саме завантаження чи вже наступне. Гарячий перечит того
+    // самого шляху мусить перечитати й текст -- інакше читач віддавав би
+    // відповіді про файл, якого на диску вже немає.
+    private static int s_Gen = 0;
+
+    static void Begin(string path)
+    {
+        s_Path = path;
+        s_Gen++;
+    }
+
+    static void End()
+    {
+        s_Path = "";
+    }
+
+    static string Path()
+    {
+        return s_Path;
+    }
+
+    static int Gen()
+    {
+        return s_Gen;
+    }
+}
+
 class OZ_ConfigBase
 {
     int Version;
@@ -113,6 +159,10 @@ class OZ_ConfigLoader<Class T>
 
         bool fresh = false;
         bool salvaged = false;
+        // Чи справді те, що зараз у пам'яті, прочитане з ЦЬОГО файла. На
+        // дефолтах -- ні, і текст файла тоді описує не той об'єкт
+        // (див. OZ_ConfigFile).
+        bool fromFile = true;
         // Карантин не вдався -- файл на диску НЕ ЧІПАЄМО взагалі. Інакше
         // єдиний примірник того, що зламав адмін, зникає назавжди, і в лозі
         // лишається сама лише назва помилки розбору.
@@ -123,6 +173,7 @@ class OZ_ConfigLoader<Class T>
         {
             cfg.LoadDefaults();
             fresh = true;
+            fromFile = false;
         }
         else if (!ReadTwice(path, cfg, err))
         {
@@ -131,6 +182,7 @@ class OZ_ConfigLoader<Class T>
             cfg.LoadDefaults();
             fresh = true;
             salvaged = true;
+            fromFile = false;
             if (!kept)
                 keepFile = true;
         }
@@ -154,6 +206,7 @@ class OZ_ConfigLoader<Class T>
             cfg.LoadDefaults();
             keepFile = true;
             salvaged = true;
+            fromFile = false;
         }
         else if (cfg.Version != cfg.LatestVersion())
         {
@@ -166,6 +219,7 @@ class OZ_ConfigLoader<Class T>
                 bool keptM = OZ_Json.Quarantine(path, tag);
                 cfg.LoadDefaults();
                 salvaged = true;
+                fromFile = false;
                 if (!keptM)
                     keepFile = true;
             }
@@ -179,8 +233,17 @@ class OZ_ConfigLoader<Class T>
             fresh = true;
         }
 
+        // ФАЙЛ НАЗИВАЄТЬСЯ РІВНО НА ЧАС VALIDATE (див. OZ_ConfigFile): усе, що
+        // мусить відрізнити відсутній ключ від написаного нуля, читає текст
+        // саме тут -- поки об'єкт у пам'яті прочитаний із цього файла й ще
+        // ніхто його не полагодив.
+        if (fromFile)
+            OZ_ConfigFile.Begin(path);
+
         int warnings;
         cfg.Validate(warnings);
+
+        OZ_ConfigFile.End();
 
         // ПОЧИНКИ VALIDATE ТЕЖ ЇДУТЬ НА ДИСК.
         //
