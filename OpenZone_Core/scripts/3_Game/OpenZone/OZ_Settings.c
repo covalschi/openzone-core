@@ -74,9 +74,11 @@ class OZ_BridgeSettings
     // Enabled і Secret -- члени цього класу, і файл із розділом "Bridge" без
     // ключа "Enabled" вмикав би міст сирою пам'яттю.
     //
-    // Порожні елементи масиву дзеркал НЕ ВИКИДАЄМО: про них лає Validate, і
-    // саме те лайливе зауваження змушує лоадер переписати файл. Тихо
-    // прибраний null повертався б у файл кожного старту.
+    // Порожні елементи масиву дзеркал НЕ ВИКИДАЄМО: про них лає Validate, а
+    // виправити їх ядро не береться. Тихо прибраний null усе одно повертався
+    // б із файла кожного старту, а прибраний ІЗ ФАЙЛА забрав би з собою те,
+    // що адмін там писав і зіпсував одним символом. Тому скарга лунає щоразу
+    // й файла не чіпає (шапка Validate).
     OZ_BridgeSettings Copy()
     {
         OZ_BridgeSettings c = new OZ_BridgeSettings();
@@ -206,6 +208,19 @@ class OZ_Settings : OZ_ConfigBase
     // (ТЗ-2 R3.2, зворотну сумісність власник зняв 2026-09-01).
 
     // Кожне зауваження -- окремий Warning. Завантаження НЕ валиться.
+    //
+    // WARNINGS -- ЦЕ «Я ЩОСЬ ПОЛАГОДИВ», А НЕ «Я ЩОСЬ ПОМІТИВ».
+    //
+    // Лоадер пише файл назад саме за цим числом, і сенс того запису -- покласти
+    // на диск те, що Validate полагодив у пам'яті. Скарга, після якої об'єкт не
+    // змінився, повторюється КОЖЕН бут, тобто переписувала OZ_Core_Settings.json
+    // разом із бекапом щоразу, як сервер піднімався: на цьому стенді -- вічно,
+    // бо міст ходить по http і рядок про «не https» стоїть завжди
+    // (task-62-report §2, та сама починка, що й у КПК: ff3dccc).
+    //
+    // Тому нижче рахуються лише ті зауваження, після яких у пам'яті справді
+    // інше значення: підставлений ServerId і вимкнений міст. Решта -- сказати
+    // адміну й далі.
     override void Validate(out int warnings)
     {
         warnings = 0;
@@ -236,11 +251,14 @@ class OZ_Settings : OZ_ConfigBase
         // про це кажуть уголос.
         for (int mi = 0; mi < Bridge.Mirrors.Count(); mi++)
         {
+            // СКАРГА БЕЗ ПОЧИНКИ НЕ РАХУЄТЬСЯ (див. шапку Validate): порожній
+            // запис лишається на місці навмисно -- тихо прибраний, він
+            // повертався б із файла кожен старт, а прибраний із файла забирав
+            // би з собою те, що адмін там писав.
             OZ_KindMirror m = Bridge.Mirrors[mi];
             if (!m || m.Kind == "")
             {
                 OZ_Log.Warn("Bridge.Mirrors[" + mi.ToString() + "] has no Kind and is ignored");
-                warnings++;
                 continue;
             }
 
@@ -252,12 +270,12 @@ class OZ_Settings : OZ_ConfigBase
                     string dup = "Bridge.Mirrors lists \"" + m.Kind;
                     dup += "\" twice - the first entry wins, the second is ignored";
                     OZ_Log.Warn(dup);
-                    warnings++;
                     break;
                 }
             }
         }
 
+        // Так само: чужий id ми не виправляємо й не викидаємо -- лише кажемо.
         for (int i = 0; i < AdminIds.Count(); i++)
         {
             if (AdminIds[i].Length() != 17)
@@ -265,10 +283,11 @@ class OZ_Settings : OZ_ConfigBase
                 string bad = "AdminIds[" + i;
                 bad += "] is not a 17-digit Steam64 id: " + AdminIds[i];
                 OZ_Log.Warn(bad);
-                warnings++;
             }
         }
 
+        // А оці дві -- ПОЧИНКИ: у пам'яті після них інше значення, і саме
+        // заради них лоадер переписує файл.
         if (Bridge.Enabled && Bridge.ServerId == "")
         {
             OZ_Log.Warn("Bridge.ServerId is empty - falling back to \"dayz\"");
@@ -286,11 +305,12 @@ class OZ_Settings : OZ_ConfigBase
         // DayZ не дає задати заголовки запиту: RestContext.SetHeader керує лише
         // Content-Type. Секрет тому їде в ТІЛІ, і відкритий http роздав би його
         // всім, хто дивиться канал.
+        //
+        // НЕ РАХУЄТЬСЯ: адресу за адміна ми не переписуємо -- це його рішення,
+        // а на дев-стенді ще й свідоме. Саме цей рядок і переписував файл
+        // кожен бут, бо він правдивий завжди.
         if (Bridge.Enabled && Bridge.Url.IndexOf("https://") != 0)
-        {
             OZ_Log.Warn("Bridge.Url is not https - the shared secret travels in the request body");
-            warnings++;
-        }
 
     }
 
