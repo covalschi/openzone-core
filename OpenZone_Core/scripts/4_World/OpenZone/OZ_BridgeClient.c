@@ -294,6 +294,27 @@ class OZ_BridgeClient
         s_RouteRole.Set("v1/link/status", ROUTE_NEUTRAL);
         s_RouteRole.Set("v1/link/begin",  ROUTE_NEUTRAL);
 
+        // Голоси новин -- ТЕЖ ВЛАСНА дорога ядра, і саме тому вона тут.
+        // Питання про ПРАВА на мить («від чийого імені я можу писати»), не
+        // про стрічку: кешувати нема чого, але й гасити кешовану стрічку
+        // воно не мусить -- сторінка просить список і голоси разом.
+        // Кличе її адмінська новинна форма самого ядра (OZ_NewsAdmin.Ask),
+        // тобто й на сервері, де КПК не встановлено; без цього рядка кожне
+        // «хто говорить» у панелі VPP такого сервера рахувалося б записом і
+        // гасило кеш цілком.
+        s_RouteRole.Set("v1/news/voices", ROUTE_NEUTRAL);
+
+        // РЕШТА ВЛАСНИХ ДОРІГ ЯДРА -- ЗАПИС, і це свідомо, а не забуто:
+        //   v1/news/post   -- ядро пише новину (OZ_NewsAdmin); світ після неї
+        //                     інший, і скидання кеша цілком застарює й
+        //                     стрічку роду "news" разом з усім іншим;
+        //   v1/mirror/fill -- заливка історії роду в гільдію (OZ_MirrorOps);
+        //   v1/poll        -- сам опит, і він єдиний тут не ходить через
+        //                     Call() зовсім: Fly() кличеться прямо, тож кеша
+        //                     не питає й не гасить із жодного боку.
+        // Незнайома дорога і так вважається записом, тож рядків для них
+        // немає -- є ця табличка, щоб наступний читач не виводив це наново.
+
         int i;
         int j;
 
@@ -305,8 +326,32 @@ class OZ_BridgeClient
 
             array<string> reads = new array<string>();
             sink.Reads(reads);
+
+            // ЧИТАЛЬНА ДОРОГА КЕШУЄТЬСЯ ЛИШЕ ВІД РОДУ, ЯКИЙ СКАЗАВ, ЯК ВІН
+            // ЗАСТАРІВАЄ (шапка OZ_BridgeSink).
+            //
+            // Reads() без FollowsCursor() і без Stales() -- половина
+            // контракту: кеш тримав би відповідь, якої не гасить ані зсув
+            // курсора, ані чужий рід, і сторінка бачила б учорашній список
+            // до кінця TTL_MS. Нейтральна роль -- це «не кешуємо, але й
+            // чужого не гасимо»: повільніше й ніколи не хибно, тобто той
+            // самий вибір, який ядро робить для будь-якого мовчазного роду.
+            array<string> stales = new array<string>();
+            sink.Stales(stales);
+
+            bool ages = sink.FollowsCursor();
+            if (stales.Count() > 0)
+                ages = true;
+
+            int role = ROUTE_NEUTRAL;
+            if (ages)
+                role = ROUTE_READ;
+
             for (j = 0; j < reads.Count(); j++)
-                s_RouteRole.Set(reads[j], ROUTE_READ);
+                s_RouteRole.Set(reads[j], role);
+
+            if (!ages && reads.Count() > 0)
+                OZ_Log.Dbg("bridge: \"" + s_Sinks.GetKey(i) + "\" reads are not cached - the sink declares Reads() but neither FollowsCursor() nor Stales(), so nothing says when its answers go stale");
 
             // Рід застарює ВЛАСНІ читальні дороги -- це і є звичайний
             // випадок, який раніше вгадувався префіксом "v1/<рід>/".
@@ -326,6 +371,10 @@ class OZ_BridgeClient
         // ДРУГИМ ПРОХОДОМ -- винятки. Рід, який переписує чуже (вайп чистить
         // склад розмов), забирає читальні дороги того роду собі. Саме другим:
         // на першому списки інших родів ще не були відомі.
+        //
+        // Stales() тут питається вдруге, і це дешевше за таблицю заради
+        // одного числа: метод порожній у кожного, хто мовчить, а весь цей
+        // збір відбувається раз на підписку, а не на запит.
         for (i = 0; i < s_Sinks.Count(); i++)
         {
             OZ_BridgeSink other = s_Sinks.GetElement(i);
@@ -930,10 +979,11 @@ class OZ_BridgeClient
             if (!ce)
                 continue;
 
-            // Рід, якого кеш не знає, міг зачепити що завгодно -- тоді
-            // скидаємо все, як і раніше.
+            // Рід, про наслідки якого ніхто не сказав -- ані підпискою, ані
+            // оголошенням доріг, -- міг зачепити що завгодно; тоді скидаємо
+            // все, як і раніше.
             if (!OZ_BridgeCache.Invalidate(ce.Kind, "poll item"))
-                OZ_BridgeCache.Clear("poll item of unknown kind \"" + ce.Kind + "\"");
+                OZ_BridgeCache.Clear("poll item of \"" + ce.Kind + "\", which says nothing about what it stales");
         }
 
         s_Cursor = batch.Cursor;

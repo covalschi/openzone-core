@@ -88,6 +88,34 @@ result outlives the call: a bridge envelope kept in a cache, a config a screen
 paints from between refreshes. Copy it in the sink. A value read in the same call
 as the parse needs no copy.
 
+## Registering a bridge kind
+
+`OZ_BridgeClient.Subscribe(kind, sink)` is the whole registration: Core carries
+envelopes of that kind to your `OZ_BridgeSink` and knows nothing else about it.
+What the read cache may keep, and what invalidates it, the sink says itself —
+Core holds no list of anybody's kinds or route names.
+
+| | |
+|---|---|
+| `Reads(routes)` | answers the cache may keep (`v1/chat/list`, `v1/news/open`) |
+| `Neutral(routes)` | neither read nor write: an answer about the moment (rights, a link status) that must not flush the cache |
+| `Stales(kinds)` | *foreign* kinds this one invalidates — the wipe rewriting conversation membership, and little else |
+| `FollowsCursor()` | this kind owns the bridge's counted stream, so a cursor shift stales it even when the batch carried nothing for us |
+| `MirrorNote(kind, on)` | one sentence for the admin about what switching this mirror does |
+
+Declaring nothing is safe: every route then counts as a write, which is slower
+and never wrong. **`Reads()` alone is not enough to be cached.** A sink that says
+what may be kept but neither `FollowsCursor()` nor `Stales()` has said nothing
+about when those answers die, and the cache would serve them for up to
+`TTL_MS` (60 s) past the change; Core therefore files such routes as *neutral* —
+not cached, and not flushing anybody else's — and writes one Dbg line naming the
+kind. For the same reason an envelope of a kind with nothing declared clears the
+cache whole rather than quietly clearing nothing.
+
+Core declares only its own four route names: `v1/link/status`, `v1/link/begin`
+and `v1/news/voices` neutral, everything else it calls (`v1/news/post`,
+`v1/mirror/fill`) a write. The poll itself never touches the cache.
+
 ## The Discord link gate
 
 `RequireDiscordLink` (in `$profile:OpenZone\OZ_Core_Settings.json`, **on** by default)
