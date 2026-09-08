@@ -1,0 +1,40 @@
+{
+  "layout": "oz_vpp_pane_players",
+  "note": "PLAYERS pane of the admin window: who is in the Zone on the left, the permadeath form on the right. Created by OZ_VppMenu.OnCreate under OZ_VppRoot at [0, vpp.paneY], exactly where every other pane creates itself, so all of them overlap and the script shows one at a time. Names PlrList, PlrUid, PlrHint and BtnPlrWipe are read by OZ_VppMenu.c. The caption runs the full width under both columns rather than inside the 460-unit form: it is one long sentence, a label is a single line, and a column-wide one would be cut. The wording is deliberately POORER than the FACTIONS pane's: this pane exists on a server with nothing but the core, where 'private chats are left' and 'roles reset to novice' would be false.",
+  "root": {"frame": {"name": "PanePlayers", "size": "$vpp.pane", "at": [0, "$vpp.paneY"], "inset": "$vpp.inset",
+    "hidden": true, "priority": 2,
+    "note": "Hidden: ShowPane shows the open tab's pane and hides the rest.",
+    "children": [
+      {"vbox": {"name": "PlrBody", "gap": "$space.gap", "children": [
+        {"hbox": {"name": "PlrCols", "h": "fill", "gap": "$space.column", "children": [
+          {"vbox": {"name": "PlrHereCol", "w": 480, "gap": 8, "children": [
+            {"section": {"name": "SecPlrH", "text": "IN THE ZONE NOW"}},
+            {"listbox": {"name": "PlrList", "h": "fill", "font": "field", "color": "$text",
+              "props": {"style": "NoScrollBar", "title visible": false, "highlight row": true, "lines": 13},
+              "note": "The engine's own listbox, filled by AddItem from players_here; the same 13 lines over 414 units as the SPAWNS pane."}}
+          ]}},
+          {"vbox": {"name": "PlrFormCol", "w": 460, "gap": 8, "children": [
+            {"section": {"name": "SecPlrW", "text": "PERMADEATH"}},
+            {"label": {"name": "PlrHelp1", "text": "The list holds who is here now;", "font": "small", "color": "$muted"}},
+            {"label": {"name": "PlrHelp2", "text": "the field below wins, so an absent", "font": "small", "color": "$muted"}},
+            {"label": {"name": "PlrHelp3", "text": "character is reached by his steam64.", "font": "small", "color": "$muted"}},
+            {"hrow": {"h": "$size.field", "children": [
+              {"label": {"name": "PlrUidLbl", "w": "$vpp.labelW", "text": "steam64", "font": "small", "color": "$muted"}},
+              {"field": {"name": "PlrUid", "w": "$vpp.fieldW"}}
+            ]}},
+            {"label": {"name": "PlrHelp4", "text": "The first press names the person.", "font": "small", "color": "$muted"}},
+            {"hbox": {"h": "$size.button", "gap": "$space.gap", "children": [
+              {"gap": {"w": "fill"}},
+              {"button": {"name": "BtnPlrWipe", "w": 225, "text": "WIPE", "edge": "$bad", "color": "$bad"}}
+            ]}}
+          ]}}
+        ]}},
+        {"label": {"name": "PlrNote1", "font": "small", "color": "$muted",
+          "text": "Permadeath: the old life is frozen into its own file, every device of his is sealed,"}},
+        {"label": {"name": "PlrNote2", "font": "small", "color": "$muted",
+          "text": "spawn points are cleared. Press twice."}},
+        {"label": {"name": "PlrHint", "h": "$size.hint", "font": "hint", "color": "$muted",
+          "note": "Empty: every answer of the players route lands here."}}
+      ]}}
+    ]}}
+}

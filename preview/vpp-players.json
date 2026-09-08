@@ -1,0 +1,8 @@
+{
+  "note": "PLAYERS with a steam64 typed in and the trigger armed: the first press asked player_peek and the answer named the person. PlrList stays empty: rows of a TextListboxWidget go in through AddItem, and a fixture reaches widgets only (add/text/show/hide/color).",
+  "ops": [
+    {"op": "show", "nth": 1, "name": "PanePlayers"},
+    {"op": "text", "nth": 1, "name": "PlrUid", "text": "76561190000000001"},
+    {"op": "text", "nth": 1, "name": "PlrHint", "text": "press WIPE again to erase Ivan Sidorenko (gen 3) forever"}
+  ]
+}

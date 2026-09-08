@@ -1,5 +1,5 @@
-// Вкладка «OpenZone» у VPP Admin Tools: цей pbo реєструє рівно три
-// панелі -- SPAWNS, RAW JSON, NEWS. Панель іншого мода додає СКЛЕЙКА --
+// Вкладка «OpenZone» у VPP Admin Tools: цей pbo реєструє рівно чотири
+// панелі -- SPAWNS, RAW JSON, NEWS, PLAYERS. Панель іншого мода додає СКЛЕЙКА --
 // окремий pbo, що чіпляється сюди через modded class, де точки
 // розширення позначені словом protected. Панель FACTIONS, наприклад,
 // приїжджає з OpenZone_Factions_VPP, з репозиторію фракцій.
@@ -120,6 +120,18 @@ class OZ_VppAdminMenu : AdminHudSubMenu
     protected string m_RawPicked = "";
     protected ref array<string> m_RawRows;
 
+    // ------------------------------------------------- гравці
+    //
+    // Рядок списку -> uid. Список показує лише ПРИСУТНІХ (сервер уміє
+    // перелічити їх сам, без моста); відсутню ціль адмін набирає полем, і
+    // поле перемагає -- та сама ідіома, що поверхом вище в панелі спавнів.
+    protected ref array<string> m_PlrUids;
+
+    // Пермадес -- у два натискання, як усе руйнівне у вкладці. Перше йде по
+    // відповідь player_peek і НАЗИВАЄ ЛЮДИНУ; курок зводить лише вона.
+    protected bool   m_PlrArmed = false;
+    protected string m_PlrUid   = "";
+
     override void OnCreate(Widget RootW)
     {
         super.OnCreate(RootW);
@@ -147,6 +159,7 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         m_CfgOwners = new array<string>();
         m_CfgQ      = new array<string>();
         m_RawRows = new array<string>();
+        m_PlrUids = new array<string>();
         m_SpawnRowKind = new array<string>();
         m_SpawnRowKey  = new array<string>();
         m_NwVoices = new array<string>();
@@ -160,6 +173,13 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         AddOwnPane("spawns", "SPAWNS",   "SpawnHint");
         AddOwnPane("raw",    "RAW JSON", "RawHint");
         AddOwnPane("news",   "NEWS",     "NewsHint");
+
+        // PLAYERS -- ЯДРОВА, і саме тому вона тут (дизайн 2026-09-08).
+        // Пермадес переїхав у ядро службою; без цієї панелі перенесення було
+        // б наполовину -- операція є, а натиснути її нічим. Кнопка WIPE
+        // лишається й у панелі фракцій: логіка одна, кнопки дві, і панель
+        // фракцій уже водить ядрові операції спавнів зі свого ростера.
+        AddOwnPane("players", "PLAYERS", "PlrHint");
 
         if (!m_Ears)
         {
@@ -508,6 +528,11 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         }
         if (id == "news")
             Ask(OZ_AdminSect.NEWS, OZ_NewsOp.VOICES, "{}");
+        if (id == "players")
+        {
+            m_PlrArmed = false;
+            Ask(OZ_AdminSect.PLAYERS, OZ_PlayerOp.HERE, "{}");
+        }
     }
 
     override void OnMenuShow()
@@ -673,6 +698,12 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         if (sectionId == OZ_AdminSect.NEWS)
         {
             OnNewsAnswer(op, ok, json, error);
+            return;
+        }
+
+        if (sectionId == OZ_AdminSect.PLAYERS)
+        {
+            OnPlayerAnswer(op, ok, json, error);
             return;
         }
 
@@ -947,6 +978,117 @@ class OZ_VppAdminMenu : AdminHudSubMenu
         }
     }
 
+    // Відповідь розділу PLAYERS: хто в Зоні, чий це файл, і сам пермадес.
+    protected void OnPlayerAnswer(string op, bool ok, string json, string error)
+    {
+        bool wipeOp = op.IndexOf(OZ_PlayerOp.WIPE + ":") == 0;
+        bool peekOp = op.IndexOf(OZ_PlayerOp.PEEK + ":") == 0;
+
+        // КУРОК ГАСИМО НЕЗАЛЕЖНО ВІД ТОГО, ЩО ЗАРАЗ НА ЕКРАНІ: озброєна
+        // кнопка, яка пережила відповідь, вистрелила б з наступного
+        // натискання й без жодного попередження.
+        if (wipeOp)
+            m_PlrArmed = false;
+
+        // ПІДКАЗКУ ПИШЕ ЛИШЕ ВІДКРИТА ПАНЕЛЬ (R-W4.5).
+        //
+        // OZ_ClientState.AdminWatch() -- розголос: цю саму відповідь чує й
+        // панель фракцій, у якої кнопка WIPE теж є, а Hint() пише в рядок
+        // ПОТОЧНОЇ вкладки. Без цієї перевірки останній записувач затирав би
+        // першого, і адмін читав би чужу відповідь у своїй панелі.
+        bool mine = CurrentPane() == "players";
+
+        if (!ok)
+        {
+            if (peekOp)
+                m_PlrArmed = false;
+            if (mine)
+                Hint(Words(error));
+            return;
+        }
+
+        if (op == OZ_PlayerOp.HERE)
+        {
+            // Корінь створює скрипт, а не серіалізатор (шапка OZ_ConfigBase):
+            // тоді Uids на відповіді без цього поля лишається нулем, а не
+            // сирою пам'яттю, і перевірка нижче має що перевіряти.
+            OZ_PlayersHere h = new OZ_PlayersHere();
+            string herr;
+            if (JsonFileLoader<OZ_PlayersHere>.LoadData(json, h, herr) && h && h.Uids)
+                RebuildPlayerList(h);
+            return;
+        }
+
+        if (peekOp)
+        {
+            OZ_PlayerPeeked p = new OZ_PlayerPeeked();
+            string perr;
+            if (!JsonFileLoader<OZ_PlayerPeeked>.LoadData(json, p, perr) || !p)
+            {
+                m_PlrArmed = false;
+                if (mine)
+                    Hint("peek: unreadable answer");
+                return;
+            }
+
+            // ФАЙЛА НЕМАЄ -- КУРОК НЕ ЗВОДИТЬСЯ ВЗАГАЛІ. Це і захист від
+            // одруківки в сімнадцяти цифрах, і єдине місце, де ті сімнадцять
+            // цифр бачить людина.
+            if (!p.Found)
+            {
+                m_PlrArmed = false;
+                if (mine)
+                    Hint("no such character on this server");
+                return;
+            }
+
+            // ЗНІМАЄМО ВСЕ ВІДРАЗУ, а вже тоді складаємо рядок: складання
+            // рядка -- це виділення пам'яті, а конверт розібрав серіалізатор
+            // (шапка OZ_ConfigBase).
+            string pname = p.Name;
+            int    pgen  = p.Gen;
+
+            m_PlrArmed = true;
+            if (mine)
+                Hint("press WIPE again to erase " + pname + " (gen " + pgen.ToString() + ") forever");
+            return;
+        }
+
+        if (wipeOp)
+        {
+            if (mine)
+                Hint("wiped: the old life is frozen, a new character starts here");
+            Ask(OZ_AdminSect.PLAYERS, OZ_PlayerOp.HERE, "{}");
+            return;
+        }
+    }
+
+    // Список присутніх: ім'я й Steam64 в одному рядку -- інакше клік по рядку
+    // не сказав би адміну, чий саме uid поїхав у поле.
+    protected void RebuildPlayerList(OZ_PlayersHere h)
+    {
+        TextListboxWidget lb = TextListboxWidget.Cast(M_SUB_WIDGET.FindAnyWidget("PlrList"));
+        if (!lb)
+            return;
+
+        m_Repaint = true;
+
+        lb.ClearItems();
+        m_PlrUids.Clear();
+
+        for (int i = 0; i < h.Uids.Count(); i++)
+        {
+            string nm = h.Uids[i];
+            if (h.Names && i < h.Names.Count() && h.Names[i] != "")
+                nm = h.Names[i];
+
+            lb.AddItem(nm + "   " + h.Uids[i], NULL, 0);
+            m_PlrUids.Insert(h.Uids[i]);
+        }
+
+        m_Repaint = false;
+    }
+
     // Помилка -- або ключ таблиці рядків, або слова моста. Міст відмовляє
     // словами (not_your_voice, no_title), і перекладати їх нема куди: показуємо
     // як є, а ключі -- через таблицю.
@@ -1217,6 +1359,20 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             return true;
         }
 
+        // Рядок присутнього КЛАДЕ СЕБЕ В ПОЛЕ -- те саме, що робить рядок
+        // списку спавнів. Курок при цьому гасне: підтвердженням для одного
+        // не може стати натискання, зроблене для іншого.
+        if (nm == "PlrList")
+        {
+            if (row >= 0 && row < m_PlrUids.Count())
+            {
+                m_PlrArmed = false;
+                SetEdit("PlrUid", m_PlrUids[row]);
+                Hint("player " + m_PlrUids[row] + " picked");
+            }
+            return true;
+        }
+
         return super.OnItemSelected(w, x, y, row, column, oldRow, oldColumn);
     }
 
@@ -1290,6 +1446,43 @@ class OZ_VppAdminMenu : AdminHudSubMenu
             {
                 Ask(OZ_AdminSect.SPAWNS, OZ_SpawnOp.UID_CLEAR, uid);
             }
+            return true;
+        }
+
+        // ПЕРМАДЕС -- у два натискання, і перше з них НАЗИВАЄ ЛЮДИНУ.
+        //
+        // Поле сильніше за вибір у списку (та сама ідіома, що й PickedSlug у
+        // панелі спавнів): у списку лише присутні, а стерти треба вміти й
+        // відсутнього. Клік по рядку кладе його uid у це саме поле.
+        if (nm == "BtnPlrWipe")
+        {
+            // Trim() ПОВЕРТАЄ рядок, а не чистить на місці (TrimInPlace --
+            // окремий метод): пробіл із країв поля інакше зробив би з
+            // сімнадцяти цифр вісімнадцять символів, і ядро відмовило б
+            // «нема такого» на цілком правильний Steam64.
+            string wuid = GetEdit("PlrUid").Trim();
+
+            if (wuid == "")
+            {
+                Hint("type or pick a Steam64 first");
+                return true;
+            }
+
+            // Курок зводить ЛИШЕ відповідь player_peek: цілі без файла гравця
+            // не буває (ядро відмовить), а сімнадцять цифр з одруківкою
+            // виглядають рівно як правильні.
+            if (!m_PlrArmed || m_PlrUid != wuid)
+            {
+                m_PlrArmed = false;
+                m_PlrUid   = wuid;
+                Ask(OZ_AdminSect.PLAYERS, OZ_PlayerOp.PEEK + ":" + wuid, "{}");
+                Hint("checking " + wuid + "...");
+                return true;
+            }
+
+            m_PlrArmed = false;
+            Ask(OZ_AdminSect.PLAYERS, OZ_PlayerOp.WIPE + ":" + wuid, "{}");
+            Hint("wiping...");
             return true;
         }
 
