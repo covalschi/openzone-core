@@ -54,9 +54,6 @@ class OZ_BridgeSettings
     // якою можна непомітно вимкнути пермадес. Підписки тепер виводяться з
     // того, які роди оголосили самі моди (OZ_BridgeClient.Subscribe), і
     // третього джерела правди для них немає.
-    //
-    // Ключ, що лишився в живому файлі, серіалізатор просто пропускає -- про
-    // нього один раз каже OZ_Settings.WarnLegacyKinds.
 
     // ДЕ ДАНІ ЖИВУТЬ І ДЕ ВОНИ ВИДНІ -- РІЗНІ ПИТАННЯ (ТЗ-2 §3).
     //
@@ -316,69 +313,9 @@ class OZ_Settings : OZ_ConfigBase
     {
         OZ_Json.EnsureTree();
 
-        // ПРОБА -- ДО ЗАВАНТАЖЕННЯ, і саме тут її й забули з першого разу
-        // (зміряно на стенді 2026-09-07). Load сам переписує файл, коли
-        // Validate щось полагодив, -- а на цьому стенді він лагодить завжди
-        // (Bridge.Url не https). Проба після Load читала вже переписаний
-        // файл, знятого ключа в ньому не бачила й мовчала на кожному буті.
-        bool legacyKinds = HasLegacyKinds();
-
         s_Inst = new OZ_Settings();
         s_Writable = OZ_ConfigLoader<OZ_Settings>.Load(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s_Inst);
 
         OZ_Log.SetDebug(s_Inst.DebugMode);
-
-        if (legacyKinds)
-            SayKindsAreGone();
-    }
-
-    // ПРО ЗНЯТИЙ КЛЮЧ КАЖУТЬ УГОЛОС, А НЕ МОВЧКИ ПРОПУСКАЮТЬ.
-    //
-    // Bridge.Kinds пішов із класу (ТЗ-5 R-C1.4), і серіалізатор тепер просто
-    // не має куди покласти цей ключ -- файл читається як раніше, тиша повна.
-    // Але адмін, який колись вимкнув ним рід, побачив би лише те, що рід
-    // раптом їде мостом, і причини в лозі не знайшов би. Тому читаємо файл
-    // текстом РІВНО ЗАРАДИ ЦЬОГО ОДНОГО СЛОВА.
-    //
-    // Рядок файла в лог не потрапляє НІКОЛИ: тут лежить секрет моста, і
-    // звідси виходить сама лише відповідь «так/ні».
-    private static bool HasLegacyKinds()
-    {
-        if (!FileExist(OZ_Const.SETTINGS))
-            return false;
-
-        // `handle == 0` -- ванільна перевірка (jsonfileloader.c:114): тип
-        // FileHandle -- int[], і `!f` на ньому не те, що тут потрібно.
-        FileHandle f = OpenFile(OZ_Const.SETTINGS, FileMode.READ);
-        if (f == 0)
-            return false;
-
-        bool seen = false;
-        string line;
-        while (FGets(f, line) >= 0)
-        {
-            if (line.IndexOf("\"Kinds\"") != -1)
-            {
-                seen = true;
-                break;
-            }
-        }
-        CloseFile(f);
-
-        return seen;
-    }
-
-    private static void SayKindsAreGone()
-    {
-        string w = "Bridge.Kinds is no longer read and the key is ignored";
-        w += " - subscriptions follow the kinds mods register; use Bridge.Mirrors to decide what the guild sees";
-        OZ_Log.Warn(w);
-
-        // ОДИН РАЗ, А НЕ ЩОБУТУ. Файл переписуємо тут-таки, і ключ із нього
-        // зникає разом із рештою знятих полів; наступний старт мовчить.
-        // Не переписуємо лише те, чого лоадер не зрозумів: у пам'яті тоді
-        // дефолти, і запис коштував би адмінові адресу з секретом.
-        if (s_Writable)
-            OZ_ConfigLoader<OZ_Settings>.Save(OZ_Const.SETTINGS, OZ_Const.SETTINGS_TAG, s_Inst);
     }
 }
