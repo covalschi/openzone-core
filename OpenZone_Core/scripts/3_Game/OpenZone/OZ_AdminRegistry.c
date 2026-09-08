@@ -85,9 +85,13 @@ class OZ_AdminRegistry
 // Імена розділів. Ядрові -- тут; свої оголошує той мод, який їх приносить.
 class OZ_AdminSect
 {
-    static const string CONFIG = "config";
-    static const string SPAWNS = "spawns";
-    static const string NEWS   = "news";
+    static const string CONFIG  = "config";
+    static const string SPAWNS  = "spawns";
+    static const string NEWS    = "news";
+    // Гравці: пермадес і те, чим його наводять. У ЯДРІ, бо вайп -- служба
+    // ядра (дизайн 2026-09-08): поки розділ жив у моді фракцій, сервер
+    // core+PDA не мав ані кнопки, ані операції, ані підписки на рід "wipe".
+    static const string PLAYERS = "players";
 }
 
 // Операції розділу NEWS: одне написання для сервера (OZ_NewsSection) і для
@@ -96,4 +100,21 @@ class OZ_NewsOp
 {
     static const string VOICES = "news_voices";
     static const string POST   = "news_post";
+}
+
+// Операції розділу PLAYERS -- з тієї самої причини, що й OZ_NewsOp вище.
+//
+// "player_wipe:" був набраний ДВІЧІ й у ДВОХ pbo -- у розділі фракцій і в
+// їхній панелі VPP, -- тобто рівно те, про що попереджає шапка OZF_Const:
+// рядок, набраний двічі, розходиться мовчки. Тепер написання одне, а панелей,
+// які його шлють, дві: ядрова PLAYERS і фракційна FACTIONS.
+//
+// WIPE і PEEK возять ціль ХВОСТОМ операції ("player_wipe:<uid>"), як і cfg_*:
+// uid короткий, а правило одне на всі адмінські операції. HERE аргументів не
+// має зовсім.
+class OZ_PlayerOp
+{
+    static const string WIPE = "player_wipe";
+    static const string PEEK = "player_peek";
+    static const string HERE = "players_here";
 }

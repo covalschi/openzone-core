@@ -99,10 +99,6 @@ class OZ_Module : CF_ModuleWorld
 
         OZ_Settings s = OZ_Settings.Get();
 
-        string dbg = "off";
-        if (s.DebugMode)
-            dbg = "on";
-
         // Probe() лінивий і його кличуть усі точки входу прав; тут -- щоб
         // рядок про джерело прав стояв у лозі старту, а не з'явився при
         // першому натисканні адміна.
@@ -125,6 +121,22 @@ class OZ_Module : CF_ModuleWorld
         // NEWS -- у ядрі, а не в моді КПК, і це навмисно: писати новину не
         // потрібен ані прилад, ані фракції. Потрібен лише міст, а він ядровий.
         OZ_AdminRegistry.Register(OZ_AdminSect.NEWS, new OZ_NewsSection());
+
+        // PLAYERS -- ТЕЖ У ЯДРІ (дизайн 2026-09-08). Пермадес чистить файл
+        // гравця, а файл гравця -- ядровий; поки розділ жив у моді фракцій,
+        // сервер core+PDA не мав вайпу зовсім.
+        OZ_AdminRegistry.Register(OZ_AdminSect.PLAYERS, new OZ_PlayerSection());
+
+        // Пермадес, запущений НЕ з гри: команда бота робить свою половину й
+        // штовхає сюди, щоб гра зробила свою. Підписка мусить статись до
+        // старту опиту -- міст стартує тіком пізніше саме заради цього
+        // (нижче), тож власна підписка ядра встигає заведомо.
+        //
+        // ТУТ, А НЕ В OZF_Module: рід "wipe" возить ядрову службу, і сервер
+        // без мода фракцій мусить її чути. Поки підписка стояла там, пуш від
+        // `/openzone wipe` на core+PDA ішов у порожнечу.
+        OZ_BridgeClient.Subscribe("wipe", new OZ_WipeSink());
+
         OZ_AdminCfg.Register("Spawns", OZ_Const.PROFILE_DIR + "\\OZ_Core_Spawns.json", new OZ_SpawnsCfgApplier());
 
         OZ_Rpc.RegisterServer(this);
@@ -141,8 +153,28 @@ class OZ_Module : CF_ModuleWorld
         // тим, хто підписався пізніше, -- і втратити їхню першу пачку.
         //
         // Один тік затримки гарантує, що OnMissionStart відпрацював у всіх.
+        //
+        // РЯДОК ГОТОВНОСТІ ЇДЕ ТУДИ Ж, І З ТІЄЇ САМОЇ ПРИЧИНИ (2026-09-08).
+        // Він перелічує те, що приносять МОДИ -- сторінки, витирачі, -- а
+        // друкувався тут, тобто до їхніх OnMissionStart. На стенді core+PDA
+        // це було видно голим оком: `pages=0` при семи зареєстрованих і
+        // `wipers=none` при живому OZ_PdaWiper. Рядок, який називає чуже
+        // майно, мусить друкуватись тоді ж, коли ядро вирішує, що всі вже
+        // сказали своє.
         m_BridgeTimer = new Timer(CALL_CATEGORY_SYSTEM);
-        m_BridgeTimer.Run(BRIDGE_START_DELAY, this, "StartBridge", NULL, false);
+        m_BridgeTimer.Run(BRIDGE_START_DELAY, this, "Ready", NULL, false);
+    }
+
+    // Усі OnMissionStart відпрацювали: сказати, з чим ядро піднялось, і аж
+    // тоді пускати опит. Кличеться таймером на ім'я -- метод мусить бути
+    // видимим (не private).
+    void Ready()
+    {
+        OZ_Settings s = OZ_Settings.Get();
+
+        string dbg = "off";
+        if (s.DebugMode)
+            dbg = "on";
 
         // РЯДОК ЗБИРАЄМО ПООПЕРАТОРНО, а не одним ланцюжком «+»: компілятор
         // Enforce має межу складності виразу й падає з «Formula too complex»
@@ -153,6 +185,12 @@ class OZ_Module : CF_ModuleWorld
         // Розділи консолі -- ІМЕНАМИ, а не числом: «три» не каже, чи серед них
         // той, якого адмін шукає, а «config,spawns,factions» каже.
         summary += " admin=" + OZ_AdminRegistry.Describe();
+        // ВИТИРАЧІ -- ІМЕНАМИ Й У ПОРЯДКУ РЕЄСТРАЦІЇ (R-W1.9). Порядок ядро не
+        // обіцяє (порядок модулів CF не гарантований), тож несподіванка мусить
+        // бути ВИДНОЮ, а не виводитись; "none" -- законна відповідь, а не
+        // порожнеча. Форма `ключ=значення` не випадкова: вердикт стенда читає
+        // лічильники саме з цього рядка й саме в ній (зміряно 2026-09-04).
+        summary += " wipers=" + OZ_Wipe.Describe();
         summary += " spawnzones=" + OZ_Spawns.Count().ToString();
 
         // Стейджинґ окремим словом, а не в лічильнику зон: він або є, або
@@ -168,6 +206,8 @@ class OZ_Module : CF_ModuleWorld
 
         summary += " debug=" + dbg;
         OZ_Log.Info(summary);
+
+        OZ_BridgeClient.Start();
     }
 
     // Прив'язка -- ВЛАСНА пара RPC, а не сторінка. Причина в OZ_Rpc: сторінки
@@ -697,12 +737,10 @@ class OZ_Module : CF_ModuleWorld
         OZ_Log.Dbg("disconnect " + dArgs.UID);
     }
 
-    // Кличеться таймером, а не напряму: див. OnMissionStart про гонку
-    // підписок. Метод мусить бути НЕ приватним -- Timer шукає його по імені.
-    void StartBridge()
-    {
-        OZ_BridgeClient.Start();
-    }
+    // StartBridge ТУТ БІЛЬШЕ НЕМАЄ: опит пускає Ready() вище, одразу після
+    // рядка готовності. Причина в OnMissionStart -- обидві дії чекають на ту
+    // саму мить, коли всі чужі OnMissionStart відпрацювали, і двох таймерів
+    // на одну мить не треба.
 
     override void OnMissionFinish(Class sender, CF_EventArgs args)
     {
